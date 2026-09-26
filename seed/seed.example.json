@@ -1,0 +1,26 @@
+{
+  "_comment": "Pseudonymized seed. Real data lives in seed/seed.real.json (gitignored). Shape mirrors what OnboardMe + Capture accept so the loader pushes it through the same provenance path.",
+  "about_me": "I'm a CS student at Michigan and a software engineering intern. I build my own tooling, play brass in jazz settings, and follow the Detroit hardware scene. This month I'm trying to land a summer 2027 VC internship and I'm looking for people building accessible hardware.",
+  "card": {
+    "handle": "demo-user",
+    "headline": "CS @ Michigan · builds tooling · jazz brass",
+    "looking_for": ["summer 2027 VC internship", "accessible-hardware builders"],
+    "can_offer": ["Jac/TypeScript help", "intros in the Ann Arbor student-founder scene"],
+    "links": ["https://example.com"]
+  },
+  "debriefs": [
+    "Met Maya Okafor at JacHacks. She works on accessible robotics at the Michigan Robotics lab, knows Arjun Patel from their lab, and wants feedback from wheelchair users on her prototype. I promised to send her our demo.",
+    "Coffee with Leo Brandt, designs accessible interfaces at a Detroit startup. He offered to review prototypes for anyone building accessibility tools, a couple a month. Last talked in August.",
+    "Priya Nair, second-year at Ross, spent the summer at a Chicago growth fund. Said she'd happily talk to anyone thinking about VC internships. Knows Sam Reyes from the fund.",
+    "Sam Reyes (not the other Sam), associate at a climate-tech fund in Chicago. Met once at a2Tech360. Mentioned they're hiring summer analysts in the spring.",
+    "Sam Ortiz from the Newlab thing, hardware founder, battery analytics. Wants an intro to anyone doing power electronics. Owes me a follow-up on the trek info.",
+    "Talked to Jordan Lee after rehearsal, plays trombone, works on UI at a healthcare company, curious about accessibility work.",
+    "Dana Whitfield runs the founders' club, knows basically everyone building at Michigan. Offered to make intros for anyone with a real project.",
+    "Mentor call with Prof. Elena Ruiz, robotics. Suggested I read up on tactile interfaces; she supervises Maya."
+  ],
+  "goals": [
+    "Land a summer 2027 VC internship",
+    "Meet people building accessible hardware"
+  ],
+  "_gap_note": "The VC goal should produce a gap for 'climate-tech VC' on the requester's account when the demo teammate (who holds Sam Reyes) is a separate account — move Sam Reyes and Priya Nair to the teammate's seed to stage the Exchange."
+}

@@ -1,0 +1,12 @@
+.jac/
+node_modules/
+.venv/
+.vscode/
+.idea/
+.env
+seed/seed.real.json
+*.apk
+*.ipa
+android/
+ios/
+.DS_Store
