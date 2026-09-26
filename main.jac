@@ -16,6 +16,7 @@ import from intros { AdvanceIntroduction, DevProposeIntroduction }
 import from exchange { PostRequest, ListIncomingRequests, ReplyToRequest, ListMyRequests, ApproveReply, OptIn, Reveal, ClaimReveal, DeclineRequest, DeclineReply, DevMakeCard, DevSeedMatch }
 import from cards { PublishCard, get_card }
 import from reads { Receipt, ListPromises, CompletePromise, GraphView }
+import from imports { ImportPeople, ConfirmPerson, SkipPerson }
 
 # Client-side UI
 cl {
