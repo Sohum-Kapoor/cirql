@@ -31,6 +31,7 @@ import from plan { GamePlan }
 import from health { NetworkHealth }
 import from noted { NotedCard, ApplyCorrection }
 import from serendipity { Serendipity }
+import from vision { CaptureImage }
 
 # Client-side UI
 cl {
