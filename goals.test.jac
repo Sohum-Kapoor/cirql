@@ -5,10 +5,12 @@ Annex to goals.sv.jac — run with `jac test goals.sv.jac`.
 Covers the deterministic parts only (no LLM, per AGENTS.md — never hit a real
 model in tests): candidate collection + labels (known/route/cold, including
 the SOH-169 amendment that a person reachable by a Reported hop from a known
-person is "route" even if they also carry their own proposed Knows edge),
-evidence assembly (facts/intents/notes, the 8-item cap, expired-intent
-skipping), days_since_contact parsing, and `materialize`'s edge
-rebuild/delete + report ordering.
+person is "route" even if they also carry their own proposed Knows edge, and
+that per-person Knows-edge lookup never swaps one person's last_contact for
+another's), evidence assembly (facts/intents/notes, the 8-item cap,
+expired-intent skipping), days_since_contact parsing, and `materialize`'s
+edge rebuild/delete, one-entry-per-candidate report shape, index dedup, and
+evidence-gated strength (cross-family review fixes, SOH-169 round 2).
 
 Each test builds its own nodes fresh and only ever traverses from the node(s)
 it just created (its own `me`, `p`, or `goal`), so it stays correct even
@@ -58,6 +60,45 @@ test "candidate collection: known, route (both sub-cases), cold" {
     assert by_name["Fay CT"].label == "route", "person reachable via Reported must be route, not cold, even with a proposed Knows edge";
     assert by_name["Fay CT"].via == "Bob CT";
     assert by_name["Fay CT"].days_since_contact is None, "route candidates never carry a scored/displayed last_contact";
+}
+
+test "candidate collection: last_contact is never swapped between two known people" {
+    # Regression for review fix #1: collect_candidates must never zip
+    # [me ->:Knows:->] against [edge me ->:Knows:->] by index (no order
+    # guarantee across two separate traversals). Two known people with
+    # clearly different last_contact values catch a swap immediately.
+    now = datetime(2026, 9, 26, 12, 0, 0);
+    me = (root ++> Me(name="align-test-me"))[0];
+
+    old_contact = datetime(2026, 8, 1, 12, 0, 0).isoformat();      # 56 days before `now`
+    recent_contact = datetime(2026, 9, 20, 12, 0, 0).isoformat();  # 6 days before `now`
+
+    _old_p = (me +>:Knows(status="confirmed", last_contact=old_contact):+> Person(name="Old Contact P", status="confirmed"))[0];
+    _recent_p = (me +>:Knows(status="confirmed", last_contact=recent_contact):+> Person(name="Recent Contact P", status="confirmed"))[0];
+
+    result = collect_candidates(me, now);
+    by_name: dict[str, Candidate] = {};
+    for c in result {
+        by_name[c.person.name] = c;
+    }
+
+    assert by_name["Old Contact P"].days_since_contact == 56, f"got {by_name['Old Contact P'].days_since_contact}";
+    assert by_name["Recent Contact P"].days_since_contact == 6, f"got {by_name['Recent Contact P'].days_since_contact}";
+}
+
+test "candidate collection: a doubly-connected person never appears twice" {
+    # Regression for review fix #3 (belt-and-suspenders: the cold loop must
+    # also skip known_jids, not just route_jids). A person reachable via two
+    # Knows edges from the same Me must still surface exactly once.
+    now = datetime.now();
+    me = (root ++> Me(name="dup-edge-test-me"))[0];
+    shared = Person(name="Dual Edge P", status="confirmed");
+    me +>:Knows(status="confirmed", last_contact=""):+> shared;
+    me +>:Knows(status="proposed", last_contact=""):+> shared;
+
+    result = collect_candidates(me, now);
+    matches = [c for c in result if c.person.name == "Dual Edge P"];
+    assert len(matches) == 1, f"expected exactly one candidate for a doubly-connected person, got {len(matches)}";
 }
 
 test "evidence assembly: facts, then intents (expired skipped), then notes" {
@@ -179,4 +220,47 @@ test "materialize: strength/label/days ordering, evidence mapping, edge rebuild 
     assert len(edges_after_second) == 1, "rebuild must delete the old edges, not accumulate them";
     assert results2[0]["strength"] == "weak", "an unrecognized strength normalizes to weak";
     assert results2[0]["evidence"] == [], "an evidence index out of range must be dropped, not crash";
+}
+
+test "materialize: dedupe by index, default entry for a missing index, evidence-gated strength" {
+    now = datetime.now();
+    goal = (root ++> Goal(text="materialize-review-fixes-goal", created_at=now.isoformat()))[0];
+
+    p0 = (root ++> Person(name="P0 Dup", status="confirmed"))[0];
+    p1 = (root ++> Person(name="P1 NoEvidence", status="confirmed"))[0];
+    p2 = (root ++> Person(name="P2 Unranked", status="confirmed"))[0];
+
+    fact_ev = EvidenceItem(id="ev-a", kind="fact", observed_at="2026-09-01", span="some fact");
+
+    c0 = Candidate(person=p0, label="known", evidence_items=[fact_ev], days_since_contact=None);
+    c1 = Candidate(person=p1, label="known", evidence_items=[fact_ev], days_since_contact=None);
+    c2 = Candidate(person=p2, label="cold", evidence_items=[], days_since_contact=None);
+    candidates = [c0, c1, c2];
+
+    ranked = [
+        RankedItem(index=0, strength="strong", reason="first wins", evidence_indices=[0], opener="o-first"),
+        RankedItem(index=0, strength="weak", reason="duplicate, must be ignored", evidence_indices=[], opener="o-dup"),
+        RankedItem(index=1, strength="strong", reason="claims strong but the evidence index is out of range", evidence_indices=[99], opener="o1")
+        # index 2 (P2 Unranked) is intentionally never mentioned by `ranked`.
+    ];
+
+    results = materialize(goal, ranked, candidates);
+
+    assert len(results) == 3, "materialize reports exactly one entry per candidate, never fewer or more";
+
+    by_name: dict[str, dict[str, any]] = {};
+    for r in results {
+        person = r["person"] as Person;
+        by_name[person.name] = r;
+    }
+
+    assert by_name["P0 Dup"]["reason"] == "first wins", "duplicate RankedItems for the same index: the first occurrence wins";
+    assert by_name["P0 Dup"]["strength"] == "strong";
+
+    assert by_name["P1 NoEvidence"]["strength"] == "weak", "an out-of-range evidence index leaves no mapped evidence -> forced weak even though the ranker said strong";
+    assert by_name["P1 NoEvidence"]["evidence"] == [];
+
+    assert by_name["P2 Unranked"]["strength"] == "weak", "a candidate `ranked` never mentions still gets a default report entry";
+    assert by_name["P2 Unranked"]["reason"] == "No ranking returned for this person.";
+    assert by_name["P2 Unranked"]["opener"] == "";
 }

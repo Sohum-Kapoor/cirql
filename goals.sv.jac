@@ -70,13 +70,31 @@ obj Candidate {
 # (no LLM; each is a plain `def` so a test block can call it directly on
 # hand-built objs/nodes attached under root.)
 
-def compute_days_since_contact(last_contact: str, now: datetime) -> int | None {
-    if not last_contact {
+"""Parse an ISO-8601 timestamp permissively: strips a trailing "Z" and drops
+any tzinfo so comparisons against `datetime.now()` (naive) never raise.
+Returns None on anything unparsable instead of propagating."""
+def _parse_naive_utc(ts: str) -> datetime | None {
+    if not ts {
         return None;
     }
+    cleaned = ts;
+    if cleaned.endswith("Z") {
+        cleaned = cleaned[:-1];
+    }
     try {
-        dt = datetime.fromisoformat(last_contact);
-    } except ValueError {
+        dt = datetime.fromisoformat(cleaned);
+    } except (ValueError, TypeError) {
+        return None;
+    }
+    if dt.tzinfo is not None {
+        dt = dt.replace(tzinfo=None);
+    }
+    return dt;
+}
+
+def compute_days_since_contact(last_contact: str, now: datetime) -> int | None {
+    dt = _parse_naive_utc(last_contact);
+    if dt is None {
         return None;
     }
     delta = now - dt;
@@ -100,12 +118,13 @@ def gather_evidence(p: Person, now: datetime) -> list[EvidenceItem] {
             break;
         }
         if i.expires_at {
-            try {
-                exp_dt = datetime.fromisoformat(i.expires_at);
-                if exp_dt < now {
-                    continue;
-                }
-            } except ValueError { }
+            exp_dt = _parse_naive_utc(i.expires_at);
+            if exp_dt is None {
+                continue;   # unparsable expires_at -> skip this intent
+            }
+            if exp_dt < now {
+                continue;   # expired -> skip
+            }
         }
         observed_at = "";
         notes_for_intent = [i <-:AssertsIntent:<-];
@@ -133,12 +152,12 @@ def collect_candidates(me: Me, now: datetime) -> list[Candidate] {
     proposed_people: list[Person] = [];
     proposed_edges: list[Knows] = [];
 
-    persons = [me ->:Knows:->];
-    edges = [edge me ->:Knows:->];
-
-    for i in range(len(persons)) {
-        p = persons[i];
-        e = edges[i];
+    for p in [me ->:Knows:->] {
+        # Never zip parallel node/edge queries by index (no order guarantee
+        # across the two separate traversals) - look up each person's own
+        # Knows edge directly instead.
+        matched = [edge me ->:Knows:-> p];
+        e = matched[0];
         if p.status == "confirmed" and e.status != "proposed" {
             days = compute_days_since_contact(e.last_contact, now);
             known.append(Candidate(person=p, label="known", evidence_items=gather_evidence(p, now), days_since_contact=days));
@@ -179,7 +198,11 @@ def collect_candidates(me: Me, now: datetime) -> list[Candidate] {
     for i in range(len(proposed_people)) {
         p = proposed_people[i];
         e = proposed_edges[i];
-        if jid(p) in route_jids {
+        pid = jid(p);
+        if pid in known_jids {
+            continue;   # already surfaced as known
+        }
+        if pid in route_jids {
             continue;   # already surfaced as a route candidate
         }
         days = compute_days_since_contact(e.last_contact, now);
@@ -228,22 +251,27 @@ def build_candidates_text(candidates: list[Candidate]) -> str {
     return "\n".join(lines);
 }
 
-"""Deterministic fallback used when the batched `by llm` call fails."""
+"""Deterministic fallback used when the batched `by llm` call fails.
+Never reports "medium" with empty evidence: evidence_indices names the
+exact fact/intent items that produced the signal, so `materialize`'s
+evidence-gate (a candidate with no mapped evidence is always "weak") holds."""
 def fallback_rank(candidates: list[Candidate]) -> list[RankedItem] {
     ranked: list[RankedItem] = [];
     idx = 0;
     for c in candidates {
-        has_signal = False;
+        signal_indices: list[int] = [];
+        ei = 0;
         for item in c.evidence_items {
             if item.kind == "intent" or item.kind == "fact" {
-                has_signal = True;
+                signal_indices.append(ei);
             }
+            ei += 1;
         }
         ranked.append(RankedItem(
             index=idx,
-            strength="medium" if has_signal else "weak",
+            strength="medium" if signal_indices else "weak",
             reason="Extraction unavailable; ranked by available evidence.",
-            evidence_indices=[],
+            evidence_indices=signal_indices,
             opener=""
         ));
         idx += 1;
@@ -279,27 +307,52 @@ def _sort_key(item: dict[str, any]) -> tuple[int, int, int] {
 }
 
 """Deterministic materialization: delete this goal's existing RelevantTo
-edges, create fresh ones from `ranked`, and return the report shape
-ordered best-first. `ranked[i].index` selects `candidates[i]`; indices out
-of range are dropped; strength not in the enum normalizes to "weak"."""
+edges, create fresh ones, and return the report shape ordered best-first —
+exactly one entry per candidate, regardless of what `ranked` contains.
+`ranked[i].index` selects `candidates[i]`; indices out of range are dropped;
+duplicate indices keep the first occurrence; a candidate `ranked` never
+mentions gets a default weak/no-ranking entry; strength not in the enum
+normalizes to "weak"; and — the product rule that a matching title alone is
+never more than weak — any candidate whose mapped evidence ends up empty is
+forced back down to "weak" even if the ranker said otherwise."""
 def materialize(goal: Goal, ranked: list[RankedItem], candidates: list[Candidate]) -> list[dict[str, any]] {
     for e in [edge goal <-:RelevantTo:<-] {
         del e;
     }
 
     n = len(candidates);
-    report_items: list[dict[str, any]] = [];
-
+    by_index: dict[int, RankedItem] = {};
     for item in ranked {
         if item.index < 0 or item.index >= n {
             continue;
         }
-        c = candidates[item.index];
-        strength = item.strength if item.strength in ["strong", "medium", "weak"] else "weak";
+        if item.index in by_index {
+            continue;   # dedupe by index: first wins
+        }
+        by_index[item.index] = item;
+    }
+
+    report_items: list[dict[str, any]] = [];
+
+    for idx in range(n) {
+        c = candidates[idx];
+
+        if idx in by_index {
+            item = by_index[idx];
+            strength = item.strength if item.strength in ["strong", "medium", "weak"] else "weak";
+            reason = item.reason;
+            opener = item.opener;
+            evidence_indices = item.evidence_indices;
+        } else {
+            strength = "weak";
+            reason = "No ranking returned for this person.";
+            opener = "";
+            evidence_indices = [];
+        }
 
         ev_out: list[dict[str, any]] = [];
         ev_ids: list[str] = [];
-        for ei in item.evidence_indices {
+        for ei in evidence_indices {
             if ei >= 0 and ei < len(c.evidence_items) {
                 it = c.evidence_items[ei];
                 ev_ids.append(it.id);
@@ -307,17 +360,21 @@ def materialize(goal: Goal, ranked: list[RankedItem], candidates: list[Candidate
             }
         }
 
+        if not ev_ids {
+            strength = "weak";   # strong/medium requires at least one evidence item
+        }
+
         p = c.person;
-        p +>:RelevantTo(reason=item.reason, strength=strength, evidence=ev_ids, opener=item.opener, label=c.label):+> goal;
+        p +>:RelevantTo(reason=reason, strength=strength, evidence=ev_ids, opener=opener, label=c.label):+> goal;
 
         report_items.append({
             "person": p,
             "label": c.label,
             "strength": strength,
-            "reason": item.reason,
+            "reason": reason,
             "evidence": ev_out,
             "days_since_contact": c.days_since_contact,
-            "opener": item.opener
+            "opener": opener
         });
     }
 
