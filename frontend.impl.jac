@@ -272,10 +272,14 @@ impl app.capture_done -> None {
     cap_result = {};
     view = "home";
     refresh();
+    for k in list(RANK_ROWS.keys()) {
+        RANK_ROWS[k] = None;
+        RANK_STALE[k] = True;
+    }
+    publish_rank();
     if gid {
-        RANK_ROWS[gid] = None;
-        publish_rank();
-        ensure_rank(gid);
+        RANK_STALE[gid] = True;
+        ensure_rank(gid, True);
     }
 }
 
@@ -329,8 +333,9 @@ impl app.ensure_rank(goal_id: str, force: bool = False) -> None {
     RANK_ERRORS[goal_id] = "";
     publish_rank();
     out: list[dict] = [];
+    refresh_srv: bool = force or bool(RANK_STALE[goal_id]);
     try {
-        out = await goal_rank(goal_id);
+        out = await goal_rank(goal_id, refresh_srv);
     } except Exception as e {
         RANK_PENDING[goal_id] = False;
         RANK_ERRORS[goal_id] = "Couldn't rank your network for this goal. Tap Re-rank to try again.";
@@ -338,6 +343,7 @@ impl app.ensure_rank(goal_id: str, force: bool = False) -> None {
         return;
     }
     RANK_ROWS[goal_id] = {"ok": True, "rows": out};
+    RANK_STALE[goal_id] = False;
     RANK_PENDING[goal_id] = False;
     publish_rank();
 }

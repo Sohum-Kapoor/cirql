@@ -72,14 +72,14 @@ async def:pub capture(text: str, kind: str) -> dict {
 }
 
 """GoalRank(goal_id) -> [{ person, label, strength, reason, evidence, days_since_contact, opener }]"""
-async def:pub goal_rank(goal_id: str) -> list[dict] {
+async def:pub goal_rank(goal_id: str, refresh: bool = False) -> list[dict] {
     rows: list[dict] = [];
     if mocks_on() {
         await fake_delay(MOCK_DELAY_MS);
         rows = mock_goalrank(goal_id);
         return rows;
     }
-    result = root spawn GoalRank(goal_id=goal_id);
+    result = root spawn GoalRank(goal_id=goal_id, refresh=refresh);
     rows = result.reports;
     return rows;
 }

@@ -37,9 +37,12 @@ glob STEP_LABELS: list[str] = ["About you", "Your card", "Bring five people", "F
 # `publish_rank()` copies them into the reactive `rank_*` mirrors to re-render.
 # RANK_ROWS[goal_id] is {"ok": True, "rows": [...]} when cached (a non-empty wrapper, so an
 # empty ranking still counts as cached), None when invalidated / never ranked.
+# RANK_STALE[goal_id] = True after a new note: the server's cached RelevantTo edges are
+# out of date, so the next rank of that goal asks GoalRank for refresh=True.
 glob RANK_ROWS: dict = {},
      RANK_PENDING: dict = {},
-     RANK_ERRORS: dict = {};
+     RANK_ERRORS: dict = {},
+     RANK_STALE: dict = {};
 
 """Copy of goal `g` with `active` set to whether it is `active_id`."""
 def mark_active(g: dict, active_id: str) -> dict {
