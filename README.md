@@ -57,6 +57,22 @@ jac guide                                                           # the compil
 scripts/jac_pct.sh                                                  # % of code that is Jac (must stay ≥ 40)
 ```
 
+Full demo path over HTTP, two fresh accounts, PASS/WARN/SKIP/FAIL per beat —
+one command for the C2 (midnight) and Sunday rehearsal checks, against any
+running server (local or the hosted tunnel):
+
+```bash
+jac start main.jac &                                       # or point DEMO_BASE at the tunnel
+DEMO_BASE=http://localhost:8000 jac run scripts/demo_check.jac
+```
+
+Env config (all optional): `DEMO_BASE` (default `http://localhost:8000`),
+`DEMO_PASSWORD` (default `demo-pass-123`), `DEMO_SLEEP` seconds slept before
+each model-backed call (default `3`; set `0` when the quota is exhausted and
+every beat will fall back anyway). Exits `1` if any beat FAILed; WARN (LLM
+quota) and SKIP (a later Exchange beat made moot by an earlier one) don't
+fail the run.
+
 Mobile (Capacitor, same bundle) and PWA:
 
 ```bash
