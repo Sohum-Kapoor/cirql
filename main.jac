@@ -26,6 +26,7 @@ import from handshake { OfferHandshake, ListHandshakes, AcceptHandshake, Decline
 import from tend { Tend }
 import from voice { Transcribe }
 import from paths { PathFinder }
+import from merge { ProposeMerges, MergePeople, UndoMerge }
 
 # Client-side UI
 cl {

@@ -206,3 +206,19 @@ node HandshakeOffer {
     has created_at: str = "";
     has expires_at: str = "";
 }
+
+# ---------------------------------------------------------------- Merge (SOH-195)
+
+node MergeRecord {
+    """Under root. One per `MergePeople` call - the removed person's own
+    fields plus a description of every edge that call re-pointed, so
+    `UndoMerge` can recreate the person and move the edges back."""
+    has kept_id: str;
+    has removed_name: str = "";
+    has removed_org: str = "";
+    has removed_title: str = "";
+    has removed_status: str = "";
+    has moved: list[str] = [];
+    has created_at: str = "";
+    has undone: bool = False;
+}
