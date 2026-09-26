@@ -6,7 +6,7 @@ carries a random per-call suffix (`_uid()`) — this guarantees a name is always
 genuinely new, whether this is the first run ever or the hundredth.
 """
 
-import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction, hedge_fact_text, fact_source_kind, specific_follow_up }
+import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction, hedge_fact_text, fact_source_kind, specific_follow_up, promise_is_only_a_want, default_how_met, second_person }
 import from schema { Fact, Intent, Knows, Me, Mentions, Note, Person, Promise, Reported, PromiseTo }
 import uuid;
 import from datetime { datetime }
@@ -511,8 +511,7 @@ test "SOH-166 how_met: an explicit how_met labels NEW Knows edges only; the defa
     seed_note = _fresh_note(f"Met Omar{u} Haddad after the county accessibility panel downtown last night, great chat.");
     omar = resolve_person(f"Omar{u} Haddad", me, seed_note, r0)["person"] as Person;
     old_how = ([edge me ->:Knows:-> omar])[0].how_met;
-    assert old_how.endswith("…"), f"default how_met is cut on a word boundary with an ellipsis, got {old_how}";
-    assert "pane…" not in old_how;
+    assert old_how == f"from a debrief on {seed_note.captured_at[:10]}", f"default how_met is a human line, got {old_how}";
 
     note = _fresh_note(f"Coffee with Lena{u} Vogel and Omar{u} Haddad.");
     x = CaptureExtraction(
@@ -556,4 +555,81 @@ test "SOH-212 a bare 'follow up' promise names what the person wanted in the sam
     pr = (result["promises"] as list[dict[str, any]])[0]["promise"] as Promise;
     assert pr.text == "Follow up on: ROI deck by Fri", pr.text;
     assert pr.due == "Thu";
+}
+
+# ---------------------------------------------------------------- SOH-214
+
+test "SOH-214 a 'promise' that is only the person's want becomes their need; the ROI-deck follow-up stays a promise" {
+    assert promise_is_only_a_want("She wants intros to founders hiring in Chicago", "Priya Nair, recruiter. She wants intros to founders hiring in Chicago.");
+    assert not promise_is_only_a_want("wants ROI deck by Fri", "Dana W, Fleetly ops. wants ROI deck by Fri. Follow up Thu.");
+    assert not promise_is_only_a_want("I said I'd send her the deck she wants", "I said I'd send her the deck she wants.");
+    assert not promise_is_only_a_want("send the scholarship link", "I will send the scholarship link.");
+
+    me = _fresh_me();
+    u = _uid();
+    priya = f"Priya{u} Nair";
+    note = _fresh_note(f"{priya}, recruiter at Hirewell. She wants intros to founders hiring in Chicago.");
+    x = CaptureExtraction(
+        people=[XPerson(name=priya, org="Hirewell", title="recruiter", span=priya)],
+        facts=[], intents=[],
+        promises=[XPromise(to_name=priya, text="intros to founders hiring in Chicago", due="", span="She wants intros to founders hiring in Chicago")],
+        ties=[]
+    );
+    result = apply_extraction(note, me, x);
+    assert len(result["promises"] as list[dict[str, any]]) == 0, "no promise without the speaker's commitment";
+    intents = result["intents"] as list[dict[str, any]];
+    assert len(intents) == 1;
+    it = intents[0]["intent"] as Intent;
+    assert it.kind == "need" and it.text == "intros to founders hiring in Chicago";
+    pid = jid((result["people"] as list[dict[str, any]])[0]["person"] as Person);
+    assert intents[0]["about"] == pid;
+
+    note2 = _fresh_note(f"Dana{u} W, Fleetly ops. wants ROI deck by Fri. Follow up Thu.");
+    x2 = CaptureExtraction(
+        people=[XPerson(name=f"Dana{u} W", org="Fleetly", title="ops", span=f"Dana{u} W")],
+        facts=[], intents=[],
+        promises=[XPromise(to_name=f"Dana{u} W", text="send the ROI deck", due="Fri", span="wants ROI deck by Fri")],
+        ties=[]
+    );
+    r2 = apply_extraction(note2, me, x2);
+    prs = r2["promises"] as list[dict[str, any]];
+    assert len(prs) == 1 and (prs[0]["promise"] as Promise).text == "send the ROI deck";
+}
+
+test "SOH-214 default how_met is a human line, never the raw note" {
+    assert default_how_met("debrief", "2026-09-26T18:00:00") == "from a debrief on 2026-09-26";
+    assert default_how_met("paste", "2026-09-26T18:00:00") == "from a pasted note on 2026-09-26";
+    assert default_how_met("import", "2026-09-26T18:00:00") == "from an import on 2026-09-26";
+    assert default_how_met("about_me", "2026-09-26T18:00:00") == "from your about-me on 2026-09-26";
+
+    me = _fresh_me();
+    u = _uid();
+    note = _fresh_note(f"Dana{u} Whitfield - VP ops at MidWest Cold Chain. Luis runs sales.", kind="paste");
+    x = CaptureExtraction(people=[XPerson(name=f"Dana{u} Whitfield", org="", title="", span=f"Dana{u} Whitfield")], facts=[], intents=[], promises=[], ties=[]);
+    r = apply_extraction(note, me, x);
+    p = (r["people"] as list[dict[str, any]])[0]["person"] as Person;
+    k = ([edge me ->:Knows:-> p])[0];
+    assert k.how_met == f"from a pasted note on {note.captured_at[:10]}", k.how_met;
+    assert "Whitfield" not in k.how_met;
+}
+
+test "SOH-214 second_person: 'the author/speaker/user/writer' becomes 'you' at word boundaries" {
+    assert second_person("Gave the author her card.") == "Gave you her card.";
+    assert second_person("The Speaker was unsure where she works.") == "You were unsure where she works.";
+    assert second_person("Wants THE USER's deck") == "Wants your deck";
+    assert second_person("Owes the writer a call; the author is invited") == "Owes you a call; you are invited";
+    assert second_person("Works with the authority board") == "Works with the authority board", "whole words only";
+    assert second_person("Mentored the users group") == "Mentored the users group";
+
+    me = _fresh_me();
+    u = _uid();
+    note = _fresh_note(f"Lena{u} Vogel gave me her card.");
+    x = CaptureExtraction(
+        people=[XPerson(name=f"Lena{u} Vogel", org="", title="", span=f"Lena{u} Vogel")],
+        facts=[XFact(about_name=f"Lena{u} Vogel", text="Gave the author her card.", span="gave me her card")],
+        intents=[], promises=[], ties=[]
+    );
+    r = apply_extraction(note, me, x);
+    f = (r["facts"] as list[dict[str, any]])[0]["fact"] as Fact;
+    assert f.text == "Gave you her card.", f.text;
 }
