@@ -46,6 +46,10 @@ f +>:FactAbout:+> p;
 a +>:Reported(source_note=jid(note), span=span):+> b;
 ```
 
+## The same James Anderson, without LinkedIn
+
+Two of your friends both know a "James Anderson" who will never install Cirql. Cross-account identity is handled in three layers: (1) the Exchange never needs it before consent, since each agent matches on its own graph and only a count and a strength cross; (2) every person carries blinded identity tokens, keyed hashes of name+org, email, phone and canonical URLs, so two friends' replies can be shown as "likely the same person" without a name crossing and without ever auto-merging; (3) verification comes from the person's own public presence (Enrich, every fact with a URL) and, on the roadmap, from the person themselves through a no-account "that's me" link. Nothing is scraped; a hash is the only thing about a person that is ever compared across accounts.
+
 ## What we can say about privacy (and what we can't)
 
 True: each user's graph is isolated by construction, the only object that ever leaves an account is a card its owner wrote, granted read-only to one specific user, and the model sees only the fields we send it.
