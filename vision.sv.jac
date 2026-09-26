@@ -28,6 +28,7 @@ import os;
 import from uuid { uuid4 }
 
 glob MAX_IMAGE_BYTES: int = 8 * 1024 * 1024;   # 8 MB cap
+glob MAX_IMAGE_B64_CHARS: int = 4 * ((MAX_IMAGE_BYTES + 2) // 3) + 256;   # SOH-211: base64 length of the byte cap + room for a data: prefix, checked BEFORE decoding
 
 # ---------------------------------------------------------------- LLM shape
 
@@ -252,10 +253,20 @@ walker:priv CaptureImage {
             disengage;
         }
 
+        # SOH-211: length check before decoding; strict base64 only.
+        if len(self.image_b64) > MAX_IMAGE_B64_CHARS {
+            report error_shape("too_large");
+            disengage;
+        }
+        b64 = self.image_b64.strip();
+        if b64.startswith("data:") and "," in b64 {
+            b64 = b64[b64.index(",") + 1:];
+        }
+        raw = b"";
         try {
-            raw = base64.b64decode(self.image_b64, validate=False);
+            raw = base64.b64decode(b64, validate=True);
         } except Exception {
-            report error_shape("empty");
+            report error_shape("bad_base64");
             disengage;
         }
 

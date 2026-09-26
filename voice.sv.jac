@@ -32,6 +32,7 @@ import from uuid { uuid4 }
 # ---------------------------------------------------------------- helpers
 
 glob MAX_AUDIO_BYTES: int = 15 * 1024 * 1024;   # 15 MB cap
+glob MAX_AUDIO_B64_CHARS: int = 4 * ((MAX_AUDIO_BYTES + 2) // 3);   # SOH-211: base64 length of the byte cap (~20.97M chars), checked BEFORE decoding
 
 """Pick a file extension from the mime type the client sent. `audio/webm`
 arrives as `audio/webm;codecs=opus` — matched by prefix, not equality."""
@@ -68,14 +69,18 @@ def body_str(body: dict[str, any], key: str) -> str {
 """Decode `audio_b64`, cap it at `MAX_AUDIO_BYTES`, and write it to
 `uploads/<root_id>/<uuid>.<ext>` (relative to the cwd; directories created
 as needed). Returns `{ audio_ref: str, error: str }` — `audio_ref` is ""
-and `error` is `"too_large"` (over the cap) or `"bad_audio"` (unparsable
-base64) on failure; `error` is "" and `audio_ref` is the relative path on
+and `error` is `"too_large"` (over the cap, or over MAX_AUDIO_B64_CHARS
+characters, checked before any decode) or `"bad_base64"` (not strict base64,
+SOH-211) on failure; `error` is "" and `audio_ref` is the relative path on
 success. Never raises."""
 def save_audio(root_id: str, audio_b64: str, mime: str) -> dict[str, str] {
+    if len(audio_b64) > MAX_AUDIO_B64_CHARS {
+        return {"audio_ref": "", "error": "too_large"};
+    }
     try {
-        raw = base64.b64decode(audio_b64, validate=False);
+        raw = base64.b64decode(audio_b64, validate=True);
     } except Exception {
-        return {"audio_ref": "", "error": "bad_audio"};
+        return {"audio_ref": "", "error": "bad_base64"};
     }
 
     if len(raw) > MAX_AUDIO_BYTES {

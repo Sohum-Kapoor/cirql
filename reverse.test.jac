@@ -14,7 +14,7 @@ never leak into another's assertions, and no per-run name suffix is needed.
 `assemble` alone exercises both.
 """
 
-import from reverse { select_candidates, assemble }
+import from reverse { select_candidates, assemble, bounded, REVERSE_MAX_LIMIT }
 import from schema { IntroRequest }
 
 
@@ -154,4 +154,11 @@ test "assemble: own requests never appear even if they would otherwise score" {
 
     result = assemble(requests, scored, [jid(mine)], [], "2026-09-26T12:00:00", 10);
     assert _needs(result) == ["their need"], f"got {_needs(result)}";
+}
+
+test "SOH-211: WhoNeedsWhatIHave's limit is clamped to [0, 25] before it drives model calls" {
+    assert REVERSE_MAX_LIMIT == 25;
+    assert bounded(1000, REVERSE_MAX_LIMIT) == 25;
+    assert bounded(5, REVERSE_MAX_LIMIT) == 5;
+    assert bounded(-3, REVERSE_MAX_LIMIT) == 0;
 }

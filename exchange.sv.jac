@@ -31,9 +31,9 @@ import from datetime { datetime, timedelta }
 import from schema {
     Me, Person, Knows, Fact, FactAbout, Intent, IntentAbout, Note, Asserts,
     AssertsIntent, Card, Owns, FromCard, Exchange, IntroRequest, IntroReply,
-    Posted, RepliedTo, ReplyPrivate
+    Posted, RepliedTo, ReplyPrivate, ClaimedIntro
 }
-import from cards { listed_cards, list_card }
+import from cards { listed_cards, list_card, handle_taken }
 import from scoring { score_against_need }
 import from onboard { handle_from_name, jid_suffix }
 
@@ -212,6 +212,39 @@ def my_person(person_id: str) -> Person | None {
     return None;
 }
 
+"""SOH-211: a request is closed once the requester declined it or it is past
+`expires_at` (same two rules derive_status applies). Every Exchange
+transition after ReplyToRequest refuses a closed request."""
+def request_closed(req: IntroRequest) -> bool {
+    if req.status == "declined" or req.status == "expired" {
+        return True;
+    }
+    if req.expires_at and req.expires_at < now_iso() {
+        return True;
+    }
+    return False;
+}
+
+"""request_closed() for the request a reply answers; False if it can't be read
+(the caller's own not_found/forbidden checks handle that)."""
+def reply_request_closed(reply: IntroReply) -> bool {
+    rq = load(reply.request_id);
+    if isinstance(rq, IntroRequest) and readable(rq) {
+        return request_closed(rq as IntroRequest);
+    }
+    return False;
+}
+
+"""The requester's stored ClaimReveal for this reply (own root only)."""
+def my_claim(reply_id: str) -> ClaimedIntro | None {
+    for c in [root --> [?:ClaimedIntro]] {
+        if c.reply_id == reply_id {
+            return c;
+        }
+    }
+    return None;
+}
+
 def derive_status(req: IntroRequest, replies: list[IntroReply], now: str) -> str {
     if req.status == "declined" {
         return "declined";
@@ -338,6 +371,14 @@ walker:priv ClaimReveal {
             report err("forbidden");
             return;
         }
+        if reply.status == "declined" {
+            report err("reply_declined");
+            return;
+        }
+        if request_closed(req) {
+            report err("request_closed");
+            return;
+        }
         if reply.status != "revealed" or not reply.revealed_card_handle {
             report err("invalid_state");
             return;
@@ -362,6 +403,17 @@ walker:priv ClaimReveal {
             return;
         }
         me = m as Me;
+        # SOH-211: a second ClaimReveal on the same reply reports the stored
+        # draft; no second model call, no second Person.
+        prior = my_claim(self.reply_id);
+        if prior is not None {
+            pc = prior as ClaimedIntro;
+            pp0 = my_person(pc.person_id);
+            if pp0 is not None {
+                report {"person": pp0 as Person, "card": card, "intro_draft": pc.intro_draft};
+                return;
+            }
+        }
         now = now_iso();
 
         headline = card.headline or "";
@@ -417,6 +469,12 @@ walker:priv ClaimReveal {
         }
         if not draft or not draft.strip() {
             draft = intro_template(me.about, req.need, reply.from_handle, card.name, headline, requester_name);
+        }
+        if prior is not None {
+            (prior as ClaimedIntro).person_id = jid(pp);
+            (prior as ClaimedIntro).intro_draft = draft;
+        } else {
+            root ++> ClaimedIntro(reply_id=self.reply_id, person_id=jid(pp), intro_draft=draft);
         }
         report {"person": pp, "card": card, "intro_draft": draft};
     }
@@ -558,6 +616,10 @@ walker:priv ApproveReply {
             return;
         }
         reply = r as IntroReply;
+        if reply_request_closed(reply) {
+            report err("request_closed");
+            return;
+        }
         if reply.status != "pending" {
             report err("invalid_state");
             return;
@@ -580,6 +642,10 @@ walker:priv OptIn {
             return;
         }
         reply = r as IntroReply;
+        if reply_request_closed(reply) {
+            report err("request_closed");
+            return;
+        }
         pv = my_private(self.reply_id);
         if reply.status != "approved" or pv is None or not (pv as ReplyPrivate).match_person_id {
             report err("invalid_state");
@@ -627,6 +693,10 @@ walker:priv Reveal {
             return;
         }
         reply = r as IntroReply;
+        if reply_request_closed(reply) {
+            report err("request_closed");
+            return;
+        }
         pv = my_private(self.reply_id);
         if reply.status != "opted_in" or pv is None {
             report err("invalid_state");
@@ -707,6 +777,10 @@ walker:priv DevMakeCard {
     has reports: list[object] = [];
 
     can go with Root entry {
+        if handle_taken(self.handle, jid(root)) {
+            report err("handle_taken");
+            return;
+        }
         m = my_me();
         if m is None {
             me = (root ++> Me(name=self.name))[0];

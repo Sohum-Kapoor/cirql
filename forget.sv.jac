@@ -69,7 +69,8 @@ def _not_found() -> dict[str, str] {
 
 """Every RelevantTo edge (Person -> Goal) reachable from ANY Goal under the
 caller's own root, whose `evidence` list contains `target_id`: prune the id
-out in place. Returns the number of edges touched. Walks every `Me ->
+out in place, and DELETE the edge when its evidence becomes empty (SOH-211).
+Returns the number of edges touched. Walks every `Me ->
 HasGoal -> Goal` under `root` rather than "the one Me" (`[root --> [?:Me]]
 [0]`) deliberately: `:priv` walkers only ever run on the caller's own root,
 so in real (single-tenant) use there is exactly one Me anyway, and this form
@@ -87,6 +88,11 @@ def _prune_relevant_to_evidence(target_id: str) -> int {
             if target_id in e.evidence {
                 e.evidence = [x for x in e.evidence if x != target_id];
                 count += 1;
+                if not e.evidence {
+                    # SOH-211: a ranking with no evidence left is unsupported;
+                    # delete it so a cached GoalRank cannot serve its strength.
+                    del e;
+                }
             }
         }
     }

@@ -22,7 +22,7 @@ import tempfile;
 glob CARDS_REPO_ROOT = os.path.dirname(os.path.abspath(__file__));
 
 def _cards_harness(tmp_dir: str) -> str {
-    for name in ["cards.sv.jac", "schema.sv.jac", "onboard.sv.jac"] {
+    for name in ["cards.sv.jac", "schema.sv.jac", "onboard.sv.jac", "reads.sv.jac"] {
         shutil.copyfile(os.path.join(CARDS_REPO_ROOT, name), os.path.join(tmp_dir, name));
     }
     harness_path = os.path.join(tmp_dir, "app.jac");

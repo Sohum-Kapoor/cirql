@@ -7,7 +7,6 @@ See AGENTS.md for ownership and workflow.
 
 import from walkers { Ping, GetMe, ListPeople, ListGoals, DevAddPerson }
 import from onboard { OnboardMe }
-import from gate { GateMyRoot, GatePostShared, GateListShared, GateMakeCard, GateReadCard }
 import from capture { Capture }
 import from gaps { GapFinder, GapDevSeed }
 import from goals { GoalRank, SetGoal, CloseGoal }

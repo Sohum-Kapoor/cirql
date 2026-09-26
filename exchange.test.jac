@@ -23,11 +23,15 @@ import subprocess;
 import tempfile;
 import time;
 import requests;
+import sys;
+import from exchange { request_closed }
+import from schema { IntroRequest }
+import from scoring { NeedMatch, NeedMatches }
 
 glob EX_REPO_ROOT = os.path.dirname(os.path.abspath(__file__));
 
 def _ex_harness(tmp_dir: str) -> str {
-    for name in ["exchange.sv.jac", "schema.sv.jac", "scoring.sv.jac", "onboard.sv.jac", "walkers.sv.jac", "cards.sv.jac", "llm.sv.jac", "freshness.sv.jac", "goals.sv.jac"] {
+    for name in ["exchange.sv.jac", "schema.sv.jac", "scoring.sv.jac", "onboard.sv.jac", "walkers.sv.jac", "cards.sv.jac", "llm.sv.jac", "freshness.sv.jac", "goals.sv.jac", "reads.sv.jac"] {
         shutil.copyfile(os.path.join(EX_REPO_ROOT, name), os.path.join(tmp_dir, name));
     }
     harness_path = os.path.join(tmp_dir, "exapp.jac");
@@ -37,6 +41,7 @@ def _ex_harness(tmp_dir: str) -> str {
         "import from onboard { OnboardMe }\n"
         "import from exchange { PostRequest, ListIncomingRequests, ReplyToRequest, ListMyRequests, ListMyReplies, "
         "ApproveReply, OptIn, Reveal, ClaimReveal, DeclineRequest, DeclineReply, DevMakeCard, DevSeedMatch }\n"
+        "import from cards { PublishCard }\n"
     );
     f.close();
     t = open(os.path.join(tmp_dir, "jac.toml"), "w");
@@ -104,6 +109,30 @@ def _err(reports: list[any]) -> str {
     return "";
 }
 
+"""SOH-211: the scorer's fallback is weak-only, so a model-free test can no
+longer reach approve/opt-in/reveal through it. Stand in for the MODEL (not
+the fallback): swap `score_need` in the in-process `scoring` module for a
+stub that answers "medium, citing evidence 0" for every candidate, so
+post_process still runs. Returns the original to restore in `finally`."""
+def _stub_model_medium() -> any {
+    mod = sys.modules.get("scoring");
+    assert mod is not None, "scoring module not loaded in-process";
+    orig = getattr(mod, "score_need");
+    def fake(need: str, candidates_text: str) -> NeedMatches {
+        n = candidates_text.count("Candidate ");
+        return NeedMatches(items=[NeedMatch(index=i, strength="medium", why="Stub: evidence [0] fits.", evidence_indices=[0]) for i in range(n)]);
+    }
+    setattr(mod, "score_need", fake);
+    return orig;
+}
+
+def _restore_model(orig: any) {
+    mod = sys.modules.get("scoring");
+    if mod is not None and orig is not None {
+        setattr(mod, "score_need", orig);
+    }
+}
+
 test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
     tmp_dir = tempfile.mkdtemp();
     client: (JacTestClient | None) = None;
@@ -145,8 +174,13 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
         assert req_id in c_in, c_in;
         assert req_id not in a_in, a_in;
 
-        # B replies: count + strength, no identity.
-        rv = _run(cl, b, "ReplyToRequest", {"request_id": req_id})[0];
+        # B replies: count + strength, no identity. (Model stubbed; see _stub_model_medium.)
+        orig = _stub_model_medium();
+        try {
+            rv = _run(cl, b, "ReplyToRequest", {"request_id": req_id})[0];
+        } finally {
+            _restore_model(orig);
+        }
         print(f"[ex] ReplyToRequest -> {rv}");
         assert "match_person_id" not in dict(rv) and "revealed_card_id" not in dict(rv), rv;
         assert int(rv["match_count"]) >= 0 and str(rv["status"]) == "pending";
@@ -214,9 +248,12 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
         a_priya_id = str(cr["person"]["_jac_id"]);
         assert a_priya_id != b_priya_id;
 
-        # Idempotent claim: no duplicate Person.
+        # Idempotent claim: no duplicate Person, and (SOH-211) the stored draft
+        # comes back instead of a second draft.
         again = _run(cl, a, "ClaimReveal", {"reply_id": reply_id});
         assert str(again[0]["person"]["_jac_id"]) == a_priya_id;
+        assert str(again[0]["intro_draft"]) == str(cr["intro_draft"]), again;
+        assert str(again[0]["card"]["handle"]) == handle, again;
 
         mine2 = _run(cl, a, "ListMyRequests", {});
         a_reports.extend(mine2);
@@ -241,6 +278,9 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
         for p in a_people {
             assert str(p["_jac_id"]) not in b_ids;
         }
+        # SOH-211: a reply the friend declines after reveal can no longer be claimed.
+        assert _run(cl, b, "DeclineReply", {"reply_id": reply_id}) == ["declined"];
+        assert _err(_run(cl, a, "ClaimReveal", {"reply_id": reply_id})) == "reply_declined";
     } finally {
         if client is not None { client.close(); }
         shutil.rmtree(tmp_dir, ignore_errors=True);
@@ -335,6 +375,82 @@ test "exchange: a request whose from_handle equals the friend's handle still rea
         a_in = [str(r["_jac_id"]) for r in _run(cl, a, "ListIncomingRequests", {})];
         assert req_id in b_in, f"same-handle request hidden from friend: {b_in}";
         assert req_id not in a_in, f"own request listed as incoming: {a_in}";
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "exchange SOH-211: request_closed is true for declined, expired, or past expires_at" {
+    open_req = IntroRequest(need="n", from_handle="h", status="open", expires_at="2999-01-01T00:00:00");
+    assert not request_closed(open_req);
+    assert request_closed(IntroRequest(need="n", from_handle="h", status="declined", expires_at="2999-01-01T00:00:00"));
+    assert request_closed(IntroRequest(need="n", from_handle="h", status="expired"));
+    assert request_closed(IntroRequest(need="n", from_handle="h", status="revealed", expires_at="2000-01-01T00:00:00"));
+    assert not request_closed(IntroRequest(need="n", from_handle="h", status="open", expires_at=""));
+}
+
+test "exchange SOH-211: a declined request refuses approve, opt-in, reveal and claim; a declined reply refuses claim" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_ex_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "ex_a6@example.com");
+        b = _reg(cl, "ex_b6@example.com");
+        _run(cl, a, "DevMakeCard", {"handle": "alice-rc", "name": "Alice"});
+        _run(cl, b, "DevMakeCard", {"handle": "bob-rc", "name": "Bob"});
+
+        # Declined reply -> ClaimReveal refuses it (checked before any other state).
+        r1 = str(_run(cl, a, "PostRequest", {"need": "a designer", "about_line": ""})[0]["_jac_id"]);
+        reply1 = str(_run(cl, b, "ReplyToRequest", {"request_id": r1})[0]["_jac_id"]);
+        assert _run(cl, b, "DeclineReply", {"reply_id": reply1}) == ["declined"];
+        assert _err(_run(cl, a, "ClaimReveal", {"reply_id": reply1})) == "reply_declined";
+
+        # Declined request -> every later transition refuses with request_closed.
+        r2 = str(_run(cl, a, "PostRequest", {"need": "a mentor", "about_line": ""})[0]["_jac_id"]);
+        reply2 = str(_run(cl, b, "ReplyToRequest", {"request_id": r2})[0]["_jac_id"]);
+        assert _run(cl, a, "DeclineRequest", {"request_id": r2}) == ["declined"];
+        assert _err(_run(cl, b, "ApproveReply", {"reply_id": reply2})) == "request_closed";
+        assert _err(_run(cl, b, "OptIn", {"reply_id": reply2})) == "request_closed";
+        assert _err(_run(cl, b, "Reveal", {"reply_id": reply2})) == "request_closed";
+        assert _err(_run(cl, a, "ClaimReveal", {"reply_id": reply2})) == "request_closed";
+        # Ownership is still checked first: A is not the reply's owner.
+        assert _err(_run(cl, a, "ApproveReply", {"reply_id": reply2})) == "not_found";
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "exchange SOH-211: a handle listed by one root is refused to every other root" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_ex_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "ex_a7@example.com");
+        b = _reg(cl, "ex_b7@example.com");
+        c = _reg(cl, "ex_c7@example.com");
+        d = _reg(cl, "ex_d7@example.com");
+        e = _reg(cl, "ex_e7@example.com");
+
+        # Neither card is listed yet, so both DevMakeCards succeed.
+        assert str(_run(cl, a, "DevMakeCard", {"handle": "dup-211", "name": "Alice"})[0]["handle"]) == "dup-211";
+        assert str(_run(cl, b, "DevMakeCard", {"handle": "dup-211", "name": "Bob"})[0]["handle"]) == "dup-211";
+        # A lists first and keeps it; republishing by A is fine.
+        assert str(_run(cl, a, "PublishCard", {"visibility": "link"})[0]["handle"]) == "dup-211";
+        assert str(_run(cl, a, "PublishCard", {"about": "again", "visibility": "link"})[0]["handle"]) == "dup-211";
+        # B cannot list the same handle; C cannot even make it.
+        b_pub = _run(cl, b, "PublishCard", {"visibility": "link"});
+        print(f"[ex 211] B PublishCard(dup) -> {b_pub}");
+        assert _err(b_pub) == "handle_taken", b_pub;
+        assert _err(_run(cl, c, "DevMakeCard", {"handle": "dup-211", "name": "Carol"})) == "handle_taken";
+
+        # A handshake_only listing (unreadable to others) still claims its handle.
+        _run(cl, d, "DevMakeCard", {"handle": "hs-211", "name": "Dee"});
+        assert str(_run(cl, d, "PublishCard", {"visibility": "handshake_only"})[0]["handle"]) == "hs-211";
+        assert _err(_run(cl, e, "DevMakeCard", {"handle": "hs-211", "name": "Eve"})) == "handle_taken";
     } finally {
         if client is not None { client.close(); }
         shutil.rmtree(tmp_dir, ignore_errors=True);

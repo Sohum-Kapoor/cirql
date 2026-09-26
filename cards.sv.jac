@@ -12,8 +12,9 @@ stable, unique handle (imported, not copied).
 """
 
 import from datetime { datetime }
-import from schema { Me, Card, Owns, CardDirectory, Lists }
+import from schema { Me, Card, Owns, CardDirectory, Lists, CardListing }
 import from onboard { handle_from_name, jid_suffix }
+import from reads { owner_root }
 
 def now_iso() -> str {
     return datetime.now().isoformat();
@@ -43,12 +44,57 @@ a plain isinstance comprehension because `[n -->][?:T]` is compiled into
 the SAME indexed path query and misses them too."""
 def listed_cards() -> list[Card] {
     out: list[Card] = [];
+    seen: list[str] = [];
     for dir in [x for x in [root.shared -->] if isinstance(x, CardDirectory)] {
-        for c in [x for x in [dir -->] if isinstance(x, Card)] {
-            out.append(c);
+        for x in [dir -->] {
+            if isinstance(x, Card) {
+                k = jid(x);
+                if k not in seen {
+                    seen.append(k);
+                    out.append(x);
+                }
+            } elif isinstance(x, CardListing) {
+                # SOH-211: `[dir -->]` skips every Card the caller cannot read
+                # (a handshake_only card is revoked), so resolve the owner's
+                # public CardListing by id. The listing must be owned by the
+                # same root as the Card, or anyone could list anyone's card.
+                c = listing_card(x);
+                if c is not None {
+                    k = jid(c);
+                    if k not in seen {
+                        seen.append(k);
+                        out.append(c as Card);
+                    }
+                }
+            }
         }
     }
     return out;
+}
+
+"""The Card a CardListing points at, only when both have the same owner root."""
+def listing_card(l: CardListing) -> Card | None {
+    try {
+        n = jobj(l.card_id);
+    } except Exception {
+        return None;
+    }
+    if isinstance(n, Card) and owner_root(n) == owner_root(l) {
+        return n as Card;
+    }
+    return None;
+}
+
+"""SOH-211: True when a Card with this `handle`, owned by a root OTHER than
+`me_root` (dash-less hex, i.e. `jid(root)`), is already listed in the
+CardDirectory. Handles are self-chosen; the first root to list one keeps it."""
+def handle_taken(handle: str, me_root: str) -> bool {
+    for c in listed_cards() {
+        if c.handle == handle and owner_root(c) != me_root {
+            return True;
+        }
+    }
+    return False;
 }
 
 """Attach `card` to the shared CardDirectory (idempotent). Listing is not
@@ -59,6 +105,15 @@ def list_card(card: Card) {
     if not [edge dir ->:Lists:-> card] {
         dir +>:Lists:+> card;
     }
+    cid = jid(card);
+    me_root = jid(root);
+    for x in [dir -->] {
+        if isinstance(x, CardListing) and x.card_id == cid and owner_root(x) == me_root {
+            return;
+        }
+    }
+    listing = (dir ++> CardListing(handle=card.handle, card_id=cid))[0];
+    grant(listing, level=ReadPerm);
 }
 
 walker:priv PublishCard {
@@ -103,6 +158,10 @@ walker:priv PublishCard {
             handle = handle_from_name(self.name or "me") + "-" + jid_suffix(jid(me));
             card = (me +>:Owns:+> Card(handle=handle))[0];
         }
+        if handle_taken(card.handle, jid(root)) {
+            report {"error": "handle_taken"};
+            return;
+        }
 
         if self.headline {
             card.headline = self.headline;
@@ -128,10 +187,7 @@ walker:priv PublishCard {
         card.visibility = self.visibility;
         card.updated_at = now_iso();
 
-        dir = get_card_directory();
-        if not [edge dir ->:Lists:-> card] {
-            dir +>:Lists:+> card;
-        }
+        list_card(card);
         if self.visibility == "link" {
             grant(card, level=ReadPerm);
         } else {
