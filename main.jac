@@ -5,7 +5,7 @@ Client: frontend.cl.jac + frontend.impl.jac, components/, pages/.
 See AGENTS.md for ownership and workflow.
 """
 
-import from walkers { Ping, GetMe, ListPeople, ListGoals }
+import from walkers { Ping, GetMe, ListPeople, ListGoals, DevAddPerson }
 
 # Client-side UI
 cl {
