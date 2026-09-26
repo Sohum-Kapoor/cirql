@@ -166,6 +166,7 @@ def:pub GoalPicker(
     }
 
     def ask_close(e: MouseEvent) {
+        open = False;
         confirming = True;
         adding = False;
     }
