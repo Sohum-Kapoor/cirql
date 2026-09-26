@@ -220,6 +220,18 @@ Bounded traversal over the caller's own root: every Note (text capped at 300 cha
   Reports `["declined"]`, or `[{error: "no_card"|"not_found"|"invalid_state"}]`. An offer addressed to the caller posts a reciprocal `HandshakeOffer(status="declined")` (no reason crosses); the caller's own outgoing offer has its `status` flipped directly (they own it).
 
   Gotchas surfaced fixing this (see AGENTS.md): typed traversals into a container other users attach to (`root.shared`, the `CardDirectory`) can silently miss cross-owner edges after a restart — use `[x for x in [n -->] if isinstance(x, T)]`, proven here with a real two-process `jac start` restart test; a denied `edge_write` (target granted only `ReadPerm`, not `ConnectPerm`) is a SILENT no-op — no exception, just a log line — so `get_or_create_person_from_card` verifies the `FromCard` edge actually landed (untyped traversal from the node the caller owns) before trusting it, rather than trusting a bare `try/except`.
+- 2026-09-26 — SOH-200, `health.sv.jac` (`NetworkHealth`) lands: the shape of the caller's OWN network (PRD Tier 2 #32) — bridges, weak ties, echo-chamber share. `:priv`, own-root only, no `by llm`, fully deterministic. Never a per-person score: every field describes the graph as a whole. Never reads `Knows.last_contact`. Schema: no changes.
+
+  ### `NetworkHealth()` — SOH-200
+  Reports one dict:
+  ```
+  { people: int, confirmed: int, proposed: int, ties: int,
+    clusters: [{ label: str, size: int, sample: [str] }],
+    bridges: [{ person: Person, connects: [str] }],
+    weak_tie_share: float, echo_share: float,
+    notes: [str] }
+  ```
+  `people`/`confirmed`/`proposed` = the caller's own `[me ->:Knows:->]` people, split by `Person.status`. Graph G (this walker's own definition, distinct from `PathFinder`'s route graph) = every `status == "confirmed"` known person as a node, every `Reported` edge between two such nodes read as ONE undirected tie regardless of which direction it was recorded in (`ties` = that count). `clusters` = connected components of G with size >= 2, labeled by the most common non-empty `org` in the component (ties broken alphabetically; "unlabeled" when nobody in the component has an org), `sample` = up to 3 names from the component, largest components first, capped at 8. `bridges` = articulation points of G (a person whose removal splits their component into >= 2 pieces), `connects` = the resulting pieces' labels (same labeling rule as `clusters`, computed per piece), capped at 10. `weak_tie_share` = share of confirmed people with no Reported tie to anyone else in G (isolated), rounded to 2 decimals. `echo_share` = share of confirmed people whose `org` equals the single most common org across ALL confirmed people (not just those with a tie), rounded to 2 decimals, `0.0` when nobody has an org. `notes` = up to 3 plain, deterministic sentences derived from the numbers above (one each, in this order, only when the underlying metric is non-zero/non-empty: the `weak_tie_share` sentence, the `echo_share` sentence, one bridge's two-cluster sentence) — never a sentence that ranks or scores a person. No known people at all → the all-zero/empty shape (`clusters`/`bridges`/`notes` all `[]`, shares `0.0`). `main.jac`: `import from health { NetworkHealth }`.
 - 2026-09-26 — SOH-196, `tend.sv.jac` (`Tend`) lands: reason-based nudges, no timers, no decay (PRD J6). `:priv`, own-root only, no `by llm`. Never reads `Knows.last_contact` to decide inclusion or rank anything except its own `newly_relevant` block's display order — a stale `last_contact` alone, with no other reason, produces no nudge. Schema: no changes.
 
   ### `Tend(limit: int = 8)` — SOH-196

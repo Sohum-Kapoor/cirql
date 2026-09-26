@@ -28,6 +28,7 @@ import from voice { Transcribe }
 import from paths { PathFinder }
 import from merge { ProposeMerges, MergePeople, UndoMerge }
 import from plan { GamePlan }
+import from health { NetworkHealth }
 
 # Client-side UI
 cl {
