@@ -9,7 +9,9 @@
 
 ## 1. Vision
 
-A private relationship memory that lives on your phone. You capture people the moment you meet them, mostly by talking. Agents walk your network instead of searching it: they reorganize it around what you're trying to do right now, they notice when the goal needs someone you have no path to, and then your agent asks your friends' agents — with a person approving every step and no one's graph ever read by anyone else's agent. Every suggestion comes with receipts. Nothing is scraped from platforms that forbid it, relationships never decay, and nobody gets a worth score.
+A private relationship memory that lives on your phone. You meet someone at an event, have a good conversation, and by the time you reach your car everything relevant from it — what they do, what they want, who they mentioned, what you promised — is in your graph, pointing back at the memo. Then the part no contacts app does: Cirql looks at that person *in relation to you*. Who in their network do you already know or share context with? Who in their network could help with what you're working toward, and who in yours could help with what they're working toward? You don't scroll their LinkedIn or wait for them to happen to mention someone; your agent and theirs work it out through the agent layer, each on its own graph, revealing a person only after the people involved say yes. Every meeting compounds the graph. Agents walk your network instead of searching it: they reorganize it around your current goal, notice when the goal needs someone you have no path to, and ask your friends' agents — with a human approving every step and no one's graph ever read by anyone else's agent. Every suggestion comes with receipts. Nothing is scraped from platforms that forbid it, relationships never decay, and nobody gets a worth score.
+
+*What "their network" means here:* the other person's connections enter the picture through **their** participation — their self-authored card, and their own Cirql agent answering your agent's request on their root (and yours answering theirs). Pasting their public profile gives you their bio, not their connections; their connections are never fetched from LinkedIn. That constraint is what makes the two-way ask legitimate, and it's why the Exchange is the center of the product rather than a feature.
 
 **One-liner for judges:** *Other CRMs search your contacts. Cirql's agents walk your network.*
 
@@ -17,7 +19,7 @@ A private relationship memory that lives on your phone. You capture people the m
 1. **Capture** — a 30-second voice memo after you meet someone becomes people, facts, and promises in your graph, each pointing back at the memo.
 2. **Aim** — set a goal ("summer 2027 VC internship"); the graph re-ranks around it with a reason per person.
 3. **Find the gap** — the agent notices the goal needs a kind of person you have no warm path to ("you don't know anyone in climate VC").
-4. **Ask the network** — your agent posts a redacted request; your friends' agents each search *their own* graph; the friend approves, the contact opts in, and only then are cards exchanged and an intro drafted.
+4. **Ask the network** — your agent posts a redacted request; your friends' agents each search *their own* graph; the friend approves, the contact opts in, and only then are cards exchanged and an intro drafted. It runs both ways: after you and someone new connect, each agent can ask the other's "who in your network could help with what I'm working toward?" — so every new relationship compounds the graph without either person searching the other's contacts by hand.
 
 **The three questions** (kept from v0.1): Remember (who is this person to me?), Connect (who in my network should meet, and why now?), Grow (who could help with a goal, and what's a legitimate next step?).
 
@@ -245,7 +247,7 @@ Not done: automated fetching from any platform whose terms forbid it.
 
 ## 14. Build plan
 
-**Split:** A owns `server/` (schema, all walkers, the Exchange protocol). B owns everything client-side, the mobile shell, hosting, voice, seed data, and the demo. Whoever is more comfortable in React takes B.
+**Split:** **A = SK** owns `*.sv.jac` (schema, all walkers, the Exchange protocol). **B = Jesse** owns everything client-side, the mobile shell, hosting, voice, seed data, and the demo.
 
 | When | A (server/) | B (client, shell, demo) | Gate / checkpoint |
 |---|---|---|---|
@@ -302,7 +304,7 @@ Not done: automated fetching from any platform whose terms forbid it.
 | Hosting: Hammer sandbox (persistence, cl bundle, HTTPS, domain) vs VM | B | 15:30 |
 | Stage phone: iPhone (Xcode, signing) vs Android | both | 15:30 |
 | Gemini + ElevenLabs credit links from Discord | A | 15:30 |
-| Who is A / who is B | both | now |
+| Who is A / who is B | both | **Decided: A = SK, B = Jesse** |
 | Teammate consents to being named in the demo and video | both | now |
 | Cirql as the shipped name (working name now) | both | before video |
 

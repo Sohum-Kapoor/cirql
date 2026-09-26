@@ -7,8 +7,10 @@ the single source of truth for **how** we work. **What** we're building is
 
 ## The project in three lines
 
-Cirql is a personal CRM where AI agents walk your relationship graph. Loop:
-Capture → Aim → Find the gap → Ask the network. Built in Jac for JacHacks UMich
+Cirql is a personal CRM where AI agents walk your relationship graph. Meet someone,
+capture the conversation, and let the two agents work out — each on its own graph —
+who in either network could help the other. Loop: Capture → Aim → Find the gap →
+Ask the network (both ways). Built in Jac for JacHacks UMich
 (Sept 26–27, 2026); hard deadline Sunday 11:30 AM, ≥40% of the code must be Jac.
 
 ## Ownership — by file, not by feature
@@ -19,8 +21,8 @@ comment and the owner makes it.
 
 | Owner | Owns | Never touches |
 |---|---|---|
-| **A** (graph & walkers) | `schema.sv.jac`, every other `*.sv.jac`, `*.sv.impl.jac`, `*.test.jac` for server code, `seed/load.jac` | anything client-side |
-| **B** (client, shell, hosting, voice, demo) | `frontend.cl.jac`, `*.impl.jac` for client, `components/`, `pages/`, `assets/`, `seed/*.json`, `[plugins.client.*]` in `jac.toml`, hosting, video, Devpost | any `*.sv.jac` |
+| **A = SK** (graph & walkers) | `schema.sv.jac`, every other `*.sv.jac`, `*.sv.impl.jac`, `*.test.jac` for server code, `seed/load.jac` | anything client-side |
+| **B = Jesse** (client, shell, hosting, voice, demo) | `frontend.cl.jac`, `*.impl.jac` for client, `components/`, `pages/`, `assets/`, `seed/*.json`, `[plugins.client.*]` in `jac.toml`, hosting, video, Devpost | any `*.sv.jac` |
 | **Shared, append-only** | `contracts/walkers.md` | — |
 | **Announce before editing** | `main.jac` (A), `jac.toml` outside `[plugins.client.*]` (A), `docs/PRD.md` (both, only at a sync) | — |
 
