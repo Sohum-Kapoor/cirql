@@ -10,6 +10,7 @@ import from onboard { OnboardMe }
 import from gate { GateMyRoot, GatePostShared, GateListShared, GateMakeCard, GateReadCard }
 import from capture { Capture }
 import from gaps { GapFinder, GapDevSeed }
+import from goals { GoalRank, SetGoal, CloseGoal }
 
 # Client-side UI
 cl {
