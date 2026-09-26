@@ -94,7 +94,7 @@ def:pub PhotoCapture(
     }
 
     return
-        <div className="flex flex-col gap-1">
+        <div className="relative">
             <input
                 ref={fileRef}
                 type="file"
@@ -119,7 +119,7 @@ def:pub PhotoCapture(
                 </svg>
                 <span className="text-caption">{"Reading…" if busy else "Scan a badge"}</span>
             </Button>
-            {busy and <p aria-live="polite" className="text-caption text-muted-foreground">Reading the badge…</p>}
-            {message and <p role="alert" className="text-caption text-destructive">{message}</p>}
+            {busy and <p aria-live="polite" className="absolute top-full right-0 z-10 mt-1 w-max rounded-md border bg-popover pt-1.5 pb-1.5 pl-2.5 pr-2.5 text-caption text-muted-foreground shadow-edge">Reading the badge…</p>}
+            {message and <p role="alert" className="absolute top-full right-0 z-10 mt-1 w-64 max-w-[calc(100vw_-_32px)] rounded-md border bg-popover pt-1.5 pb-1.5 pl-2.5 pr-2.5 text-caption text-destructive shadow-edge">{message}</p>}
         </div>;
 }

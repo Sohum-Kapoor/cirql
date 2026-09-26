@@ -71,8 +71,8 @@ def:pub CaptureForm(
                 <h1 className="text-card-title">Capture</h1>
             </header>
             <Tabs value={kind} onValueChange={handle_kind}>
-                <div className="flex flex-wrap items-start gap-2">
-                    <TabsList aria-label="Note kind" className="min-w-40 flex-1">
+                <div className="flex items-center gap-2">
+                    <TabsList aria-label="Note kind" className="flex-1">
                         <TabsTrigger value="debrief" disabled={pending}>Debrief</TabsTrigger>
                         <TabsTrigger value="paste" disabled={pending}>Paste</TabsTrigger>
                     </TabsList>
