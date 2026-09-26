@@ -66,10 +66,13 @@ walker:priv PublishCard {
     non-empty arguments overwrite fields; `visibility` is always applied and
     must be "link" or "handshake_only". `link` grants the Card read-only to
     every user and lists it in the shared CardDirectory so get_card can find
-    it by handle; `handshake_only` unlists it and revokes the grant (this
-    runtime DOES have `revoke()`, so it is used here — belt and suspenders:
-    get_card also refuses anything but visibility=="link" on its own, so a
-    stale grant can never leak a handshake_only card)."""
+    it by handle; `handshake_only` revokes the public grant only — it stays
+    LISTED in the directory either way (SOH-183: the missing grant is what
+    protects a handshake_only card, not unlisting; a handshake handle needs
+    to be found in the directory by the other side of a scan before either
+    of them has granted anything). get_card also refuses anything but
+    visibility=="link" on its own, so a stale grant can never leak a
+    handshake_only card through that path)."""
     has headline: str = "";
     has about: str = "";
     has looking_for: list[str] = [];
@@ -126,15 +129,12 @@ walker:priv PublishCard {
         card.updated_at = now_iso();
 
         dir = get_card_directory();
+        if not [edge dir ->:Lists:-> card] {
+            dir +>:Lists:+> card;
+        }
         if self.visibility == "link" {
             grant(card, level=ReadPerm);
-            if not [edge dir ->:Lists:-> card] {
-                dir +>:Lists:+> card;
-            }
         } else {
-            for e in [edge dir ->:Lists:-> card] {
-                del e;
-            }
             revoke(card);
         }
 

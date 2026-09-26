@@ -197,3 +197,12 @@ node CardDirectory {
 }
 
 edge Lists: CardDirectory --> Card {}
+
+node HandshakeOffer {
+    """One per scan, under root.shared. Carries two handles and a status; never a name from anyone's graph."""
+    has from_handle: str;
+    has to_handle: str;
+    has status: str = "offered";     # offered | accepted | declined | expired
+    has created_at: str = "";
+    has expires_at: str = "";
+}
