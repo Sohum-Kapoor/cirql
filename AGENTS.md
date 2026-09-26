@@ -137,3 +137,4 @@ add it to this file under "Gotchas" — one line, with the fix.
 - `revoke(node)` undoes a public `grant` (ambient, no import). Still enforce visibility in the reader as defense in depth.
 - Tests in one `*.test.jac` share a persisted root across runs: filter results by a per-run id (e.g. `source_note_id == jid(note)`), never by a text you reuse.
 - No tuple unpacking (`a, b = f()`): return a dict. Module-level lists need `glob`. Importing plain defs across `*.sv.jac` (`import from goals { _parse_naive_utc }`) works; prefer it to copying helpers.
+- Never take `[root --> [?:Me]][0]` inside a helper that tests call on the shared root; walk `[root --> [?:Me] ->:HasGoal:->]` style paths instead. Comparing a `dict[str, any]` value needs a cast: `(d["n"] as int) >= 2` (E1110).
