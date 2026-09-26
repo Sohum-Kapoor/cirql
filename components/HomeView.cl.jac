@@ -18,6 +18,9 @@ import from .ui.dropdown_menu {
 }
 import from .ui.icons { MoreIcon, ChevronRightIcon }
 import from .settings.AppearanceSheet { AppearanceSheet }
+import from .ui.tabs { Tabs, TabsList, TabsTrigger, TabsContent }
+import from .person.PersonSheet { PersonSheet }
+import from .promises.Today { Today }
 import from .goals.GoalPicker { GoalPicker }
 import from .goals.RankList { RankList, RankSkeleton, is_partial }
 import from .exchange.GapAlert { GapAlerts }
@@ -68,7 +71,32 @@ def:pub HomeView(
         onCapture();
     }
 
-    has appearance_open: bool = False;
+    has appearance_open: bool = False,
+        home_tab: str = "home",
+        sheet_person_id: str = "",
+        sheet_open: bool = False,
+        today_key: int = 0,
+        forgotten_ids: list[str] = [];
+
+    # Person sheet (SOH-207): opened from a ranked row or a Today promise.
+    def open_person(pid: str) -> None {
+        sheet_person_id = pid;
+        sheet_open = True;
+    }
+
+    def close_person() -> None {
+        sheet_open = False;
+        today_key = today_key + 1;
+    }
+
+    def person_forgotten(pid: str) -> None {
+        forgotten_ids = forgotten_ids + [pid];
+        onRefresh();
+    }
+
+    def set_home_tab(v: str) -> None {
+        home_tab = v;
+    }
 
     def handle_refresh(e: any) {
         onRefresh();
@@ -122,6 +150,7 @@ def:pub HomeView(
 
     has_active: bool = len([g for g in goals if g["active"]]) > 0;
     partial: bool = is_partial(rank_rows);
+    shown_rows: list[dict] = [r for r in rank_rows if ((r["person"] or {})["_jac_id"] or "") not in forgotten_ids];
 
     return
         <div className="flex flex-col gap-6 pb-24">
@@ -154,6 +183,16 @@ def:pub HomeView(
                         {"Stop acting as friend" if as_friend else "Act as friend"}
                     </Button>
                 </div>}
+            <PersonSheet person_id={sheet_person_id} open={sheet_open} on_close={close_person} on_forgotten={person_forgotten} />
+            <Tabs value={home_tab} onValueChange={set_home_tab} className="gap-6">
+            <TabsList aria-label="View" className="w-full">
+                <TabsTrigger value="home">Home</TabsTrigger>
+                <TabsTrigger value="today">Today</TabsTrigger>
+            </TabsList>
+            <TabsContent value="today">
+                <Today on_open_person={open_person} refresh_key={today_key} />
+            </TabsContent>
+            <TabsContent value="home" className="flex flex-col gap-6">
             <AsksSection incoming={incoming} friend={friend} onOpen={do_open_ask} />
             {if not goals_loaded {
                 <div role="status" aria-label="Loading your goals" className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
@@ -194,7 +233,7 @@ def:pub HomeView(
                             Ranking is partial right now — tap Re-rank in a minute.
                         </p>}
                     {if len(rank_rows) > 0 {
-                        <RankList rows={rank_rows} dim={rank_pending} />
+                        <RankList rows={shown_rows} dim={rank_pending} on_open_person={open_person} />
                     } elif rank_pending or not rank_cached {
                         <RankSkeleton />
                     } elif not rank_error {
@@ -253,6 +292,8 @@ def:pub HomeView(
                     }}
                 </CollapsibleContent>
             </Collapsible>
+            </TabsContent>
+            </Tabs>
             {status and <p className="text-caption text-muted-foreground">{status}</p>}
             <div className="fixed inset-x-0 bottom-0 z-10 border-t bg-background/85 backdrop-blur">
                 <div className="mx-auto w-full max-w-md pt-3 pl-4 pr-4 pb-[max(16px,env(safe-area-inset-bottom))]">

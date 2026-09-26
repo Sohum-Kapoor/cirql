@@ -83,7 +83,12 @@ def:pub EvidenceChip(
         </Button>;
 }
 
-def:pub RankRow(row: dict, open_key: str, onToggle: Callable[[str], None]) -> JsxElement {
+def:pub RankRow(
+    row: dict,
+    open_key: str,
+    onToggle: Callable[[str], None],
+    on_open_person: Callable[[str], None] | None = None
+) -> JsxElement {
     person: dict = (row["person"] or {}) as dict;
     pid: str = (person["_jac_id"] or person["name"] or "") as str;
     sub: str = join_with([s for s in [(person["title"] or "") as str, (person["org"] or "") as str] if s], ", ");
@@ -98,13 +103,37 @@ def:pub RankRow(row: dict, open_key: str, onToggle: Callable[[str], None]) -> Js
     }
     has_open: bool = open_key.startswith(pid + ":");
 
+    # Row tap opens the person sheet; taps on the row's own buttons/links don't.
+    def handle_row(e: MouseEvent) {
+        target: any = e.target;
+        if on_open_person and person["_jac_id"] and not target.closest("button, a") {
+            on_open_person(person["_jac_id"] as str);
+        }
+    }
+
+    def handle_name(e: MouseEvent) {
+        if on_open_person and person["_jac_id"] {
+            on_open_person(person["_jac_id"] as str);
+        }
+    }
+
     return
-        <li className="flex flex-col gap-2 pt-3 pb-3 pl-4 pr-4">
+        <li
+            className={cn("flex flex-col gap-2 pt-3 pb-3 pl-4 pr-4", "cursor-pointer hover:bg-secondary/50" if on_open_person else "")}
+            onClick={handle_row}
+        >
             <div className="flex items-start justify-between gap-2">
-                <div className="flex min-w-0 flex-col">
-                    <span className="truncate text-body font-medium">{person["name"] as str}</span>
-                    {sub and <span className="truncate text-caption text-muted-foreground">{sub}</span>}
-                </div>
+                {if on_open_person {
+                    <button type="button" className="flex min-w-0 flex-col rounded-xs text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50" onClick={handle_name}>
+                        <span className="truncate text-body font-medium">{person["name"] as str}</span>
+                        {sub and <span className="truncate text-caption text-muted-foreground">{sub}</span>}
+                    </button>
+                } else {
+                    <div className="flex min-w-0 flex-col">
+                        <span className="truncate text-body font-medium">{person["name"] as str}</span>
+                        {sub and <span className="truncate text-caption text-muted-foreground">{sub}</span>}
+                    </div>
+                }}
                 <div className="flex shrink-0 gap-1">
                     <Badge variant={strength_variant(row["strength"] as str)}>{row["strength"] as str}</Badge>
                     <Badge variant="outline">{row["label"] as str}</Badge>
@@ -130,7 +159,7 @@ def:pub RankRow(row: dict, open_key: str, onToggle: Callable[[str], None]) -> Js
 }
 
 """The ranked list. Owns only which evidence chip is open."""
-def:pub RankList(rows: list[dict], dim: bool = False) -> JsxElement {
+def:pub RankList(rows: list[dict], dim: bool = False, on_open_person: Callable[[str], None] | None = None) -> JsxElement {
     has open_key: str = "";
 
     def toggle(key: str) -> None {
@@ -151,6 +180,7 @@ def:pub RankList(rows: list[dict], dim: bool = False) -> JsxElement {
                     row={row}
                     open_key={open_key}
                     onToggle={toggle}
+                    on_open_person={on_open_person}
                 />
             }}
         </ul>;
