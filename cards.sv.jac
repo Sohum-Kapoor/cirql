@@ -89,8 +89,9 @@ def listing_card(l: CardListing) -> Card | None {
 `me_root` (dash-less hex, i.e. `jid(root)`), is already listed in the
 CardDirectory. Handles are self-chosen; the first root to list one keeps it."""
 def handle_taken(handle: str, me_root: str) -> bool {
+    want = handle.strip().lower();
     for c in listed_cards() {
-        if c.handle == handle and owner_root(c) != me_root {
+        if c.handle.strip().lower() == want and owner_root(c) != me_root {
             return True;
         }
     }
@@ -102,7 +103,9 @@ granting: get_card still refuses anything but visibility == "link", and the
 fields stay closed unless the owner granted them."""
 def list_card(card: Card) {
     dir = get_card_directory();
-    if not [edge dir ->:Lists:-> card] {
+    # Untyped: a typed traversal on the shared directory drops edges other
+    # roots attached after a restart (AGENTS.md gotcha) and would re-list.
+    if card not in [x for x in [dir -->] if isinstance(x, Card)] {
         dir +>:Lists:+> card;
     }
     cid = jid(card);
