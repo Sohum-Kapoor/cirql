@@ -27,6 +27,7 @@ import from tend { Tend }
 import from voice { Transcribe }
 import from paths { PathFinder }
 import from merge { ProposeMerges, MergePeople, UndoMerge }
+import from plan { GamePlan }
 
 # Client-side UI
 cl {
