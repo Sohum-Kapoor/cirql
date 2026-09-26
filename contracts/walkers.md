@@ -121,3 +121,30 @@ Reports `[Introduction]` with the new state, or reports `{ error: "invalid_trans
 - 2026-09-26 — SOH-178 `PublishCard` + `get_card`, the only public read.
   `PublishCard(headline: str = "", about: str = "", looking_for: list[str] = [], can_offer: list[str] = [], links: list[str] = [], contact_pref: str = "", visibility: str = "link", name: str = "")` (`walker:priv`) → `[Card]`. Get-or-creates the caller's Me/Card; only non-empty arguments overwrite fields, `visibility` is always applied (`link` | `handshake_only`, else reports `[{error: "bad_visibility"}]`). `link` grants the Card `ReadPerm` to every user and lists it under the shared `CardDirectory`; `handshake_only` unlists it and `revoke()`s the grant.
   `get_card(handle: str)` (`def:pub` — no JWT, served at `POST /function/get_card`) → `{ found: bool, name, handle, headline, about, looking_for, can_offer, links, contact_pref, updated_at }`. Card fields only — never `visibility`, `_jac_id`, or anything else off the Card node — and `found: false` with empty fields when no `link`-visible card matches the handle (including a `handshake_only` card, enforced inside `get_card` itself, not only by the grant). Schema: adds `node CardDirectory` (one, under `root.shared`) and `edge Lists: CardDirectory --> Card {}`.
+- 2026-09-26 16:20 — SOH-186/187/185, `reads.sv.jac` lands. All four are `:priv`, own-root only, no LLM.
+
+### `Receipt(id: str)` — SOH-186
+Reports one object:
+```
+{ kind: "note"|"fact"|"intent"|"promise"|"person"|"card"|"goal", id: str, text: str,
+  source_note_id: str, span: str, note_text: str, captured_at: str,
+  source_kind: str, source_url: str }
+```
+or `{ error: "not_found" }` — for an unknown id, an id that resolves but isn't readable, or an id that resolves and is readable but is owned by a different root (e.g. a Card allow_root'ed to us via Exchange: Receipt never surfaces another account's data even when it's grantable-readable). `text` is the node's own text/name/handle; empty strings where a field doesn't apply to that kind. Fact/Intent/Promise carry the asserting Note's id/text/captured_at and the `Asserts*` edge's span; Person prefers its own `Mentions` edge span, else falls back to its `Knows` edge's `source_note`; Note reports itself; Card reports `source_kind: "self"`, no note; Goal reports text only.
+
+### `ListPromises()` — SOH-187
+```
+[{ promise: Promise, to: Person | null, source_note_id: str, span: str }]
+```
+Open (`done == False`) first, ordered by `due` ascending with `""` last; then done ones (same due ordering within the group).
+
+### `CompletePromise(promise_id: str, done: bool = True)` — SOH-187
+Reports `[Promise]`, or `[{ error: "not_found" }]` for an unknown/unowned id (same ownership rule as `Receipt`).
+
+### `GraphView(goal_id: str = "")` — SOH-185
+Reports one dict:
+```
+{ nodes: [{ id: str, kind: "me"|"person"|"goal", label: str, status: str, org: str, title: str }],
+  edges: [{ from: str, to: str, kind: "knows"|"reported"|"relevant_to", label: str, strength: str }] }
+```
+Nodes: Me, every `Knows` Person (capped at 300), and the chosen Goal (the given `goal_id` if it matches one of the caller's goals, else the caller's active goal, else no goal node at all — no goal, no `relevant_to` edges). Edges: every `Knows` (`label` = `how_met`, `strength` = `Knows.status`), every `Reported` between two included people (`label` = `"reported"`, `strength` = `""`), every `RelevantTo` into the chosen goal (`label`/`strength` copied off the edge).
