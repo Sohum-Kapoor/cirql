@@ -9,6 +9,12 @@ Views: auth -> loading (GetMe) -> onboarding (4 steps) | home.
 home -> capture (form, Capture call) -> review (extraction + source chips) -> home.
 home = goal picker (ListGoals / SetGoal / CloseGoal) + GoalRank for the active
 goal, cached per goal_id for the session (SOH-170) + people list.
+Exchange (SOH-172): home also shows GapFinder alerts for the active goal (cached
+per goal_id, run after GoalRank because it reads the RelevantTo edges), "Your
+asks" (ListMyRequests) and "Asks from friends" (ListIncomingRequests).
+home -> request (requester's detail + reveal card) | ask (friend's approval card).
+Polling (5 s) only while home / a request detail is on screen; see Poller.
+TODO(SOH-172): Matchmaker fallback second act skipped — the 9 PM gate passed.
 """
 
 import from "@jac/runtime" { jacLogin, jacSignup, jacLogout, jacIsLoggedIn }
@@ -23,7 +29,15 @@ import from .components.onboarding.PeopleStep { PeopleStep }
 import from .components.onboarding.RecallStep { RecallStep }
 import from .components.capture.CaptureForm { CaptureForm }
 import from .components.capture.Review { Review }
-import from .components.api { onboard_me, capture, goal_rank, list_people, list_goals, set_goal, close_goal }
+import from .components.api { onboard_me, capture, goal_rank, list_people, list_goals, set_goal, close_goal, mocks_on }
+import from .components.api {
+    gap_finder, publish_card, post_request, list_my_requests, decline_request, claim_reveal,
+    list_incoming_requests, reply_to_request, approve_reply, opt_in, reveal, decline_reply
+}
+import from .components.mocks.exchange { mock_as_friend, mock_set_as_friend }
+import from .components.exchange.common { Poller, req_active }
+import from .components.exchange.Requests { RequestDetail }
+import from .components.exchange.Inbox { ApprovalView }
 import from .lib.text { join_lines }
 
 sv import from walkers { GetMe }
@@ -43,6 +57,79 @@ glob RANK_ROWS: dict = {},
      RANK_PENDING: dict = {},
      RANK_ERRORS: dict = {},
      RANK_STALE: dict = {};
+
+# GapFinder cache, keyed by goal_id — same shape and rules as RANK_* above.
+glob GAP_ROWS: dict = {},
+     GAP_PENDING: dict = {},
+     GAP_ERRORS: dict = {};
+
+# Exchange state (SOH-172). Module-level for the same stale-snapshot reason;
+# `publish_ex()` copies it into the reactive `ex` mirror.
+#   mine: ListMyRequests rows, newest first     incoming: ListIncomingRequests
+#   friend[request_id]: this session's reply in progress (the request leaves
+#     ListIncomingRequests once answered) — { request, reply, draft, revealed_handle, error, busy }
+#   claims[reply_id]: ClaimReveal result or { error }; claiming[reply_id]: in flight
+glob EX: dict = {"mine": [], "incoming": [], "friend": {}, "claims": {}, "claiming": {}, "mine_busy": False, "inc_busy": False};
+
+def empty_ex() -> dict {
+    return {"mine": [], "incoming": [], "friend": {}, "claims": {}, "claiming": {}, "mine_busy": False, "inc_busy": False};
+}
+
+def _by_created(item: dict) -> str {
+    return ((item["request"] or {})["created_at"] or "") as str;
+}
+
+def friend_get(rid: str) -> dict {
+    return {**((EX["friend"][rid] or {}) as dict)};
+}
+
+def friend_put(rid: str, ent: dict) -> None {
+    fr: dict = {**(EX["friend"] as dict)};
+    fr[rid] = ent;
+    EX["friend"] = fr;
+}
+
+def err_text(code: str) -> str {
+    if code == "no_card" {
+        return "You need a card first — finish onboarding.";
+    }
+    if code == "not_found" {
+        return "That ask is gone (withdrawn or expired).";
+    }
+    if code == "invalid_state" {
+        return "That step already happened or isn't possible yet — go back and reopen it.";
+    }
+    if code == "forbidden" {
+        return "That isn't yours to change.";
+    }
+    return "Something went wrong (" + code + ").";
+}
+
+"""First sentence of an about-me, capped — the ask sheet's default one-liner."""
+def first_line(text: str) -> str {
+    t: str = text.strip();
+    cut: int = t.index(". ") if ". " in t else len(t);
+    line: str = t[:cut].strip().rstrip(".");
+    return line[:117] + "…" if len(line) > 120 else line;
+}
+
+"""Does any ask still need polling (moving, or revealed but not yet claimed)?"""
+def mine_wants_poll(mine: list[dict], claims: dict) -> bool {
+    for item in mine {
+        st: str = ((item["request"] or {})["status"] or "") as str;
+        if req_active(st) {
+            return True;
+        }
+        if st == "revealed" {
+            for r in (item["replies"] or []) as list[dict] {
+                if r["status"] == "revealed" and not (claims[r["_jac_id"]] or {})["card"] {
+                    return True;
+                }
+            }
+        }
+    }
+    return False;
+}
 
 """Copy of goal `g` with `active` set to whether it is `active_id`."""
 def mark_active(g: dict, active_id: str) -> dict {
@@ -96,7 +183,20 @@ def:pub app -> JsxElement {
         goal_error: str = "",
         rank_cache: dict = {},
         rank_pending_map: dict = {},
-        rank_error_map: dict = {};
+        rank_error_map: dict = {},
+        gap_cache: dict = {},
+        gap_pending_map: dict = {},
+        gap_error_map: dict = {},
+        ex: dict = empty_ex(),
+        open_req_id: str = "",
+        open_ask_id: str = "",
+        ask_busy: bool = False,
+        ask_error: str = "",
+        req_busy: bool = False,
+        req_error: str = "",
+        me_name: str = "",
+        me_about: str = "",
+        as_friend: bool = False;
 
     can with entry {
         if jacIsLoggedIn() {
@@ -129,6 +229,26 @@ def:pub app -> JsxElement {
     async def create_goal(text: str) -> None;
     async def end_goal(goal_id: str) -> None;
     def rerank -> None;
+    def publish_gaps -> None;
+    async def ensure_gaps(goal_id: str, force: bool = False) -> None;
+    def retry_gaps -> None;
+    def publish_ex -> None;
+    async def load_mine -> None;
+    async def load_incoming -> None;
+    def poll_home -> None;
+    def poll_request -> None;
+    async def post_ask(need: str, about_line: str) -> None;
+    def open_request(rid: str) -> None;
+    async def cancel_request(rid: str) -> None;
+    async def claim(reply_id: str) -> None;
+    def open_ask(rid: str) -> None;
+    async def friend_check(rid: str) -> None;
+    async def friend_approve(rid: str) -> None;
+    async def friend_opt_in(rid: str) -> None;
+    async def friend_reveal(rid: str) -> None;
+    async def friend_decline(rid: str) -> None;
+    def back_home -> None;
+    def toggle_as_friend -> None;
 
     goals: list[dict] = (onboard["goals"] or []) as list[dict];
     interests: list[dict] = (onboard["interests"] or []) as list[dict];
@@ -138,6 +258,28 @@ def:pub app -> JsxElement {
     home_entry: dict = (rank_cache[home_goal_id] or {}) as dict if home_goal_id else {};
     home_cached: bool = True if home_entry["ok"] else False;
     home_rows: list[dict] = (home_entry["rows"] or []) as list[dict];
+    gap_entry: dict = (gap_cache[home_goal_id] or {}) as dict if home_goal_id else {};
+    home_gaps: list[dict] = (gap_entry["rows"] or []) as list[dict];
+    ex_mine: list[dict] = (ex["mine"] or []) as list[dict];
+    ex_claims: dict = (ex["claims"] or {}) as dict;
+    asked: dict = {};
+    for item in ex_mine {
+        req: dict = (item["request"] or {}) as dict;
+        st: str = (req["status"] or "") as str;
+        if st != "declined" and st != "expired" {
+            asked[req["need"]] = st;
+        }
+    }
+    default_about: str = ((card["headline"] or "") as str) or first_line(me_about);
+    open_item: dict = {};
+    for item in ex_mine {
+        if (item["request"] or {})["_jac_id"] == open_req_id {
+            open_item = item;
+        }
+    }
+    open_ask_entry: dict = ((ex["friend"] or {})[open_ask_id] or {}) as dict if open_ask_id else {};
+    poll_home_on: bool = view == "home";
+    poll_req_on: bool = view == "request" and mine_wants_poll(ex_mine, ex_claims);
 
     return
         <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 pt-6 pb-10 pl-4 pr-4">
@@ -175,6 +317,47 @@ def:pub app -> JsxElement {
                     onCreateGoal={create_goal}
                     onCloseGoal={end_goal}
                     onRerank={rerank}
+                    gaps={home_gaps}
+                    gaps_pending={True if home_goal_id and gap_pending_map[home_goal_id] else False}
+                    gaps_error={((gap_error_map[home_goal_id] or "") as str) if home_goal_id else ""}
+                    asked={asked}
+                    default_about={default_about}
+                    ask_busy={ask_busy}
+                    ask_error={ask_error}
+                    mine={ex_mine}
+                    claims={ex_claims}
+                    incoming={(ex["incoming"] or []) as list[dict]}
+                    friend={(ex["friend"] or {}) as dict}
+                    mock_mode={mocks_on()}
+                    as_friend={as_friend}
+                    onAsk={post_ask}
+                    onRetryGaps={retry_gaps}
+                    onOpenRequest={open_request}
+                    onOpenAsk={open_ask}
+                    onToggleFriend={toggle_as_friend}
+                />
+            } elif view == "request" {
+                <RequestDetail
+                    key={"request-" + open_req_id}
+                    item={open_item}
+                    claims={ex_claims}
+                    claiming={(ex["claiming"] or {}) as dict}
+                    busy={req_busy}
+                    error={req_error}
+                    onBack={back_home}
+                    onCancel={cancel_request}
+                    onClaim={claim}
+                />
+            } elif view == "ask" {
+                <ApprovalView
+                    key={"ask-" + open_ask_id}
+                    ask={open_ask_entry}
+                    onBack={back_home}
+                    onCheck={friend_check}
+                    onApprove={friend_approve}
+                    onOptIn={friend_opt_in}
+                    onReveal={friend_reveal}
+                    onDecline={friend_decline}
                 />
             } elif view == "capture" {
                 <CaptureForm
@@ -240,5 +423,7 @@ def:pub app -> JsxElement {
                     />
                 }
             }}
+            {poll_home_on and <Poller key="poll-home" ms={5000} onTick={poll_home} />}
+            {poll_req_on and <Poller key="poll-request" ms={5000} onTick={poll_request} />}
         </main>;
 }

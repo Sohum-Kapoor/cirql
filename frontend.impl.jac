@@ -75,6 +75,24 @@ impl app.logout -> None {
     goals_list = [];
     goals_loaded = False;
     goal_error = "";
+    for k in list(GAP_ROWS.keys()) {
+        GAP_ROWS[k] = None;
+        GAP_PENDING[k] = False;
+        GAP_ERRORS[k] = "";
+    }
+    publish_gaps();
+    EX["mine"] = [];
+    EX["incoming"] = [];
+    EX["friend"] = {};
+    EX["claims"] = {};
+    EX["claiming"] = {};
+    publish_ex();
+    open_req_id = "";
+    open_ask_id = "";
+    ask_error = "";
+    req_error = "";
+    me_name = "";
+    me_about = "";
     status = "logged out";
 }
 
@@ -91,9 +109,13 @@ impl app.enter -> None {
         me_list = [];
     }
     if len(me_list) > 0 {
+        me_name = (me_list[0].name or "") as str;
+        me_about = (me_list[0].about or "") as str;
         view = "home";
         refresh();
         load_goals();
+        load_mine();
+        load_incoming();
     } else {
         step = 1;
         view = "onboarding";
@@ -127,6 +149,8 @@ impl app.submit_about -> None {
     }
     onboard = out;
     card = (out["card"] or {}) as dict;
+    me_name = ((out["me"] or {})["name"] or "") as str;
+    me_about = about;
     about_pending = False;
     step = 2;
 }
@@ -224,6 +248,8 @@ impl app.finish -> None {
     view = "home";
     refresh();
     load_goals();
+    load_mine();
+    load_incoming();
 }
 
 # ---------------------------------------------------------------- capture (SOH-167)
@@ -276,7 +302,11 @@ impl app.capture_done -> None {
         RANK_ROWS[k] = None;
         RANK_STALE[k] = True;
     }
+    for k in list(GAP_ROWS.keys()) {
+        GAP_ROWS[k] = None;
+    }
     publish_rank();
+    publish_gaps();
     if gid {
         RANK_STALE[gid] = True;
         ensure_rank(gid, True);
@@ -324,6 +354,7 @@ impl app.ensure_rank(goal_id: str, force: bool = False) -> None {
     entry: dict = (RANK_ROWS[goal_id] or {}) as dict;
     if entry["ok"] and not force {
         publish_rank();
+        ensure_gaps(goal_id);
         return;
     }
     if RANK_PENDING[goal_id] {
@@ -346,6 +377,8 @@ impl app.ensure_rank(goal_id: str, force: bool = False) -> None {
     RANK_STALE[goal_id] = False;
     RANK_PENDING[goal_id] = False;
     publish_rank();
+    # GapFinder reads the RelevantTo edges GoalRank just rebuilt.
+    ensure_gaps(goal_id, force);
 }
 
 """Switch = SetGoal(<that goal's text>). The header flips and the list renders
@@ -429,9 +462,405 @@ impl app.end_goal(goal_id: str) -> None {
     }
     goals_list = next_goals;
     RANK_ROWS[goal_id] = None;
+    GAP_ROWS[goal_id] = None;
     publish_rank();
+    publish_gaps();
 }
 
 impl app.rerank -> None {
     ensure_rank(active_goal_id(goals_list), True);
+}
+
+# ---------------------------------------------------------------- gaps (SOH-172)
+
+impl app.publish_gaps -> None {
+    gap_cache = {**GAP_ROWS};
+    gap_pending_map = {**GAP_PENDING};
+    gap_error_map = {**GAP_ERRORS};
+}
+
+"""GapFinder(goal_id) into the cache (an LLM call: once per goal unless forced
+by Re-rank / a new note / a claimed reveal)."""
+impl app.ensure_gaps(goal_id: str, force: bool = False) -> None {
+    if not goal_id {
+        return;
+    }
+    entry: dict = (GAP_ROWS[goal_id] or {}) as dict;
+    if (entry["ok"] and not force) or GAP_PENDING[goal_id] {
+        publish_gaps();
+        return;
+    }
+    GAP_PENDING[goal_id] = True;
+    GAP_ERRORS[goal_id] = "";
+    publish_gaps();
+    out: list[dict] = [];
+    try {
+        out = await gap_finder(goal_id);
+    } except Exception as e {
+        GAP_PENDING[goal_id] = False;
+        GAP_ERRORS[goal_id] = "Couldn't check this goal for gaps.";
+        publish_gaps();
+        return;
+    }
+    GAP_ROWS[goal_id] = {"ok": True, "rows": out};
+    GAP_PENDING[goal_id] = False;
+    publish_gaps();
+}
+
+impl app.retry_gaps -> None {
+    ensure_gaps(active_goal_id(goals_list), True);
+}
+
+# ---------------------------------------------------------------- exchange (SOH-172)
+
+impl app.publish_ex -> None {
+    ex = {
+        "mine": EX["mine"],
+        "incoming": EX["incoming"],
+        "friend": {**(EX["friend"] as dict)},
+        "claims": {**(EX["claims"] as dict)},
+        "claiming": {**(EX["claiming"] as dict)}
+    };
+}
+
+"""ListMyRequests -> EX.mine (newest first). A revealed reply that hasn't been
+claimed yet is claimed right away (once): that is the card arriving."""
+impl app.load_mine -> None {
+    if EX["mine_busy"] {
+        return;
+    }
+    EX["mine_busy"] = True;
+    found: list[dict] = [];
+    try {
+        found = await list_my_requests();
+    } except Exception as e {
+        EX["mine_busy"] = False;
+        return;
+    }
+    EX["mine_busy"] = False;
+    EX["mine"] = sorted(found, key=_by_created, reverse=True);
+    publish_ex();
+    for item in found {
+        for r in (item["replies"] or []) as list[dict] {
+            rid: str = r["_jac_id"] as str;
+            if r["status"] == "revealed" and not EX["claims"][rid] and not EX["claiming"][rid] {
+                claim(rid);
+            }
+        }
+    }
+}
+
+impl app.load_incoming -> None {
+    if EX["inc_busy"] {
+        return;
+    }
+    EX["inc_busy"] = True;
+    found: list[dict] = [];
+    try {
+        found = await list_incoming_requests();
+    } except Exception as e {
+        EX["inc_busy"] = False;
+        return;
+    }
+    EX["inc_busy"] = False;
+    EX["incoming"] = found;
+    publish_ex();
+}
+
+"""Home tick: the inbox always; your asks only while one is still moving."""
+impl app.poll_home -> None {
+    load_incoming();
+    if mine_wants_poll(EX["mine"] as list[dict], EX["claims"] as dict) {
+        load_mine();
+    }
+}
+
+impl app.poll_request -> None {
+    load_mine();
+}
+
+"""Ask my network -> PostRequest(need, about_line). A user with no Card yet
+(PostRequest reports no_card) gets one via PublishCard, then it retries once."""
+impl app.post_ask(need: str, about_line: str) -> None {
+    if not need {
+        return;
+    }
+    out: dict = {};
+    made: dict = {};
+    ask_busy = True;
+    ask_error = "";
+    try {
+        out = await post_request(need, about_line);
+        if (out["error"] or "") == "no_card" {
+            made = await publish_card(me_name or "me", about_line, me_about);
+            if made["error"] {
+                ask_busy = False;
+                ask_error = err_text(made["error"] as str);
+                return;
+            }
+            out = await post_request(need, about_line);
+        }
+    } except Exception as e {
+        ask_busy = False;
+        ask_error = "Couldn't post that — try again. " + str(e);
+        return;
+    }
+    if out["error"] {
+        ask_busy = False;
+        ask_error = err_text(out["error"] as str);
+        return;
+    }
+    # Show it immediately; the next ListMyRequests replaces this row.
+    EX["mine"] = [{"request": out, "replies": []}] + (EX["mine"] as list[dict]);
+    publish_ex();
+    ask_busy = False;
+    load_mine();
+}
+
+impl app.open_request(rid: str) -> None {
+    open_req_id = rid;
+    req_error = "";
+    view = "request";
+    load_mine();
+}
+
+impl app.cancel_request(rid: str) -> None {
+    out: str = "";
+    req_busy = True;
+    req_error = "";
+    try {
+        out = await decline_request(rid);
+    } except Exception as e {
+        req_busy = False;
+        req_error = "Couldn't withdraw it — try again. " + str(e);
+        return;
+    }
+    req_busy = False;
+    if out != "declined" {
+        req_error = err_text(out);
+        return;
+    }
+    load_mine();
+}
+
+"""ClaimReveal(reply_id): the requester reads the granted Card and gets the
+Person + Knows{how_met="intro via <friend>"} in their own graph. Then the
+people list refreshes and every ranking / gap list is stale."""
+impl app.claim(reply_id: str) -> None {
+    gid: str = active_goal_id(goals_list);
+    claims_now: dict = {};
+    out: dict = {};
+    claiming_now: dict = {**(EX["claiming"] as dict)};
+    claiming_now[reply_id] = True;
+    EX["claiming"] = claiming_now;
+    publish_ex();
+    try {
+        out = await claim_reveal(reply_id);
+    } except Exception as e {
+        out = {"error": "failed: " + str(e)};
+    }
+    claims_now = {**(EX["claims"] as dict)};
+    claims_now[reply_id] = out;
+    EX["claims"] = claims_now;
+    claiming_now = {**(EX["claiming"] as dict)};
+    claiming_now[reply_id] = False;
+    EX["claiming"] = claiming_now;
+    publish_ex();
+    if out["error"] {
+        return;
+    }
+    refresh();
+    for k in list(RANK_ROWS.keys()) {
+        RANK_ROWS[k] = None;
+        RANK_STALE[k] = True;
+    }
+    for k in list(GAP_ROWS.keys()) {
+        GAP_ROWS[k] = None;
+    }
+    publish_rank();
+    publish_gaps();
+    if gid {
+        ensure_rank(gid, True);
+    }
+}
+
+"""Friend opens an ask: the approval card; the first open runs ReplyToRequest."""
+impl app.open_ask(rid: str) -> None {
+    ent: dict = friend_get(rid);
+    if not ent["request"] {
+        for r in EX["incoming"] as list[dict] {
+            if r["_jac_id"] == rid {
+                ent["request"] = r;
+            }
+        }
+        friend_put(rid, ent);
+        publish_ex();
+    }
+    open_ask_id = rid;
+    view = "ask";
+    if ent["request"] and not (ent["reply"] or {})["_jac_id"] and not ent["busy"] {
+        friend_check(rid);
+    }
+}
+
+"""ReplyToRequest: score the need against MY graph only; count + strength back."""
+impl app.friend_check(rid: str) -> None {
+    ent: dict = friend_get(rid);
+    ent["busy"] = True;
+    ent["error"] = "";
+    friend_put(rid, ent);
+    publish_ex();
+    out: dict = {};
+    made: dict = {};
+    try {
+        out = await reply_to_request(rid);
+        if (out["error"] or "") == "no_card" {
+            made = await publish_card(me_name or "me", "", me_about);
+            if not made["error"] {
+                out = await reply_to_request(rid);
+            }
+        }
+    } except Exception as e {
+        out = {"error": "failed: " + str(e)};
+    }
+    ent = friend_get(rid);
+    ent["busy"] = False;
+    if out["error"] {
+        ent["error"] = err_text(out["error"] as str);
+    } else {
+        ent["reply"] = out;
+    }
+    friend_put(rid, ent);
+    publish_ex();
+    load_incoming();
+}
+
+impl app.friend_approve(rid: str) -> None {
+    ent: dict = friend_get(rid);
+    reply_id: str = ((ent["reply"] or {})["_jac_id"] or "") as str;
+    if not reply_id {
+        return;
+    }
+    ent["busy"] = True;
+    ent["error"] = "";
+    friend_put(rid, ent);
+    publish_ex();
+    out: dict = {};
+    try {
+        out = await approve_reply(reply_id);
+    } except Exception as e {
+        out = {"error": "failed: " + str(e)};
+    }
+    ent = friend_get(rid);
+    ent["busy"] = False;
+    if out["error"] {
+        ent["error"] = err_text(out["error"] as str);
+    } else {
+        ent["reply"] = out;
+    }
+    friend_put(rid, ent);
+    publish_ex();
+}
+
+impl app.friend_opt_in(rid: str) -> None {
+    ent: dict = friend_get(rid);
+    reply_id: str = ((ent["reply"] or {})["_jac_id"] or "") as str;
+    if not reply_id {
+        return;
+    }
+    ent["busy"] = True;
+    ent["error"] = "";
+    friend_put(rid, ent);
+    publish_ex();
+    out: dict = {};
+    try {
+        out = await opt_in(reply_id);
+    } except Exception as e {
+        out = {"error": "failed: " + str(e)};
+    }
+    ent = friend_get(rid);
+    ent["busy"] = False;
+    if out["error"] {
+        ent["error"] = err_text(out["error"] as str);
+    } else {
+        ent["reply"] = out["reply"];
+        ent["draft"] = out["opt_in_draft"];
+    }
+    friend_put(rid, ent);
+    publish_ex();
+}
+
+impl app.friend_reveal(rid: str) -> None {
+    ent: dict = friend_get(rid);
+    reply_id: str = ((ent["reply"] or {})["_jac_id"] or "") as str;
+    if not reply_id {
+        return;
+    }
+    ent["busy"] = True;
+    ent["error"] = "";
+    friend_put(rid, ent);
+    publish_ex();
+    out: dict = {};
+    try {
+        out = await reveal(reply_id);
+    } except Exception as e {
+        out = {"error": "failed: " + str(e)};
+    }
+    ent = friend_get(rid);
+    ent["busy"] = False;
+    if out["error"] {
+        ent["error"] = err_text(out["error"] as str);
+    } else {
+        ent["reply"] = out["reply"];
+        ent["revealed_handle"] = out["revealed_card_handle"];
+    }
+    friend_put(rid, ent);
+    publish_ex();
+}
+
+impl app.friend_decline(rid: str) -> None {
+    ent: dict = friend_get(rid);
+    reply_id: str = ((ent["reply"] or {})["_jac_id"] or "") as str;
+    if not reply_id {
+        return;
+    }
+    ent["busy"] = True;
+    ent["error"] = "";
+    friend_put(rid, ent);
+    publish_ex();
+    out: str = "";
+    try {
+        out = await decline_reply(reply_id);
+    } except Exception as e {
+        out = "failed: " + str(e);
+    }
+    ent = friend_get(rid);
+    ent["busy"] = False;
+    if out == "declined" {
+        next_reply: dict = {**((ent["reply"] or {}) as dict)};
+        next_reply["status"] = "declined";
+        ent["reply"] = next_reply;
+    } else {
+        ent["error"] = err_text(out);
+    }
+    friend_put(rid, ent);
+    publish_ex();
+}
+
+impl app.back_home -> None {
+    view = "home";
+    open_req_id = "";
+    open_ask_id = "";
+    req_error = "";
+    load_mine();
+    load_incoming();
+}
+
+"""Dev-only (?mock=1): your own asks also land in your inbox, answered as a
+mock friend, so the whole loop clicks through in one browser."""
+impl app.toggle_as_friend -> None {
+    on: bool = not mock_as_friend();
+    mock_set_as_friend(on);
+    as_friend = on;
+    load_incoming();
 }
