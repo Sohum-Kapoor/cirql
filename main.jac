@@ -32,6 +32,7 @@ import from health { NetworkHealth }
 import from noted { NotedCard, ApplyCorrection }
 import from serendipity { Serendipity }
 import from vision { CaptureImage }
+import from person { PersonDetail, Brief }
 
 # Client-side UI
 cl {
