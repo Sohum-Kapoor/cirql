@@ -185,6 +185,7 @@ node ReplyPrivate {
     has reply_id: str;
     has match_person_id: str = "";
     has revealed_card_id: str = "";
+    has why: str = "";  # SOH-205 polish: friend-private "why it fits" text; NEVER in ReplyView, never crosses to the requester
 }
 
 edge Posted: Exchange --> IntroRequest {}
