@@ -158,3 +158,22 @@ Nodes: Me, every `Knows` Person (capped at 300), and the chosen Goal (the given 
     Get-or-creates Me; creates one `Note(kind="import", text=f"Imported {n} people from {source}")`. Per row with a non-empty stripped name: deduped within the batch by lowercase name (a later duplicate row is `skipped` with `"duplicate_in_batch"`, never creates a second person); reuses an existing `[me ->:Knows:->]` person with the same lowercase name (`is_new=false`, `status`/`org`/`title` never overwritten except filling org/title when they were empty) or creates `Person(status="proposed")` with a `Knows(status="proposed", how_met=how_met or f"imported from {source}", source_note=jid(note))` edge (`is_new=true`). Every imported person (new or reused) gets one `Note +>:Mentions(span=name):+> Person` edge from this call's note. Bounded at 500 rows per call; rows past the bound are `skipped` with reason `"over_limit"` and never touch the graph.
   - **`ConfirmPerson(person_id: str, how_met: str = "")`** → `[Person]` with `status="confirmed"` and the matching `Knows` edge `status="confirmed"` (`how_met` overwritten only when non-empty); `[{ error: "not_found" }]` when `person_id` is not a `[me ->:Knows:->]` person of the caller.
   - **`SkipPerson(person_id: str)`** → `["skipped"]`: only when the person is `status="proposed"` — deletes the caller's `Knows` edge to them, their `Mentions` edges, and the `Person` node. `[{ error: "not_proposed" }]` on a confirmed person; `[{ error: "not_found" }]` when unknown.
+- 2026-09-26 — SOH-191/189, `drafts.sv.jac` (`DraftFollowUp`) and `recall.sv.jac` (`Recall`) land. Both `:priv`, ONE `by llm` call each (wrapped in `try/except`; deterministic fallback always available — Gemini's daily quota was exhausted at write time, so both were verified fallback-only), never read `Knows.last_contact`, nothing sends.
+
+### `DraftFollowUp(person_id: str, intent: str = "")` — SOH-191
+Reports one entry:
+```
+[{ person_id: str, draft: str,
+   based_on: [{ id: str, kind: "note"|"fact"|"intent"|"promise", observed_at: str, span: str }],
+   fallback: bool }]
+```
+or `[{ error: "not_found" }]` when `person_id` isn't one of the caller's own `[me ->:Knows:->]` people. Evidence: the person's Facts, their non-expired Intents, their OPEN Promises (`PromiseTo`, `done == False`), and Notes mentioning them — merged newest-first by `observed_at`, capped at 8. `intent` is optional context for the LLM (what the user wants the message to do); the deterministic fallback never reads it. Fallback (`fallback: true`) picks, in order: the newest open Promise (draft mentions its text; `based_on` = that promise, plus the newest Fact if one exists) → the newest Fact/Intent (draft mentions its text) → a generic "good meeting you" opener (`based_on: []`) when there's no evidence at all.
+
+### `Recall(question: str, max_items: int = 40)` — SOH-189
+Reports one dict:
+```
+{ answer: str,
+  citations: [{ id: str, kind: "note"|"fact"|"intent"|"promise", observed_at: str, span: str, person: str }],
+  insufficient: bool, fallback: bool }
+```
+Bounded traversal over the caller's own root: every Note (text capped at 300 chars), Fact, Intent, and Promise, each paired with its about-person's name where one applies, newest-first, capped at `max_items`. Deterministic pre-filter: keep items sharing a lowercase, non-stopword, length-≥4 token with the question; zero matches short-circuits straight to `{ answer: "Insufficient evidence in your notes.", citations: [], insufficient: true, fallback: true }` without spending the one `by llm` call; 1–2 matches widen to the newest 12 items in the whole pool (too few to answer from confidently, not nothing); 3+ matches use the strict set as-is. Fallback (`fallback: true`) otherwise: `"Your notes mention: "` + the top 3 selected items formatted `"{person}: {span} ({observed_at})"`, `insufficient: false`, `citations` = those 3. On the LLM path, an empty `answer` or empty `citation_indices` without the model itself claiming `insufficient` is forced to the same canonical insufficient response server-side (never invents, never silently returns nothing).

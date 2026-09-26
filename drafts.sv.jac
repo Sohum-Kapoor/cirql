@@ -1,0 +1,271 @@
+"""DraftFollowUp — a follow-up message drafter for one person (SOH-191).
+
+OWNER: Person A. See contracts/walkers.md `DraftFollowUp(person_id, intent)` for
+the exact report shape. Rules from AGENTS.md this file must obey:
+  - Every Fact/Intent/Promise tie the draft leans on carries its own
+    provenance (`based_on` items always resolve back to a real Fact/Intent/
+    Promise/Note node's id — never invented).
+  - `by llm` returns a plain `obj` (`FollowUp`), never a node — its fields are
+    copied into the report dict, nothing is persisted from it.
+  - Nothing sends: this only ever produces a draft string. No send button,
+    no side effect on the graph.
+  - ONE `by llm` call per invocation, wrapped in `try/except`; the
+    deterministic `fallback_draft` always produces a usable message.
+  - `Knows.last_contact` is never read here (nothing in this module lowers or
+    raises anything from it).
+
+`_parse_naive_utc` is imported from `goals.sv.jac` rather than re-implemented
+(established pattern in this codebase — `cards.sv.jac` imports from
+`onboard.sv.jac`, `exchange.sv.jac` imports from `scoring.sv.jac`).
+
+Ownership: `person_id` is resolved by looking it up directly among
+`[me ->:Knows:->]` — a person only ever reaches that traversal if this
+account's Capture/Import/Confirm flow created the Knows edge, which is
+exactly "belongs to the caller". A person id that isn't found there (unknown,
+or belongs to someone else's graph) reports `not_found`; the fuller
+`jobj`/`check_read_access`/`owner_root` idiom in `reads.sv.jac` is for
+resolving *arbitrary* ids (e.g. `Receipt`), which this walker never needs to
+do since it only ever starts from the caller's own `Me`.
+"""
+
+import from datetime { datetime }
+import from schema {
+    Me, Person, Note, Fact, Intent, Promise,
+    Knows, FactAbout, IntentAbout, PromiseTo, Mentions, AssertsIntent, AssertsPromise
+}
+import from llm { llm }
+import from goals { _parse_naive_utc }
+
+# ---------------------------------------------------------------- LLM shape
+
+obj FollowUp {
+    has draft: str;
+    has evidence_indices: list[int];
+}
+sem FollowUp.draft = "A two-to-four sentence message to this person that mentions ONE specific thing from the numbered evidence (a fact, an open promise, or something they wanted), sounds like a real person, no flattery, no subject line, no sign-off placeholder.";
+sem FollowUp.evidence_indices = "Numbers of the evidence items the draft relies on.";
+
+def draft_follow_up(person_summary: str, evidence_text: str, intent: str) -> FollowUp by llm(temperature=0.5);
+sem draft_follow_up = "Draft a short follow-up message to a specific person using only the given numbered evidence.";
+sem draft_follow_up.person_summary = "The person's name, title, and organization.";
+sem draft_follow_up.evidence_text = "Numbered evidence about this person: facts, open promises, and notes that mention them.";
+sem draft_follow_up.intent = "What the user wants this message to do, e.g. 'send the demo I promised'; empty string when not given.";
+
+# ---------------------------------------------------------------- plain data
+
+obj EvidenceItem {
+    has id: str;
+    has kind: str;          # note | fact | intent | promise
+    has observed_at: str;
+    has span: str;
+}
+
+def item_to_dict(it: EvidenceItem) -> dict[str, str] {
+    return {"id": it.id, "kind": it.kind, "observed_at": it.observed_at, "span": it.span};
+}
+
+# ---------------------------------------------------------------- deterministic helpers
+# (no LLM; each is a plain `def` so a test block can call it directly on
+# hand-built nodes attached under root.)
+
+def _sortable_dt(ts: str) -> datetime {
+    dt = _parse_naive_utc(ts);
+    if dt is None {
+        return datetime.min;   # empty/unparsable observed_at sorts oldest
+    }
+    return dt;
+}
+
+def _evidence_sort_key(it: EvidenceItem) -> datetime {
+    return _sortable_dt(it.observed_at);
+}
+
+"""Facts, Intents, open Promises to `p`, and Notes mentioning `p` — merged
+newest-first by `observed_at` and capped at 8. Intents whose `expires_at` is
+non-empty and already in the past are skipped (freshness/expiry, per
+AGENTS.md); Promises already `done` are skipped (only OPEN promises are
+follow-up material)."""
+def gather_follow_up_evidence(p: Person, now: datetime) -> list[EvidenceItem] {
+    items: list[EvidenceItem] = [];
+
+    for f in [p <-:FactAbout:<-] {
+        items.append(EvidenceItem(id=jid(f), kind="fact", observed_at=f.observed_at, span=f.text));
+    }
+
+    for i in [p <-:IntentAbout:<-] {
+        if i.expires_at {
+            exp_dt = _parse_naive_utc(i.expires_at);
+            if exp_dt is None {
+                continue;   # unparsable expires_at -> skip this intent
+            }
+            if exp_dt < now {
+                continue;   # expired -> skip
+            }
+        }
+        observed_at = "";
+        notes_for_intent = [i <-:AssertsIntent:<-];
+        if notes_for_intent {
+            observed_at = notes_for_intent[0].captured_at;
+        }
+        items.append(EvidenceItem(id=jid(i), kind="intent", observed_at=observed_at, span=i.text));
+    }
+
+    for pr in [p <-:PromiseTo:<-] {
+        if pr.done {
+            continue;   # only open promises are follow-up material
+        }
+        observed_at = "";
+        notes_for_promise = [pr <-:AssertsPromise:<-];
+        if notes_for_promise {
+            observed_at = notes_for_promise[0].captured_at;
+        }
+        items.append(EvidenceItem(id=jid(pr), kind="promise", observed_at=observed_at, span=pr.text));
+    }
+
+    for n in [p <-:Mentions:<-] {
+        items.append(EvidenceItem(id=jid(n), kind="note", observed_at=n.captured_at, span=n.text[:120]));
+    }
+
+    items_sorted = sorted(items, key=_evidence_sort_key, reverse=True);
+    if len(items_sorted) > 8 {
+        items_sorted = items_sorted[:8];
+    }
+    return items_sorted;
+}
+
+def person_summary_text(p: Person) -> str {
+    parts: list[str] = [p.name];
+    if p.title {
+        parts.append(p.title);
+    }
+    if p.org {
+        parts.append(f"at {p.org}");
+    }
+    return " ".join(parts);
+}
+
+"""One numbered line per evidence item for the single `by llm` call."""
+def build_evidence_text(evidence: list[EvidenceItem]) -> str {
+    lines: list[str] = [];
+    idx = 0;
+    for it in evidence {
+        lines.append(f"[{idx}] {it.kind}: {it.span} ({it.observed_at})");
+        idx += 1;
+    }
+    return "\n".join(lines);
+}
+
+"""Map the LLM's `evidence_indices` back to full evidence dicts; out-of-range
+indices are dropped, duplicates deduped (first wins) — same idiom as
+`goals.sv.jac`'s `materialize` / `scoring.sv.jac`'s `post_process`."""
+def map_evidence_indices(evidence: list[EvidenceItem], indices: list[int]) -> list[dict[str, str]] {
+    out: list[dict[str, str]] = [];
+    seen: list[int] = [];
+    for ei in indices {
+        if ei < 0 or ei >= len(evidence) {
+            continue;
+        }
+        if ei in seen {
+            continue;
+        }
+        seen.append(ei);
+        out.append(item_to_dict(evidence[ei]));
+    }
+    return out;
+}
+
+"""Deterministic fallback used when there is no evidence at all, or the
+batched `by llm` call fails / returns nothing usable. Picks the newest open
+Promise first, else the newest Fact/Intent, else a generic opener — exactly
+the three branches in contracts/walkers.md."""
+def fallback_draft(p: Person, evidence: list[EvidenceItem]) -> dict[str, any] {
+    promise_item: EvidenceItem | None = None;
+    fact_item: EvidenceItem | None = None;
+    fact_or_intent_item: EvidenceItem | None = None;
+
+    for it in evidence {
+        if it.kind == "promise" and promise_item is None {
+            promise_item = it;
+        }
+        if (it.kind == "fact" or it.kind == "intent") and fact_or_intent_item is None {
+            fact_or_intent_item = it;
+        }
+        if it.kind == "fact" and fact_item is None {
+            fact_item = it;
+        }
+    }
+
+    if promise_item is not None {
+        pi = promise_item as EvidenceItem;
+        used: list[EvidenceItem] = [pi];
+        tail = "";
+        if fact_item is not None {
+            fi = fact_item as EvidenceItem;
+            tail = f" Hope things are going well with {fi.span}.";
+            used.append(fi);
+        } elif p.org {
+            tail = f" Hope things are going well with {p.org}.";
+        }
+        draft = f"Hi {p.name}, following up on {pi.span}: sending it over now.{tail}";
+        return {"draft": draft, "based_on": [item_to_dict(i) for i in used]};
+    }
+
+    if fact_or_intent_item is not None {
+        fi2 = fact_or_intent_item as EvidenceItem;
+        draft = f"Hi {p.name}, I was thinking about what you said about {fi2.span}. How is that going?";
+        return {"draft": draft, "based_on": [item_to_dict(fi2)]};
+    }
+
+    draft = f"Hi {p.name}, it was good meeting you. Would love to stay in touch.";
+    return {"draft": draft, "based_on": []};
+}
+
+# ---------------------------------------------------------------- walker
+
+walker:priv DraftFollowUp {
+    """Draft a follow-up message to one of the caller's own people. See
+    contracts/walkers.md for the exact report shape. Reports one entry, or
+    `{ error: "not_found" }` when `person_id` isn't the caller's."""
+    has person_id: str;
+    has intent: str = "";
+    has reports: list[dict[str, any]] = [];
+
+    can run with Root entry {
+        existing = [root --> [?:Me]];
+        if not existing {
+            report {"error": "not_found"};
+            disengage;
+        }
+        me = existing[0];
+
+        matches = [p for p in [me ->:Knows:->] if jid(p) == self.person_id];
+        if not matches {
+            report {"error": "not_found"};
+            disengage;
+        }
+        person = matches[0];
+
+        now = datetime.now();
+        evidence = gather_follow_up_evidence(person, now);
+
+        if not evidence {
+            fb = fallback_draft(person, evidence);
+            report {"person_id": jid(person), "draft": fb["draft"], "based_on": fb["based_on"], "fallback": True};
+            disengage;
+        }
+
+        try {
+            summary = person_summary_text(person);
+            evidence_text = build_evidence_text(evidence);
+            result = draft_follow_up(summary, evidence_text, self.intent);
+            based_on = map_evidence_indices(evidence, result.evidence_indices);
+            if not result.draft or not based_on {
+                raise Exception("empty draft or no evidence cited");
+            }
+            report {"person_id": jid(person), "draft": result.draft, "based_on": based_on, "fallback": False};
+        } except Exception {
+            fb = fallback_draft(person, evidence);
+            report {"person_id": jid(person), "draft": fb["draft"], "based_on": fb["based_on"], "fallback": True};
+        }
+    }
+}
