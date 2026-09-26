@@ -10,6 +10,7 @@ import from "..ui.textarea" { Textarea }
 import from "..ui.field" { Field, FieldLabel, FieldDescription }
 import from "..ui.tabs" { Tabs, TabsList, TabsTrigger, TabsContent }
 import from "..ui.icons" { MicIcon, ChevronLeftIcon }
+import from .PhotoCapture { PhotoCapture }
 
 def:pub CaptureForm(
     text: str,
@@ -19,7 +20,8 @@ def:pub CaptureForm(
     onTextChange: Callable[[str], None],
     onKindChange: Callable[[str], None],
     onSubmit: Callable[[], None],
-    onBack: Callable[[], None]
+    onBack: Callable[[], None],
+    onPhotoResult: Callable[[dict, str], None] | None = None
 ) -> JsxElement {
     def handle_change(e: ChangeEvent) {
         onTextChange(e.target.value);
@@ -69,8 +71,8 @@ def:pub CaptureForm(
                 <h1 className="text-card-title">Capture</h1>
             </header>
             <Tabs value={kind} onValueChange={handle_kind}>
-                <div className="flex items-center gap-2">
-                    <TabsList aria-label="Note kind" className="flex-1">
+                <div className="flex flex-wrap items-start gap-2">
+                    <TabsList aria-label="Note kind" className="min-w-40 flex-1">
                         <TabsTrigger value="debrief" disabled={pending}>Debrief</TabsTrigger>
                         <TabsTrigger value="paste" disabled={pending}>Paste</TabsTrigger>
                     </TabsList>
@@ -85,6 +87,7 @@ def:pub CaptureForm(
                         <MicIcon className="size-3.5" />
                         <span className="text-caption">Voice · soon</span>
                     </Button>
+                    <PhotoCapture disabled={pending} onResult={onPhotoResult} />
                 </div>
                 <TabsContent value="debrief">{note_field()}</TabsContent>
                 <TabsContent value="paste">{note_field()}</TabsContent>

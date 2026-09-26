@@ -21,6 +21,7 @@ import from .settings.AppearanceSheet { AppearanceSheet }
 import from .ui.tabs { Tabs, TabsList, TabsTrigger, TabsContent }
 import from .person.PersonSheet { PersonSheet }
 import from .promises.Today { Today }
+import from .graph.GraphView { GraphView }
 import from .goals.GoalPicker { GoalPicker }
 import from .goals.RankList { RankList, RankSkeleton, is_partial }
 import from .exchange.GapAlert { GapAlerts }
@@ -76,7 +77,8 @@ def:pub HomeView(
         sheet_person_id: str = "",
         sheet_open: bool = False,
         today_key: int = 0,
-        forgotten_ids: list[str] = [];
+        forgotten_ids: list[str] = [],
+        view_tab: str = "list";
 
     # Person sheet (SOH-207): opened from a ranked row or a Today promise.
     def open_person(pid: str) -> None {
@@ -96,6 +98,10 @@ def:pub HomeView(
 
     def set_home_tab(v: str) -> None {
         home_tab = v;
+    }
+
+    def set_view_tab(v: str) -> None {
+        view_tab = v;
     }
 
     def handle_refresh(e: any) {
@@ -150,6 +156,12 @@ def:pub HomeView(
 
     has_active: bool = len([g for g in goals if g["active"]]) > 0;
     partial: bool = is_partial(rank_rows);
+    active_id: str = "";
+    for g in goals {
+        if g["active"] {
+            active_id = g["_jac_id"] as str;
+        }
+    }
     shown_rows: list[dict] = [r for r in rank_rows if ((r["person"] or {})["_jac_id"] or "") not in forgotten_ids];
 
     return
@@ -209,89 +221,100 @@ def:pub HomeView(
                     onClose={onCloseGoal}
                 />
             }}
-            {has_active and
-                <section aria-label="Who can help" className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between gap-2">
-                        <h2 className="text-eyebrow text-muted-foreground">Who can help</h2>
-                        <div className="flex items-center gap-2">
-                            {rank_pending and
-                                <span role="status" className="text-caption text-muted-foreground">Walking your graph…</span>}
-                            <Button
-                                size="xs"
-                                variant="outline"
-                                disabled={rank_pending}
-                                aria-label="Re-rank for this goal"
-                                onClick={handle_rerank}
-                            >
-                                Re-rank
-                            </Button>
-                        </div>
-                    </div>
-                    {rank_error and <p role="alert" className="text-body-sm text-destructive">{rank_error}</p>}
-                    {partial and not rank_pending and
-                        <p role="status" className="rounded-lg border border-dashed border-border-strong pt-2 pb-2 pl-3 pr-3 text-caption text-muted-foreground">
-                            Ranking is partial right now — tap Re-rank in a minute.
-                        </p>}
-                    {if len(shown_rows) > 0 {
-                        <RankList rows={shown_rows} dim={rank_pending} on_open_person={open_person} />
-                    } elif rank_pending or not rank_cached {
-                        <RankSkeleton />
-                    } elif not rank_error {
-                        <p className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm text-muted-foreground">
-                            {"No one yet — "}
-                            <Button variant="link" size="inline" onClick={handle_capture}>capture a conversation</Button>
-                            {" to start."}
-                        </p>
-                    }}
-                </section>}
-            {has_active and not (rank_pending and len(rank_rows) == 0) and
-                <GapAlerts
-                    gaps={gaps}
-                    pending={gaps_pending}
-                    error={gaps_error}
-                    asked={asked}
-                    default_about={default_about}
-                    busy={ask_busy}
-                    ask_error={ask_error}
-                    onAsk={do_ask}
-                    onRetry={do_retry_gaps}
-                />}
-            <RequestsSection mine={mine} claims={claims} onOpen={do_open_request} />
-            <Collapsible className="overflow-hidden rounded-lg border bg-card shadow-edge">
-                <CollapsibleTrigger
-                    className={cn(
-                        buttonVariants().call(None, {"variant": "ghost", "size": "row"}),
-                        "flex-row items-center justify-between rounded-none [&[data-state=open]>span>svg]:rotate-90"
-                    )}
-                >
-                    <span className="flex items-center gap-1.5 text-body-sm font-medium">
-                        <ChevronRightIcon className="size-4 text-muted-foreground transition-transform" />
-                        People you know
-                    </span>
-                    <span className="text-caption tabular-nums text-muted-foreground">{str(len(people))}</span>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                    {if len(people) == 0 {
-                        <p className="border-t pt-3 pb-3 pl-4 pr-4 text-body-sm text-muted-foreground">
-                            {"No one yet — "}
-                            <Button variant="link" size="inline" onClick={handle_capture}>capture a conversation</Button>
-                            {" to start."}
-                        </p>
-                    } else {
-                        <ul className="flex flex-col divide-y divide-border border-t">
-                            {for (idx, p) in enumerate(people) {
-                                <li key={str(idx)} className="flex flex-col pt-2.5 pb-2.5 pl-4 pr-4">
-                                    <span className="text-body-sm">{p.name}</span>
-                                    {(p.title or p.org) and
-                                        <span className="text-caption text-muted-foreground">
-                                            {join_with([s for s in [p.title, p.org] if s], ", ")}
-                                        </span>}
-                                </li>
+            <Tabs value={view_tab} onValueChange={set_view_tab} className="gap-6">
+                <TabsList aria-label="Home view" className="w-full">
+                    <TabsTrigger value="list">List</TabsTrigger>
+                    <TabsTrigger value="graph">Graph</TabsTrigger>
+                </TabsList>
+                <TabsContent value="list" className="flex flex-col gap-6">
+                    {has_active and
+                        <section aria-label="Who can help" className="flex flex-col gap-3">
+                            <div className="flex items-center justify-between gap-2">
+                                <h2 className="text-eyebrow text-muted-foreground">Who can help</h2>
+                                <div className="flex items-center gap-2">
+                                    {rank_pending and
+                                        <span role="status" className="text-caption text-muted-foreground">Walking your graph…</span>}
+                                    <Button
+                                        size="xs"
+                                        variant="outline"
+                                        disabled={rank_pending}
+                                        aria-label="Re-rank for this goal"
+                                        onClick={handle_rerank}
+                                    >
+                                        Re-rank
+                                    </Button>
+                                </div>
+                            </div>
+                            {rank_error and <p role="alert" className="text-body-sm text-destructive">{rank_error}</p>}
+                            {partial and not rank_pending and
+                                <p role="status" className="rounded-lg border border-dashed border-border-strong pt-2 pb-2 pl-3 pr-3 text-caption text-muted-foreground">
+                                    Ranking is partial right now — tap Re-rank in a minute.
+                                </p>}
+                            {if len(shown_rows) > 0 {
+                                <RankList rows={shown_rows} dim={rank_pending} on_open_person={open_person} />
+                            } elif rank_pending or not rank_cached {
+                                <RankSkeleton />
+                            } elif not rank_error {
+                                <p className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm text-muted-foreground">
+                                    {"No one yet — "}
+                                    <Button variant="link" size="inline" onClick={handle_capture}>capture a conversation</Button>
+                                    {" to start."}
+                                </p>
                             }}
-                        </ul>
-                    }}
-                </CollapsibleContent>
-            </Collapsible>
+                        </section>}
+                    {has_active and not (rank_pending and len(rank_rows) == 0) and
+                        <GapAlerts
+                            gaps={gaps}
+                            pending={gaps_pending}
+                            error={gaps_error}
+                            asked={asked}
+                            default_about={default_about}
+                            busy={ask_busy}
+                            ask_error={ask_error}
+                            onAsk={do_ask}
+                            onRetry={do_retry_gaps}
+                        />}
+                    <RequestsSection mine={mine} claims={claims} onOpen={do_open_request} />
+                    <Collapsible className="overflow-hidden rounded-lg border bg-card shadow-edge">
+                        <CollapsibleTrigger
+                            className={cn(
+                                buttonVariants().call(None, {"variant": "ghost", "size": "row"}),
+                                "flex-row items-center justify-between rounded-none [&[data-state=open]>span>svg]:rotate-90"
+                            )}
+                        >
+                            <span className="flex items-center gap-1.5 text-body-sm font-medium">
+                                <ChevronRightIcon className="size-4 text-muted-foreground transition-transform" />
+                                People you know
+                            </span>
+                            <span className="text-caption tabular-nums text-muted-foreground">{str(len(people))}</span>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                            {if len(people) == 0 {
+                                <p className="border-t pt-3 pb-3 pl-4 pr-4 text-body-sm text-muted-foreground">
+                                    {"No one yet — "}
+                                    <Button variant="link" size="inline" onClick={handle_capture}>capture a conversation</Button>
+                                    {" to start."}
+                                </p>
+                            } else {
+                                <ul className="flex flex-col divide-y divide-border border-t">
+                                    {for (idx, p) in enumerate(people) {
+                                        <li key={str(idx)} className="flex flex-col pt-2.5 pb-2.5 pl-4 pr-4">
+                                            <span className="text-body-sm">{p.name}</span>
+                                            {(p.title or p.org) and
+                                                <span className="text-caption text-muted-foreground">
+                                                    {join_with([s for s in [p.title, p.org] if s], ", ")}
+                                                </span>}
+                                        </li>
+                                    }}
+                                </ul>
+                            }}
+                        </CollapsibleContent>
+                    </Collapsible>
+                </TabsContent>
+                <TabsContent value="graph">
+                    <GraphView goal_id={active_id} on_open_person={open_person} />
+                </TabsContent>
+            </Tabs>
             </TabsContent>
             </Tabs>
             {status and <p className="text-caption text-muted-foreground">{status}</p>}

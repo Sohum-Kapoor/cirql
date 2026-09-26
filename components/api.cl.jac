@@ -32,6 +32,11 @@ sv import from ..exchange {
     ReplyToRequest, ApproveReply, OptIn, Reveal, DeclineReply
 }
 sv import from ..schema { Person }
+# SOH-185 / SOH-192 (appended): graph view + badge photo capture.
+import from .mocks.graph { mock_graph_view }
+import from .mocks.photo { mock_capture_image }
+sv import from ..reads { GraphView }
+sv import from ..vision { CaptureImage }
 
 glob USE_MOCKS: bool = False,
      MOCK_DELAY_MS: int = 600,
@@ -431,5 +436,35 @@ async def:pub forget(node_id: str) -> dict {
     }
     result = root spawn Forget(id=node_id);
     out = _first_or_error(result.reports);
+    return out;
+}
+
+# ---------------------------------------------------------------- Graph + photo (SOH-185/192)
+
+"""GraphView(goal_id) -> { nodes: [{ id, kind, label, status, org, title }],
+edges: [{ from, to, kind, label, strength }] }. `goal_id` "" = the active goal."""
+async def:pub graph_view(goal_id: str) -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = mock_graph_view(goal_id);
+        return out;
+    }
+    result = root spawn GraphView(goal_id=goal_id);
+    out = _first(result, "GraphView") as dict;
+    return out;
+}
+
+"""CaptureImage(image_b64, mime) -> the Capture report + { photo_ref, read:
+{ name, org, title, email, phone, links, raw_text }, fallback, error }."""
+async def:pub capture_image(image_b64: str, mime: str) -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_DELAY_MS);
+        out = mock_capture_image(image_b64, mime);
+        return out;
+    }
+    result = root spawn CaptureImage(image_b64=image_b64, mime=mime);
+    out = _first(result, "CaptureImage") as dict;
     return out;
 }
