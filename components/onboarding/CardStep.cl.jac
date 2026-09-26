@@ -54,21 +54,21 @@ def:pub CardStep(
     return
         <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-1">
-                <h2 className="text-lg font-semibold tracking-tight">Your card</h2>
-                <p className="text-sm text-muted-foreground">
+                <h2 className="text-card-title">Your card</h2>
+                <p className="text-body-sm text-muted-foreground">
                     Preview — you'll publish it later. A card is the only thing that can be granted read-only to someone else.
                 </p>
             </div>
 
             <section className="flex flex-col gap-2">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Goals</h3>
+                <h3 className="text-eyebrow text-muted-foreground">Goals</h3>
                 <ul className="flex flex-col gap-2">
                     {for g in goals {
                         <li
                             key={g["_jac_id"]}
                             className={cn(
-                                "flex items-start justify-between gap-2 rounded-md border pt-2 pb-2 pl-3 pr-3 text-sm",
-                                "border-primary/50 bg-accent text-accent-foreground" if g["active"] else "text-muted-foreground"
+                                "flex items-start justify-between gap-2 rounded-lg border pt-2.5 pb-2.5 pl-4 pr-3 text-body-sm",
+                                "border-border-strong bg-secondary text-foreground" if g["active"] else "bg-card text-muted-foreground"
                             )}
                         >
                             <span>{g["text"]}</span>
@@ -79,15 +79,15 @@ def:pub CardStep(
             </section>
 
             <section className="flex flex-col gap-2">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Interests</h3>
+                <h3 className="text-eyebrow text-muted-foreground">Interests</h3>
                 <div className="flex flex-wrap gap-2">
                     {for it in interests {
-                        <Badge key={it["_jac_id"]} variant="outline">{it["topic"]}</Badge>
+                        <Badge key={it["_jac_id"]} variant="secondary">{it["topic"]}</Badge>
                     }}
                 </div>
             </section>
 
-            <section className="flex flex-col gap-4 rounded-md border bg-card pt-4 pb-4 pl-4 pr-4">
+            <section className="flex flex-col gap-4 rounded-lg border bg-card pt-4 pb-4 pl-4 pr-4 shadow-edge">
                 <FieldGroup>
                     {text_field("handle", "Handle", "your-handle")}
                     {text_field("headline", "Headline", "What you do, in one line")}
@@ -106,6 +106,6 @@ def:pub CardStep(
                 </FieldGroup>
             </section>
 
-            <Button className="w-full" onClick={handle_continue}>Continue</Button>
+            <Button className="w-full" size="lg" onClick={handle_continue}>Continue</Button>
         </div>;
 }

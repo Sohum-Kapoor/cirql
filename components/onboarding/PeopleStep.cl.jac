@@ -25,7 +25,7 @@ def:pub PersonRow(
     }
 
     return
-        <div className="flex flex-col gap-1 rounded-md border pt-2 pb-2 pl-2 pr-2">
+        <div className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-3 pr-3 shadow-edge">
             <Input
                 aria-label={"Person " + str(index + 1) + " name"}
                 value={name}
@@ -71,8 +71,8 @@ def:pub PeopleStep(
     return
         <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-1">
-                <h2 className="text-lg font-semibold tracking-tight">Bring five people</h2>
-                <p className="text-sm text-muted-foreground">
+                <h2 className="text-card-title">Bring five people</h2>
+                <p className="text-body-sm text-muted-foreground">
                     Who do you already know? A name and one line on how you know them is enough.
                 </p>
             </div>
@@ -88,21 +88,21 @@ def:pub PeopleStep(
                     />
                 }}
             </div>
-            {error and <p className="text-sm text-destructive/80">{error}</p>}
+            {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
             {if captured {
                 <div className="flex flex-col gap-2">
-                    <p className="rounded-md border bg-card pt-2 pb-2 pl-3 pr-3 text-sm">
+                    <p role="status" className="rounded-lg bg-success/10 pt-3 pb-3 pl-4 pr-4 text-body-sm text-success-text">
                         <span className="font-medium tabular-nums">{str(captured_count)}</span>
                         {" " + ("person" if captured_count == 1 else "people") + " added to your graph."}
                     </p>
-                    <Button className="w-full" onClick={handle_next}>Continue</Button>
+                    <Button className="w-full" size="lg" onClick={handle_next}>Continue</Button>
                 </div>
             } else {
                 <div className="flex flex-col gap-2">
-                    <Button className="w-full" disabled={filled == 0 or pending} onClick={handle_capture}>
+                    <Button className="w-full" size="lg" disabled={filled == 0 or pending} onClick={handle_capture}>
                         {"Capturing…" if pending else "Continue"}
                     </Button>
-                    <Button className="w-full" variant="ghost" disabled={pending} onClick={handle_skip}>Skip for now</Button>
+                    <Button className="w-full" size="lg" variant="ghost" disabled={pending} onClick={handle_skip}>Skip for now</Button>
                 </div>
             }}
         </div>;

@@ -27,8 +27,8 @@ def:pub AboutStep(
     return
         <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-1">
-                <h2 className="text-lg font-semibold tracking-tight">About you</h2>
-                <p className="text-sm text-muted-foreground">
+                <h2 className="text-card-title">About you</h2>
+                <p className="text-body-sm text-muted-foreground">
                     Cirql drafts your goals and a card from this. You can edit everything next.
                 </p>
             </div>
@@ -46,8 +46,8 @@ def:pub AboutStep(
                 />
                 <FieldDescription>Stays on your account's graph — isolated by construction.</FieldDescription>
             </Field>
-            {error and <p className="text-sm text-destructive/80">{error}</p>}
-            <Button className="w-full" disabled={not can_continue} onClick={handle_continue}>
+            {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
+            <Button className="w-full" size="lg" disabled={not can_continue} onClick={handle_continue}>
                 {"Reading…" if pending else "Continue"}
             </Button>
         </div>;

@@ -9,31 +9,23 @@ goal_id for the session, and a goal that isn't cached yet shows a loading state
 on the list alone — the header, picker and people list stay put.
 """
 
-import from .ui.button { Button }
+import from .ui.button { Button, buttonVariants }
+import from .ui.skeleton { Skeleton }
+import from .ui.collapsible { Collapsible, CollapsibleTrigger, CollapsibleContent }
+import from .ui.dropdown_menu {
+    DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
+    DropdownMenuSeparator
+}
+import from .ui.icons { MoreIcon, ChevronRightIcon }
+import from .settings.AppearanceSheet { AppearanceSheet }
 import from .goals.GoalPicker { GoalPicker }
-import from .goals.RankList { RankList, is_partial }
+import from .goals.RankList { RankList, RankSkeleton, is_partial }
 import from .exchange.GapAlert { GapAlerts }
 import from .exchange.Requests { RequestsSection }
 import from .exchange.Inbox { AsksSection }
 import from ..lib.text { join_with }
+import from ..lib.utils { cn }
 sv import from ..schema { Person }
-
-"""Placeholder rows while a goal ranks for the first time (list only)."""
-def:pub RankSkeleton() -> JsxElement {
-    return
-        <ul aria-hidden="true" className="flex flex-col divide-y divide-border rounded-md border">
-            {for i in range(3) {
-                <li key={str(i)} className="flex animate-pulse flex-col gap-2 pt-3 pb-3 pl-3 pr-3">
-                    <div className="flex items-center justify-between gap-2">
-                        <span className="h-3.5 w-32 rounded bg-muted" />
-                        <span className="h-4 w-20 rounded-full bg-muted" />
-                    </div>
-                    <span className="h-3 w-full rounded bg-muted" />
-                    <span className="h-3 w-2/3 rounded bg-muted" />
-                </li>
-            }}
-        </ul>;
-}
 
 def:pub HomeView(
     people: list[Person],
@@ -76,12 +68,22 @@ def:pub HomeView(
         onCapture();
     }
 
-    def handle_refresh(e: MouseEvent) {
+    has appearance_open: bool = False;
+
+    def handle_refresh(e: any) {
         onRefresh();
     }
 
-    def handle_logout(e: MouseEvent) {
+    def handle_logout(e: any) {
         onLogout();
+    }
+
+    def open_appearance(e: any) {
+        appearance_open = True;
+    }
+
+    def set_appearance(v: bool) -> None {
+        appearance_open = v;
     }
 
     def handle_rerank(e: MouseEvent) {
@@ -122,16 +124,31 @@ def:pub HomeView(
     partial: bool = is_partial(rank_rows);
 
     return
-        <div className="flex flex-col gap-5 pb-20">
-            <header className="flex items-center justify-between gap-2">
-                <h1 className="text-base font-semibold tracking-tight">Cirql</h1>
-                <div className="flex gap-1">
-                    <Button size="sm" variant="ghost" onClick={handle_refresh}>Refresh</Button>
-                    <Button size="sm" variant="outline" onClick={handle_logout}>Log out</Button>
-                </div>
+        <div className="flex flex-col gap-6 pb-24">
+            <header className="-mt-2 flex h-14 items-center justify-between gap-2">
+                <h1 className="text-subhead font-semibold">Cirql</h1>
+                <DropdownMenu modal={False}>
+                    <DropdownMenuTrigger
+                        aria-label="More"
+                        className={buttonVariants().call(None, {"variant": "ghost", "size": "icon", "className": "-mr-2 text-muted-foreground"})}
+                    >
+                        <MoreIcon className="size-5" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuGroup>
+                            <DropdownMenuItem onSelect={handle_refresh}>Refresh</DropdownMenuItem>
+                            <DropdownMenuItem onSelect={open_appearance}>Appearance</DropdownMenuItem>
+                        </DropdownMenuGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuGroup>
+                            <DropdownMenuItem onSelect={handle_logout}>Log out</DropdownMenuItem>
+                        </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                </DropdownMenu>
             </header>
+            <AppearanceSheet open={appearance_open} onOpenChange={set_appearance} />
             {mock_mode and
-                <div className="flex items-center justify-between gap-2 rounded-md border border-dashed pt-2 pb-2 pl-3 pr-3 text-xs text-muted-foreground">
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-border-strong pt-2 pb-2 pl-3 pr-2 text-caption text-muted-foreground">
                     <span>{"Dev mock · your own asks " + ("also show as a friend's" if as_friend else "stay yours only")}</span>
                     <Button size="xs" variant="outline" onClick={handle_toggle_friend}>
                         {"Stop acting as friend" if as_friend else "Act as friend"}
@@ -139,7 +156,10 @@ def:pub HomeView(
                 </div>}
             <AsksSection incoming={incoming} friend={friend} onOpen={do_open_ask} />
             {if not goals_loaded {
-                <p className="rounded-md border pt-3 pb-3 pl-3 pr-3 text-sm text-muted-foreground">Loading your goals…</p>
+                <div role="status" aria-label="Loading your goals" className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
+                    <Skeleton className="h-3 w-12" />
+                    <Skeleton className="h-4 w-3/4" />
+                </div>
             } else {
                 <GoalPicker
                     goals={goals}
@@ -151,12 +171,12 @@ def:pub HomeView(
                 />
             }}
             {has_active and
-                <section aria-label="Who can help" className="flex flex-col gap-2">
+                <section aria-label="Who can help" className="flex flex-col gap-3">
                     <div className="flex items-center justify-between gap-2">
-                        <h2 className="text-sm font-medium">Who can help</h2>
+                        <h2 className="text-eyebrow text-muted-foreground">Who can help</h2>
                         <div className="flex items-center gap-2">
                             {rank_pending and
-                                <span role="status" className="text-xs text-muted-foreground">Walking your graph…</span>}
+                                <span role="status" className="text-caption text-muted-foreground">Walking your graph…</span>}
                             <Button
                                 size="xs"
                                 variant="outline"
@@ -168,9 +188,9 @@ def:pub HomeView(
                             </Button>
                         </div>
                     </div>
-                    {rank_error and <p role="alert" className="text-sm text-destructive/80">{rank_error}</p>}
+                    {rank_error and <p role="alert" className="text-body-sm text-destructive">{rank_error}</p>}
                     {partial and not rank_pending and
-                        <p role="status" className="rounded-md border border-dashed bg-muted pt-2 pb-2 pl-3 pr-3 text-xs text-muted-foreground">
+                        <p role="status" className="rounded-lg border border-dashed border-border-strong pt-2 pb-2 pl-3 pr-3 text-caption text-muted-foreground">
                             Ranking is partial right now — tap Re-rank in a minute.
                         </p>}
                     {if len(rank_rows) > 0 {
@@ -178,15 +198,9 @@ def:pub HomeView(
                     } elif rank_pending or not rank_cached {
                         <RankSkeleton />
                     } elif not rank_error {
-                        <p className="rounded-md border border-dashed pt-4 pb-4 pl-3 pr-3 text-sm text-muted-foreground">
+                        <p className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm text-muted-foreground">
                             {"No one yet — "}
-                            <button
-                                type="button"
-                                className="font-medium text-primary underline-offset-4 hover:underline"
-                                onClick={handle_capture}
-                            >
-                                capture a conversation
-                            </button>
+                            <Button variant="link" size="inline" onClick={handle_capture}>capture a conversation</Button>
                             {" to start."}
                         </p>
                     }}
@@ -204,43 +218,44 @@ def:pub HomeView(
                     onRetry={do_retry_gaps}
                 />}
             <RequestsSection mine={mine} claims={claims} onOpen={do_open_request} />
-            <details className="group rounded-md border">
-                <summary className="flex cursor-pointer list-none items-baseline justify-between pt-2.5 pb-2.5 pl-3 pr-3">
-                    <span className="text-sm font-medium">
-                        <span aria-hidden="true" className="inline-block pr-1.5 text-muted-foreground transition-transform group-open:rotate-90">▸</span>
+            <Collapsible className="overflow-hidden rounded-lg border bg-card shadow-edge">
+                <CollapsibleTrigger
+                    className={cn(
+                        buttonVariants().call(None, {"variant": "ghost", "size": "row"}),
+                        "flex-row items-center justify-between rounded-none [&[data-state=open]>span>svg]:rotate-90"
+                    )}
+                >
+                    <span className="flex items-center gap-1.5 text-body-sm font-medium">
+                        <ChevronRightIcon className="size-4 text-muted-foreground transition-transform" />
                         People you know
                     </span>
-                    <span className="text-xs tabular-nums text-muted-foreground">{str(len(people))}</span>
-                </summary>
-                {if len(people) == 0 {
-                    <p className="border-t pt-3 pb-3 pl-3 pr-3 text-sm text-muted-foreground">
-                        {"No one yet — "}
-                        <button
-                            type="button"
-                            className="font-medium text-primary underline-offset-4 hover:underline"
-                            onClick={handle_capture}
-                        >
-                            capture a conversation
-                        </button>
-                        {" to start."}
-                    </p>
-                } else {
-                    <ul className="flex flex-col divide-y divide-border border-t">
-                        {for (idx, p) in enumerate(people) {
-                            <li key={str(idx)} className="flex flex-col pt-2 pb-2 pl-3 pr-3">
-                                <span className="text-sm">{p.name}</span>
-                                {(p.title or p.org) and
-                                    <span className="text-xs text-muted-foreground">
-                                        {join_with([s for s in [p.title, p.org] if s], ", ")}
-                                    </span>}
-                            </li>
-                        }}
-                    </ul>
-                }}
-            </details>
-            {status and <p className="text-xs text-muted-foreground">{status}</p>}
-            <div className="fixed inset-x-0 bottom-0 z-10 border-t bg-background/90 backdrop-blur">
-                <div className="mx-auto w-full max-w-md pt-3 pb-4 pl-4 pr-4">
+                    <span className="text-caption tabular-nums text-muted-foreground">{str(len(people))}</span>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                    {if len(people) == 0 {
+                        <p className="border-t pt-3 pb-3 pl-4 pr-4 text-body-sm text-muted-foreground">
+                            {"No one yet — "}
+                            <Button variant="link" size="inline" onClick={handle_capture}>capture a conversation</Button>
+                            {" to start."}
+                        </p>
+                    } else {
+                        <ul className="flex flex-col divide-y divide-border border-t">
+                            {for (idx, p) in enumerate(people) {
+                                <li key={str(idx)} className="flex flex-col pt-2.5 pb-2.5 pl-4 pr-4">
+                                    <span className="text-body-sm">{p.name}</span>
+                                    {(p.title or p.org) and
+                                        <span className="text-caption text-muted-foreground">
+                                            {join_with([s for s in [p.title, p.org] if s], ", ")}
+                                        </span>}
+                                </li>
+                            }}
+                        </ul>
+                    }}
+                </CollapsibleContent>
+            </Collapsible>
+            {status and <p className="text-caption text-muted-foreground">{status}</p>}
+            <div className="fixed inset-x-0 bottom-0 z-10 border-t bg-background/85 backdrop-blur">
+                <div className="mx-auto w-full max-w-md pt-3 pl-4 pr-4 pb-[max(16px,env(safe-area-inset-bottom))]">
                     <Button className="w-full" size="lg" onClick={handle_capture}>Capture a conversation</Button>
                 </div>
             </div>

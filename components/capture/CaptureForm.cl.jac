@@ -8,11 +8,8 @@ and the Capture call. The mic is a visible placeholder for voice capture
 import from "..ui.button" { Button }
 import from "..ui.textarea" { Textarea }
 import from "..ui.field" { Field, FieldLabel, FieldDescription }
-import from ...lib.utils { cn }
-
-glob _SEG_BASE: str = "flex-1 rounded-[5px] pt-1 pb-1 pl-3 pr-3 text-sm font-medium transition-colors disabled:opacity-50",
-     _SEG_ON: str = "bg-background text-foreground shadow-sm ring-1 ring-border",
-     _SEG_OFF: str = "text-muted-foreground hover:text-foreground";
+import from "..ui.tabs" { Tabs, TabsList, TabsTrigger, TabsContent }
+import from "..ui.icons" { MicIcon, ChevronLeftIcon }
 
 def:pub CaptureForm(
     text: str,
@@ -28,12 +25,8 @@ def:pub CaptureForm(
         onTextChange(e.target.value);
     }
 
-    def handle_debrief(e: MouseEvent) {
-        onKindChange("debrief");
-    }
-
-    def handle_paste(e: MouseEvent) {
-        onKindChange("paste");
+    def handle_kind(value: str) -> None {
+        onKindChange(value);
     }
 
     def handle_submit(e: MouseEvent) {
@@ -51,60 +44,8 @@ def:pub CaptureForm(
         else "Paste notes, an email, or a list — one person per line works. Cirql keeps the original text."
     );
 
-    return
-        <div className="flex flex-col gap-4">
-            <header className="flex items-center gap-2">
-                <Button size="sm" variant="ghost" disabled={pending} onClick={handle_back} aria-label="Back to home">
-                    {"← Back"}
-                </Button>
-                <h1 className="text-base font-semibold tracking-tight">Capture</h1>
-            </header>
-            <div className="flex items-center gap-2">
-                <div role="group" aria-label="Note kind" className="flex flex-1 gap-1 rounded-md border bg-muted pt-0.5 pb-0.5 pl-0.5 pr-0.5">
-                    <button
-                        type="button"
-                        aria-pressed={kind == "debrief"}
-                        disabled={pending}
-                        className={cn(_SEG_BASE, _SEG_ON if kind == "debrief" else _SEG_OFF)}
-                        onClick={handle_debrief}
-                    >
-                        Debrief
-                    </button>
-                    <button
-                        type="button"
-                        aria-pressed={kind == "paste"}
-                        disabled={pending}
-                        className={cn(_SEG_BASE, _SEG_ON if kind == "paste" else _SEG_OFF)}
-                        onClick={handle_paste}
-                    >
-                        Paste
-                    </button>
-                </div>
-                <button
-                    type="button"
-                    disabled={True}
-                    aria-label="Voice capture — coming soon"
-                    title="Voice capture is coming soon"
-                    className="inline-flex h-8 shrink-0 cursor-not-allowed items-center gap-1 rounded-md border border-dashed pl-2 pr-2 text-xs text-muted-foreground"
-                >
-                    <svg
-                        aria-hidden="true"
-                        viewBox="0 0 24 24"
-                        width="14"
-                        height="14"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <rect x="9" y="3" width="6" height="11" rx="3" />
-                        <path d="M5 11a7 7 0 0 0 14 0" />
-                        <path d="M12 18v3" />
-                    </svg>
-                    <span>Voice · soon</span>
-                </button>
-            </div>
+    def note_field() -> JsxElement {
+        return
             <Field>
                 <FieldLabel htmlFor="capture-text" className="sr-only">Your note</FieldLabel>
                 <Textarea
@@ -116,13 +57,44 @@ def:pub CaptureForm(
                     placeholder="What happened? Who did you meet, what did they say, what did you promise?"
                 />
                 <FieldDescription>{hint}</FieldDescription>
-            </Field>
-            {error and <p role="alert" className="text-sm text-destructive/80">{error}</p>}
-            <Button className="w-full" disabled={not can_submit} onClick={handle_submit}>
+            </Field>;
+    }
+
+    return
+        <div className="flex flex-col gap-5">
+            <header className="-ml-2 flex items-center gap-1">
+                <Button size="icon" variant="ghost" disabled={pending} onClick={handle_back} aria-label="Back to home">
+                    <ChevronLeftIcon className="size-5" />
+                </Button>
+                <h1 className="text-card-title">Capture</h1>
+            </header>
+            <Tabs value={kind} onValueChange={handle_kind}>
+                <div className="flex items-center gap-2">
+                    <TabsList aria-label="Note kind" className="flex-1">
+                        <TabsTrigger value="debrief" disabled={pending}>Debrief</TabsTrigger>
+                        <TabsTrigger value="paste" disabled={pending}>Paste</TabsTrigger>
+                    </TabsList>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={True}
+                        aria-label="Voice capture — coming soon"
+                        title="Voice capture is coming soon"
+                        className="h-10 border-dashed border-border-strong text-muted-foreground"
+                    >
+                        <MicIcon className="size-3.5" />
+                        <span className="text-caption">Voice · soon</span>
+                    </Button>
+                </div>
+                <TabsContent value="debrief">{note_field()}</TabsContent>
+                <TabsContent value="paste">{note_field()}</TabsContent>
+            </Tabs>
+            {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
+            <Button className="w-full" size="lg" disabled={not can_submit} onClick={handle_submit}>
                 {"Reading your note…" if pending else "Capture"}
             </Button>
             {pending and
-                <p aria-live="polite" className="text-center text-xs text-muted-foreground">
+                <p aria-live="polite" className="text-center text-caption text-muted-foreground">
                     Pulling out people, facts, intents and promises. Nothing is sent to anyone.
                 </p>}
         </div>;

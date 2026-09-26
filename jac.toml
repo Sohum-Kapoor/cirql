@@ -41,6 +41,11 @@ base_route_app = "app"
 plugins = ["tailwindcss()"]
 lib_imports = ["import tailwindcss from '@tailwindcss/vite'"]
 
+[plugins.client.app_meta_data]
+# Served <head> (SOH-206): tab title (color-scheme lives in assets/main.css;
+# jac-client writes meta content unquoted, so any value with a space breaks — title only).
+title = "Cirql"
+
 [plugins.client.mobile]
 # Capacitor iOS shell (SOH-174). Set app_id BEFORE `jac setup mobile` (it is baked
 # into the Xcode project). The backend URL is NOT here: scripts/ios_build.sh passes

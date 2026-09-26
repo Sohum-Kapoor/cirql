@@ -19,6 +19,9 @@ TODO(SOH-172): Matchmaker fallback second act skipped — the 9 PM gate passed.
 
 import from "@jac/runtime" { jacLogin, jacSignup, jacLogout, jacIsLoggedIn }
 import ".assets.main.css";
+# Appearance (SOH-206): importing lib/theme applies the stored Light/Dark/System
+# choice to <html> at module load, before the first React render.
+import from .lib.theme { BOOT_THEME }
 
 import from .components.AuthCard { AuthCard }
 import from .components.HomeView { HomeView }
@@ -296,7 +299,7 @@ def:pub app -> JsxElement {
                     onSignup={signup}
                 />
             } elif view == "loading" {
-                <p key="loading" className="text-sm text-muted-foreground">Loading your graph…</p>
+                <p key="loading" role="status" data-theme-boot={BOOT_THEME} className="pt-10 text-body-sm text-muted-foreground">Loading your graph…</p>
             } elif view == "home" {
                 <HomeView
                     key="home"

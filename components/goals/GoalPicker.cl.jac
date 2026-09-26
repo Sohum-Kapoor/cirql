@@ -1,8 +1,8 @@
 """Goal picker — the active goal as a compact selector on home. OWNER: Person B.
 
-Tap it to open an inline list: switch to another goal (SetGoal with that goal's
-text), "+ New goal" (SetGoal with new text), or close the active goal (CloseGoal,
-after a confirm — the goal is kept, just inactive). With no active goal it
+Tap it to open a bottom sheet (SOH-206): switch to another goal (SetGoal with
+that goal's text), "New goal" (SetGoal with new text), or close the active goal
+(CloseGoal, after an alert-dialog confirm — the goal is kept, just inactive). With no active goal it
 becomes the "What are you working toward?" prompt, with earlier goals listed to
 reopen. The shell owns the goals and the walker calls; this component only
 holds UI state (open / adding / confirming / draft).
@@ -10,6 +10,12 @@ holds UI state (open / adding / confirming / draft).
 
 import from ..ui.button { Button }
 import from ..ui.input { Input }
+import from ..ui.sheet { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetBody, SheetFooter }
+import from ..ui.alert_dialog {
+    AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription,
+    AlertDialogFooter, AlertDialogAction, AlertDialogCancel
+}
+import from ..ui.icons { CheckIcon, ChevronDownIcon, PlusIcon }
 import from ...lib.utils { cn }
 
 def _gid(g: dict) -> str {
@@ -24,19 +30,20 @@ def:pub GoalOption(goal: dict, is_active: bool, disabled: bool, onPick: Callable
 
     return
         <li>
-            <button
-                type="button"
+            <Button
+                variant="ghost"
+                size="row"
                 disabled={disabled or is_active}
                 aria-current={"true" if is_active else "false"}
                 className={cn(
-                    "flex w-full items-start gap-2 pt-2.5 pb-2.5 pl-3 pr-3 text-left text-sm transition-colors disabled:cursor-default",
-                    "text-foreground" if is_active else "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    "flex-row items-start gap-2 disabled:opacity-100",
+                    "text-foreground" if is_active else "text-muted-foreground hover:text-foreground"
                 )}
                 onClick={handle_pick}
             >
-                <span aria-hidden="true" className={cn("w-4 shrink-0 text-primary", "" if is_active else "invisible")}>✓</span>
-                <span className="min-w-0 flex-1 break-words">{goal["text"] as str}</span>
-            </button>
+                <CheckIcon className={cn("mt-0.5 size-4 shrink-0 text-link", "" if is_active else "invisible")} />
+                <span className="min-w-0 flex-1 break-words text-body-sm">{goal["text"] as str}</span>
+            </Button>
         </li>;
 }
 
@@ -83,11 +90,11 @@ def:pub NewGoalForm(
                 onKeyDown={handle_key}
             />
             <div className="flex gap-2">
-                <Button className="flex-1" size="sm" disabled={busy or not draft.strip()} onClick={handle_save}>
+                <Button className="flex-1" disabled={busy or not draft.strip()} onClick={handle_save}>
                     {"Saving…" if busy else "Set goal"}
                 </Button>
                 {onCancel and
-                    <Button size="sm" variant="ghost" disabled={busy} onClick={handle_cancel}>Cancel</Button>}
+                    <Button variant="ghost" disabled={busy} onClick={handle_cancel}>Cancel</Button>}
             </div>
         </div>;
 }
@@ -110,10 +117,21 @@ def:pub GoalPicker(
     active_id: str = _gid(active) if len(active_goals) > 0 else "";
     others: list[dict] = [g for g in goals if not g["active"]];
 
-    def toggle_open(e: MouseEvent) {
-        open = not open;
+    def open_sheet(e: MouseEvent) {
+        open = True;
         adding = False;
         confirming = False;
+    }
+
+    def set_open(v: bool) -> None {
+        open = v;
+        if not v {
+            adding = False;
+        }
+    }
+
+    def set_confirming(v: bool) -> None {
+        confirming = v;
     }
 
     def pick(goal_id: str) -> None {
@@ -148,12 +166,9 @@ def:pub GoalPicker(
     }
 
     def ask_close(e: MouseEvent) {
+        open = False;
         confirming = True;
         adding = False;
-    }
-
-    def keep(e: MouseEvent) {
-        confirming = False;
     }
 
     def do_close(e: MouseEvent) {
@@ -164,19 +179,19 @@ def:pub GoalPicker(
 
     if not active_id {
         return
-            <section aria-label="Goal" className="flex flex-col gap-3 rounded-md border bg-card pt-4 pb-4 pl-3 pr-3">
+            <section aria-label="Goal" className="flex flex-col gap-4 rounded-lg border bg-card pt-4 pb-4 pl-4 pr-4 shadow-edge">
                 <div className="flex flex-col gap-1">
-                    <h2 className="text-base font-semibold tracking-tight">What are you working toward?</h2>
-                    <p className="text-sm text-muted-foreground">
+                    <h2 className="text-subhead font-medium">What are you working toward?</h2>
+                    <p className="text-body-sm text-muted-foreground">
                         One goal at a time. Cirql ranks the people you know against it.
                     </p>
                 </div>
                 <NewGoalForm draft={draft} busy={busy} autoFocus={False} onDraft={set_draft} onSave={save_new} />
-                {error and <p role="alert" className="text-sm text-destructive/80">{error}</p>}
+                {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
                 {len(others) > 0 and
-                    <div className="flex flex-col gap-1">
-                        <span className="text-xs font-medium text-muted-foreground">Earlier goals — tap to reopen</span>
-                        <ul className="flex flex-col divide-y divide-border rounded-md border">
+                    <div className="flex flex-col gap-2">
+                        <span className="text-eyebrow text-muted-foreground">Earlier goals — tap to reopen</span>
+                        <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-md border bg-background">
                             {for g in others {
                                 <GoalOption key={_gid(g)} goal={g} is_active={False} disabled={busy} onPick={pick} />
                             }}
@@ -187,32 +202,36 @@ def:pub GoalPicker(
 
     return
         <section aria-label="Goal" className="flex flex-col gap-2">
-            <button
-                type="button"
+            <Button
+                variant="secondary"
+                size="row"
+                aria-haspopup="dialog"
                 aria-expanded={open}
-                aria-controls="goal-sheet"
-                className={cn(
-                    "flex w-full items-center gap-3 rounded-md border pt-2.5 pb-2.5 pl-3 pr-3 text-left transition-colors",
-                    "border-primary bg-accent" if open else "bg-card hover:bg-muted"
-                )}
-                onClick={toggle_open}
+                className="flex-row items-center gap-3 rounded-lg"
+                onClick={open_sheet}
             >
-                <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Goal</span>
-                    <span className="line-clamp-2 text-sm font-medium">{active["text"] as str}</span>
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="text-eyebrow text-muted-foreground">Goal</span>
+                    <span className="line-clamp-2 text-body font-medium">{active["text"] as str}</span>
                 </div>
-                <span aria-hidden="true" className={cn("shrink-0 text-muted-foreground transition-transform", "rotate-180" if open else "")}>▾</span>
-            </button>
-            {error and <p role="alert" className="text-sm text-destructive/80">{error}</p>}
-            {open and
-                <div id="goal-sheet" className="flex flex-col gap-2 rounded-md border bg-popover pt-1 pb-2 shadow-sm">
-                    <ul className="flex flex-col divide-y divide-border">
-                        <GoalOption key={active_id} goal={active} is_active={True} disabled={busy} onPick={pick} />
-                        {for g in others {
-                            <GoalOption key={_gid(g)} goal={g} is_active={False} disabled={busy} onPick={pick} />
-                        }}
-                    </ul>
-                    <div className="flex flex-col gap-2 border-t pt-2 pl-3 pr-3">
+                <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
+            </Button>
+            {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
+            <Sheet open={open} onOpenChange={set_open}>
+                <SheetContent id="goal-sheet">
+                    <SheetHeader>
+                        <SheetTitle>Goals</SheetTitle>
+                        <SheetDescription>One active goal. Switching keeps each goal's ranking.</SheetDescription>
+                    </SheetHeader>
+                    <SheetBody>
+                        <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card">
+                            <GoalOption key={active_id} goal={active} is_active={True} disabled={busy} onPick={pick} />
+                            {for g in others {
+                                <GoalOption key={_gid(g)} goal={g} is_active={False} disabled={busy} onPick={pick} />
+                            }}
+                        </ul>
+                    </SheetBody>
+                    <SheetFooter>
                         {if adding {
                             <NewGoalForm
                                 draft={draft}
@@ -222,23 +241,31 @@ def:pub GoalPicker(
                                 onSave={save_new}
                                 onCancel={cancel_new}
                             />
-                        } elif confirming {
-                            <div role="alertdialog" aria-label="Close goal" className="flex flex-col gap-2">
-                                <p className="text-sm">
-                                    {"Close “" + (active["text"] as str) + "”? Its ranking is cleared; the goal stays in your list to reopen."}
-                                </p>
-                                <div className="flex gap-2">
-                                    <Button className="flex-1" size="sm" variant="destructive" disabled={busy} onClick={do_close}>Close goal</Button>
-                                    <Button className="flex-1" size="sm" variant="outline" disabled={busy} onClick={keep}>Keep it</Button>
-                                </div>
-                            </div>
                         } else {
                             <div className="flex items-center justify-between gap-2">
-                                <Button size="sm" variant="ghost" disabled={busy} onClick={start_add}>+ New goal</Button>
-                                <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={busy} onClick={ask_close}>Close this goal</Button>
+                                <Button variant="secondary" disabled={busy} onClick={start_add}>
+                                    <PlusIcon />
+                                    New goal
+                                </Button>
+                                <Button variant="ghost" className="text-muted-foreground" disabled={busy} onClick={ask_close}>Close this goal</Button>
                             </div>
                         }}
-                    </div>
-                </div>}
+                    </SheetFooter>
+                </SheetContent>
+            </Sheet>
+            <AlertDialog open={confirming} onOpenChange={set_confirming}>
+                <AlertDialogContent aria-label="Close goal">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Close this goal?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {"“" + (active["text"] as str) + "” — its ranking is cleared; the goal stays in your list to reopen."}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={busy}>Keep it</AlertDialogCancel>
+                        <AlertDialogAction variant="destructive" disabled={busy} onClick={do_close}>Close goal</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </section>;
 }
