@@ -96,8 +96,8 @@ Rules an agent must follow:
 
 - Relationships never decay. `Knows.last_contact` is display only; nothing reads it to lower anything. Facts and intents have freshness/expiry.
 - Relevance is a property of (Person, Goal) — the `RelevantTo` edge — never of a Person. No worth scores, no give/take ledger.
-- Every Fact/Intent/Promise/Reported tie carries `source_note` (+ span or URL). No receipts, no feature.
-- The only thing that crosses accounts is a `Card` its owner wrote, granted read-only to a specific user. An agent answering an Exchange request runs on its owner's root only and returns a count and a strength — no identity — until every person involved has approved.
+- Every claim has provenance: a Fact/Intent/Promise is reachable from its Note via an `Asserts*` edge carrying `span`; a `Knows`/`Reported` tie carries `source_note` (+ span); web facts carry `source_url`. No receipts, no feature.
+- The only graph object that crosses accounts is a `Card` its owner wrote, granted read-only to a specific user via `allow_root`. The Exchange on `root.shared` carries a need, one line about the requester, and a handle — never a name from anyone's graph. An agent answering an Exchange request runs on its owner's root only and returns a count and a strength — no identity — until every person involved has approved. (Wording per SOH-160 v1.1, 2026-09-26.)
 - Nothing sends. Drafts only; approvals are recorded and labeled with their source.
 - No automated fetching from LinkedIn or any platform whose terms forbid it.
 - Privacy claims: say "isolated by construction" and "granted read-only"; never "private", "secure", "encrypted".
@@ -120,3 +120,5 @@ add it to this file under "Gotchas" — one line, with the fix.
 - Registering a user with an `@…test` / reserved domain fails validation; use `@example.com` in tests.
 - Reports come back as `data.reports` (also under `data.result.reports`).
 - `pkill -f "jac start"` from a shell whose own command line contains that string kills the shell; use the `star[t]` bracket trick.
+- `JacTestClient.from_file` can't target a `*.sv.jac` (or any dotted-basename) file directly: it derives the served module name by stripping only the trailing `.jac`, so `walkers.sv.jac` becomes target `"walkers.sv"` — Python's `import_module` then treats the dot as a package separator and 404s with `ModuleNotFoundError: No module named 'walkers.sv'; 'walkers' is not a package`. Point it at a dot-free harness file (e.g. a temp `app.jac` with `import from walkers { ... }`, copied next to the real `*.sv.jac`) instead.
+- `jac clean --all --force` deletes `.jac/data|cache|client` in whatever directory you run it from — even while another `jac start` keeps running against that same directory (the process itself doesn't crash, but its on-disk state is gone and gets silently recreated empty). Never run `jac clean` in the shared repo root; only run it inside a scratch/test directory, or better, avoid it entirely by giving `JacTestClient`/tests their own `base_path`.

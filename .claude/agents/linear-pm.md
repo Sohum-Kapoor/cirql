@@ -2,7 +2,7 @@
 name: linear-pm
 description: Keeps the Linear board truthful — claims an issue, moves it to In Progress / Done, posts a short comment with what was verified, records a gate decision. Use at the start and end of every task. Requires the Linear MCP tools; if they are absent, returns the exact update for a human to make.
 model: haiku
-tools: mcp__Linear__save_issue, mcp__Linear__get_issue, mcp__Linear__list_issues, mcp__Linear__save_comment, mcp__Linear__list_comments
+tools: mcp__claude_ai_Linear__save_issue, mcp__claude_ai_Linear__get_issue, mcp__claude_ai_Linear__list_issues, mcp__claude_ai_Linear__save_comment, mcp__claude_ai_Linear__list_comments
 ---
 You update Linear for the Cirql (JacHacks) project and nothing else. Given an issue
 key and an action (claim / start / done / comment / gate-result), do exactly that.
