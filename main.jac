@@ -29,6 +29,7 @@ import from paths { PathFinder }
 import from merge { ProposeMerges, MergePeople, UndoMerge }
 import from plan { GamePlan }
 import from health { NetworkHealth }
+import from noted { NotedCard, ApplyCorrection }
 
 # Client-side UI
 cl {
