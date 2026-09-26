@@ -46,6 +46,11 @@ lib_imports = ["import tailwindcss from '@tailwindcss/vite'"]
 # separate microservice and spawns subprocesses that never become healthy.
 enabled = false
 
+[plugins.scale.jwt]
+# Never ship the default signing secret (anyone could forge tokens). The host sets
+# JWT_SECRET in its .env; the fallback keeps local `jac start` working.
+secret = "${JWT_SECRET:-dev-only-secret-change-me-on-any-host}"
+
 [plugins.byllm.model]
 # Gemini via byLLM (GOOGLE_API_KEY in .env).
 # Verified 2026-09-26 14:58 via `jac run` hello (SOH-161): 2.0/2.5 models are retired on
