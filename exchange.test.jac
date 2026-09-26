@@ -24,14 +24,14 @@ import tempfile;
 import time;
 import requests;
 import sys;
-import from exchange { request_closed }
-import from schema { IntroRequest }
+import from exchange { request_closed, friend_handles, friend_entries, request_visible, norm_audience }
+import from schema { IntroRequest, Me, Person, Knows, Card, FromCard }
 import from scoring { NeedMatch, NeedMatches }
 
 glob EX_REPO_ROOT = os.path.dirname(os.path.abspath(__file__));
 
 def _ex_harness(tmp_dir: str) -> str {
-    for name in ["exchange.sv.jac", "schema.sv.jac", "scoring.sv.jac", "onboard.sv.jac", "walkers.sv.jac", "cards.sv.jac", "llm.sv.jac", "freshness.sv.jac", "goals.sv.jac", "reads.sv.jac"] {
+    for name in ["exchange.sv.jac", "schema.sv.jac", "scoring.sv.jac", "onboard.sv.jac", "walkers.sv.jac", "cards.sv.jac", "llm.sv.jac", "freshness.sv.jac", "goals.sv.jac", "reads.sv.jac", "handshake.sv.jac"] {
         shutil.copyfile(os.path.join(EX_REPO_ROOT, name), os.path.join(tmp_dir, name));
     }
     harness_path = os.path.join(tmp_dir, "exapp.jac");
@@ -42,6 +42,8 @@ def _ex_harness(tmp_dir: str) -> str {
         "import from exchange { PostRequest, ListIncomingRequests, ReplyToRequest, ListMyRequests, ListMyReplies, "
         "ApproveReply, OptIn, Reveal, ClaimReveal, DeclineRequest, DeclineReply, DevMakeCard, DevSeedMatch }\n"
         "import from cards { PublishCard }\n"
+        "import from exchange { ListFriends, BlockHandle, UnblockHandle }\n"
+        "import from handshake { OfferHandshake, AcceptHandshake, ListHandshakes }\n"
     );
     f.close();
     t = open(os.path.join(tmp_dir, "jac.toml"), "w");
@@ -180,7 +182,7 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
         a_reports: list[any] = [];
 
         # A posts.
-        posted = _run(cl, a, "PostRequest", {"need": "a climate-tech seed investor", "about_line": "Building battery recycling"});
+        posted = _run(cl, a, "PostRequest", {"audience": "everyone", "need": "a climate-tech seed investor", "about_line": "Building battery recycling"});
         a_reports.extend(posted);
         req = posted[0];
         print(f"[ex] PostRequest -> {req}");
@@ -327,9 +329,9 @@ test "exchange: state machine refuses skipped or foreign transitions" {
 
         # no Card -> no_card
         c = _reg(cl, "ex_c2@example.com");
-        assert _err(_run(cl, c, "PostRequest", {"need": "x", "about_line": ""})) == "no_card";
+        assert _err(_run(cl, c, "PostRequest", {"audience": "everyone", "need": "x", "about_line": ""})) == "no_card";
 
-        req_id = str(_run(cl, a, "PostRequest", {"need": "a designer", "about_line": "hi"})[0]["_jac_id"]);
+        req_id = str(_run(cl, a, "PostRequest", {"audience": "everyone", "need": "a designer", "about_line": "hi"})[0]["_jac_id"]);
         rv = _run(cl, b, "ReplyToRequest", {"request_id": req_id})[0];
         reply_id = str(rv["_jac_id"]);
         assert int(rv["match_count"]) == 0 and str(rv["strength"]) == "weak", rv;
@@ -366,9 +368,9 @@ test "exchange: expired and declined requests are not incoming" {
         _run(cl, a, "DevMakeCard", {"handle": "alice-exp", "name": "Alice"});
         _run(cl, b, "DevMakeCard", {"handle": "bob-exp", "name": "Bob"});
 
-        expired = str(_run(cl, a, "PostRequest", {"need": "old", "about_line": "", "ttl_days": 0})[0]["_jac_id"]);
-        live = str(_run(cl, a, "PostRequest", {"need": "new", "about_line": ""})[0]["_jac_id"]);
-        withdrawn = str(_run(cl, a, "PostRequest", {"need": "withdrawn", "about_line": ""})[0]["_jac_id"]);
+        expired = str(_run(cl, a, "PostRequest", {"audience": "everyone", "need": "old", "about_line": "", "ttl_days": 0})[0]["_jac_id"]);
+        live = str(_run(cl, a, "PostRequest", {"audience": "everyone", "need": "new", "about_line": ""})[0]["_jac_id"]);
+        withdrawn = str(_run(cl, a, "PostRequest", {"audience": "everyone", "need": "withdrawn", "about_line": ""})[0]["_jac_id"]);
         _run(cl, a, "DeclineRequest", {"request_id": withdrawn});
 
         incoming = [str(r["_jac_id"]) for r in _run(cl, b, "ListIncomingRequests", {})];
@@ -397,7 +399,7 @@ test "exchange: a request whose from_handle equals the friend's handle still rea
         # Handles are self-chosen: A picks B's handle.
         _run(cl, a, "DevMakeCard", {"handle": "same-handle", "name": "Alice"});
         _run(cl, b, "DevMakeCard", {"handle": "same-handle", "name": "Bob"});
-        req_id = str(_run(cl, a, "PostRequest", {"need": "a mentor", "about_line": ""})[0]["_jac_id"]);
+        req_id = str(_run(cl, a, "PostRequest", {"audience": "everyone", "need": "a mentor", "about_line": ""})[0]["_jac_id"]);
         b_in = [str(r["_jac_id"]) for r in _run(cl, b, "ListIncomingRequests", {})];
         a_in = [str(r["_jac_id"]) for r in _run(cl, a, "ListIncomingRequests", {})];
         assert req_id in b_in, f"same-handle request hidden from friend: {b_in}";
@@ -429,13 +431,13 @@ test "exchange SOH-211: a declined request refuses approve, opt-in, reveal and c
         _run(cl, b, "DevMakeCard", {"handle": "bob-rc", "name": "Bob"});
 
         # Declined reply -> ClaimReveal refuses it (checked before any other state).
-        r1 = str(_run(cl, a, "PostRequest", {"need": "a designer", "about_line": ""})[0]["_jac_id"]);
+        r1 = str(_run(cl, a, "PostRequest", {"audience": "everyone", "need": "a designer", "about_line": ""})[0]["_jac_id"]);
         reply1 = str(_run(cl, b, "ReplyToRequest", {"request_id": r1})[0]["_jac_id"]);
         assert _run(cl, b, "DeclineReply", {"reply_id": reply1}) == ["declined"];
         assert _err(_run(cl, a, "ClaimReveal", {"reply_id": reply1})) == "reply_declined";
 
         # Declined request -> every later transition refuses with request_closed.
-        r2 = str(_run(cl, a, "PostRequest", {"need": "a mentor", "about_line": ""})[0]["_jac_id"]);
+        r2 = str(_run(cl, a, "PostRequest", {"audience": "everyone", "need": "a mentor", "about_line": ""})[0]["_jac_id"]);
         reply2 = str(_run(cl, b, "ReplyToRequest", {"request_id": r2})[0]["_jac_id"]);
         assert _run(cl, a, "DeclineRequest", {"request_id": r2}) == ["declined"];
         assert _err(_run(cl, b, "ApproveReply", {"reply_id": reply2})) == "request_closed";
@@ -609,11 +611,11 @@ test "exchange: B's reply is visible to A after a real server restart" {
             "fact": "Priya is a partner at a climate-tech seed fund.",
             "offer": "intros to climate-tech seed investors"
         });
-        req_id = str(_ex_call(base, a, "PostRequest", {"need": "a climate-tech seed investor", "about_line": "battery recycling"})[0]["_jac_id"]);
+        req_id = str(_ex_call(base, a, "PostRequest", {"audience": "everyone", "need": "a climate-tech seed investor", "about_line": "battery recycling"})[0]["_jac_id"]);
         rv = _ex_call(base, b, "ReplyToRequest", {"request_id": req_id})[0];
         assert str(rv["status"]) == "pending", rv;
         reply_id = str(rv["_jac_id"]);
-        b_req_id = str(_ex_call(base, b, "PostRequest", {"need": "a designer", "about_line": ""})[0]["_jac_id"]);
+        b_req_id = str(_ex_call(base, b, "PostRequest", {"audience": "everyone", "need": "a designer", "about_line": ""})[0]["_jac_id"]);
 
         _ex_kill(proc1);
         proc1 = None;
@@ -656,6 +658,117 @@ test "exchange: B's reply is visible to A after a real server restart" {
     } finally {
         if proc1 is not None { _ex_kill(proc1); }
         if proc2 is not None { _ex_kill(proc2); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+# ---------------------------------------------------------------- SOH-218 friend-gated Exchange
+
+test "exchange SOH-218: friend_handles finds FromCard edges and card: markers, nothing else" {
+    me = (root ++> Me(name="friends-218"))[0];
+    tag = jid(me)[:10];
+    via_edge = (me +>:Knows(how_met="handshake", source_note=""):+> Person(name="Via Edge"))[0];
+    card = (root ++> Card(handle=f"edge-{tag}", name="Via Edge"))[0];
+    via_edge +>:FromCard(handle=f"edge-{tag}", received_at="2026-09-26T10:00:00"):+> card;
+    me +>:Knows(how_met="handshake", source_note=f"card:mark-{tag}"):+> Person(name="Via Marker");
+    me +>:Knows(how_met="met at a talk", source_note="some-note-jid"):+> Person(name="Not A Friend");
+    assert friend_handles(me) == [f"edge-{tag}", f"mark-{tag}"], friend_handles(me);
+    entries = friend_entries(me);
+    assert len(entries) == 2, entries;
+    assert str(entries[0]["since"]) == "2026-09-26T10:00:00" and str(entries[1]["since"]) == "", entries;
+    p0 = entries[0]["person"];
+    assert isinstance(p0, Person) and (p0 as Person).name == "Via Edge";
+}
+
+test "exchange SOH-218: request_visible gates on audience, friendship and blocks" {
+    fr = IntroRequest(need="n", from_handle="pal", audience="friends");
+    ev = IntroRequest(need="n", from_handle="stranger", audience="everyone");
+    odd = IntroRequest(need="n", from_handle="stranger", audience="bogus");
+    assert request_visible(fr, ["pal"], []);
+    assert not request_visible(fr, [], []);
+    assert request_visible(ev, [], []);
+    assert not request_visible(odd, [], []);
+    assert not request_visible(ev, [], ["stranger"]);
+    assert not request_visible(fr, ["pal"], ["pal"]);
+    assert norm_audience("Everyone") == "everyone" and norm_audience("x") == "friends" and norm_audience("") == "friends";
+}
+
+test "exchange SOH-218: friends-only requests reach friends only; blocks hide both sides" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_ex_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "ex_a218@example.com");
+        b = _reg(cl, "ex_b218@example.com");
+        c = _reg(cl, "ex_c218@example.com");
+        a_handle = str(_run(cl, a, "PublishCard", {"headline": "Founder", "about": "Battery recycling.", "visibility": "link", "name": "Alice"})[0]["handle"]);
+        b_handle = str(_run(cl, b, "PublishCard", {"headline": "Organizer", "visibility": "link", "name": "Bob"})[0]["handle"]);
+        c_handle = str(_run(cl, c, "DevMakeCard", {"handle": "carol-218", "name": "Carol"})[0]["handle"]);
+
+        # No handshake yet: nobody is anybody's friend.
+        assert _run(cl, b, "ListFriends", {}) == [];
+
+        # A offers, B accepts: B now holds A's Card; A materializes B's on ListHandshakes.
+        offer_id = str(_run(cl, a, "OfferHandshake", {"to_handle": b_handle})[0]["offer_id"]);
+        accepted = _run(cl, b, "AcceptHandshake", {"offer_id": offer_id})[0];
+        assert "person" in dict(accepted), accepted;
+        _run(cl, a, "ListHandshakes", {});
+
+        b_friends = _run(cl, b, "ListFriends", {});
+        print(f"[ex 218] B ListFriends -> {b_friends}");
+        assert [str(f["handle"]) for f in b_friends] == [a_handle], b_friends;
+        assert str(b_friends[0]["person"]["name"]) == "Alice", b_friends;
+        assert "since" in dict(b_friends[0]);
+        assert [str(f["handle"]) for f in _run(cl, a, "ListFriends", {})] == [b_handle];
+        assert _run(cl, c, "ListFriends", {}) == [];
+
+        # Default audience is friends; junk normalizes to friends.
+        fr = _run(cl, a, "PostRequest", {"need": "a seed investor", "about_line": ""})[0];
+        assert str(fr["audience"]) == "friends", fr;
+        fr_id = str(fr["_jac_id"]);
+        junk = _run(cl, a, "PostRequest", {"need": "a designer", "about_line": "", "audience": "bogus"})[0];
+        assert str(junk["audience"]) == "friends", junk;
+        ev = _run(cl, a, "PostRequest", {"need": "a mentor", "about_line": "", "audience": "everyone"})[0];
+        assert str(ev["audience"]) == "everyone", ev;
+        ev_id = str(ev["_jac_id"]);
+
+        b_in = [str(r["_jac_id"]) for r in _run(cl, b, "ListIncomingRequests", {})];
+        c_in = [str(r["_jac_id"]) for r in _run(cl, c, "ListIncomingRequests", {})];
+        assert fr_id in b_in and ev_id in b_in, b_in;
+        assert fr_id not in c_in, f"non-friend saw a friends-only request: {c_in}";
+        assert ev_id in c_in, c_in;
+        assert _err(_run(cl, c, "ReplyToRequest", {"request_id": fr_id})) == "not_visible";
+
+        # B answers the friends-only request; C answers the everyone one.
+        b_reply = str(_run(cl, b, "ReplyToRequest", {"request_id": fr_id})[0]["_jac_id"]);
+        c_reply = _run(cl, c, "ReplyToRequest", {"request_id": ev_id})[0];
+        assert str(c_reply["from_handle"]) == c_handle, c_reply;
+        mine = {str(x["request"]["_jac_id"]): [str(r["from_handle"]) for r in x["replies"]] for x in _run(cl, a, "ListMyRequests", {})};
+        assert mine[ev_id] == [c_handle], mine;
+
+        # Requester side: A blocks C -> C's reply disappears from A's view.
+        blk = _run(cl, a, "BlockHandle", {"handle": c_handle});
+        assert blk == [{"blocked": [c_handle]}], blk;
+        mine2 = {str(x["request"]["_jac_id"]): list(x["replies"]) for x in _run(cl, a, "ListMyRequests", {})};
+        assert mine2[ev_id] == [], mine2;
+        assert _run(cl, a, "BlockHandle", {"handle": c_handle}) == [{"blocked": [c_handle]}];
+
+        # Friend side: B blocks A -> none of A's requests show; reply refused; own reply hidden.
+        assert _run(cl, b, "BlockHandle", {"handle": a_handle}) == [{"blocked": [a_handle]}];
+        b_in2 = [str(r["_jac_id"]) for r in _run(cl, b, "ListIncomingRequests", {})];
+        assert ev_id not in b_in2 and fr_id not in b_in2, b_in2;
+        assert _err(_run(cl, b, "ReplyToRequest", {"request_id": ev_id})) == "not_visible";
+        assert [str(x["reply"]["_jac_id"]) for x in _run(cl, b, "ListMyReplies", {})] == [], "blocked request's reply still listed";
+
+        # Unblock restores; A's block list is untouched by B's.
+        assert _run(cl, b, "UnblockHandle", {"handle": a_handle}) == [{"blocked": []}];
+        assert ev_id in [str(r["_jac_id"]) for r in _run(cl, b, "ListIncomingRequests", {})];
+        assert [str(x["reply"]["_jac_id"]) for x in _run(cl, b, "ListMyReplies", {})] == [b_reply];
+        assert _err(_run(cl, b, "BlockHandle", {"handle": "  "})) == "bad_handle";
+        assert _run(cl, a, "UnblockHandle", {"handle": "nobody"}) == [{"blocked": [c_handle]}];
+    } finally {
+        if client is not None { client.close(); }
         shutil.rmtree(tmp_dir, ignore_errors=True);
     }
 }

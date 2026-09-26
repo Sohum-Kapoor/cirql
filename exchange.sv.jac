@@ -267,6 +267,88 @@ def derive_status(req: IntroRequest, replies: list[IntroReply], now: str) -> str
     return derived;
 }
 
+# ---------------------------------------------------------------- friends (SOH-218)
+
+"""SOH-218: my friends are the handles of Cards I hold — a Person under
+`[me ->:Knows:->]` with a `FromCard` edge (edge.handle), or, when that
+cross-root attach was a silent no-op at handshake time, a Knows edge whose
+`source_note` is the marker `card:<handle>`. Own root only; deduped, in
+graph order."""
+def friend_handles(me: Me) -> list[str] {
+    out: list[str] = [];
+    for f in friend_entries(me) {
+        out.append(str(f["handle"]));
+    }
+    return out;
+}
+
+"""One dict per friend handle: {handle, person, since}. `since` is the
+FromCard's received_at, "" for the source_note marker. Never reads
+Knows.last_contact."""
+def friend_entries(me: Me) -> list[dict[str, object]] {
+    out: list[dict[str, object]] = [];
+    seen: list[str] = [];
+    for p in [me ->:Knows:->] {
+        for e in [edge p ->:FromCard:->] {
+            h = e.handle.strip();
+            if h and h not in seen {
+                seen.append(h);
+                out.append({"handle": h, "person": p, "since": e.received_at or ""});
+            }
+        }
+        for k in [edge me ->:Knows:-> p] {
+            if k.source_note.startswith("card:") {
+                h = k.source_note[5:].strip();
+                if h and h not in seen {
+                    seen.append(h);
+                    out.append({"handle": h, "person": p, "since": ""});
+                }
+            }
+        }
+    }
+    return out;
+}
+
+"""Anything but "everyone" is "friends" (the safe default)."""
+def norm_audience(a: str) -> str {
+    if a.strip().lower() == "everyone" {
+        return "everyone";
+    }
+    return "friends";
+}
+
+def my_blocked() -> list[str] {
+    m = my_me();
+    if m is None {
+        return [];
+    }
+    return list((m as Me).blocked_handles);
+}
+
+"""SOH-218 gate: a request from a blocked handle is never visible; an
+"everyone" request is visible to all; a "friends" request only to someone
+holding the requester's Card (friend_handles). `friends` is precomputed by
+the caller so a list walk does not rescan the graph per request."""
+def request_visible(req: IntroRequest, friends: list[str], blocked: list[str]) -> bool {
+    if req.from_handle in blocked {
+        return False;
+    }
+    if norm_audience(req.audience) == "everyone" {
+        return True;
+    }
+    return req.from_handle in friends;
+}
+
+"""request_visible() for the caller, computing friends and blocked from their Me."""
+def visible_to_me(req: IntroRequest) -> bool {
+    m = my_me();
+    if m is None {
+        return norm_audience(req.audience) == "everyone";
+    }
+    me = m as Me;
+    return request_visible(req, friend_handles(me), list(me.blocked_handles));
+}
+
 # ---------------------------------------------------------------- requester side
 
 walker:priv PostRequest {
@@ -275,6 +357,7 @@ walker:priv PostRequest {
     has need: str;
     has about_line: str = "";
     has ttl_days: int = 7;
+    has audience: str = "friends";
     has reports: list[object] = [];
 
     can go with Root entry {
@@ -292,7 +375,8 @@ walker:priv PostRequest {
             about_line=self.about_line,
             status="open",
             created_at=now.isoformat(),
-            expires_at=(now + timedelta(days=self.ttl_days)).isoformat()
+            expires_at=(now + timedelta(days=self.ttl_days)).isoformat(),
+            audience=norm_audience(self.audience)
         ))[0];
         grant(req, level=ConnectPerm);
         report req;
@@ -306,7 +390,8 @@ walker:priv ListMyRequests {
     can go with Root entry {
         me_root = jid(root);
         now = now_iso();
-        visible = shared_replies();
+        blocked = my_blocked();
+        visible = [r for r in shared_replies() if r.from_handle not in blocked];
         for req in all_requests() {
             if owner_root(req) != me_root {
                 continue;
@@ -491,9 +576,19 @@ walker:priv ListIncomingRequests {
         me_root = jid(root);
         now = now_iso();
         answered = [r.request_id for r in shared_replies() if owner_root(r) == me_root];
+        friends: list[str] = [];
+        blocked: list[str] = [];
+        m = my_me();
+        if m is not None {
+            friends = friend_handles(m as Me);
+            blocked = list((m as Me).blocked_handles);
+        }
         # Ownership is by root only; handles are self-chosen and spoofable.
         for req in all_requests() {
             if owner_root(req) == me_root {
+                continue;
+            }
+            if not request_visible(req, friends, blocked) {
                 continue;
             }
             if req.status == "declined" {
@@ -530,6 +625,10 @@ walker:priv ReplyToRequest {
         rid = jid(req);
         if owner_root(req) == jid(root) {
             report err("invalid_state");
+            return;
+        }
+        if not visible_to_me(req) {
+            report err("not_visible");
             return;
         }
         me_root = jid(root);
@@ -593,6 +692,9 @@ walker:priv ListMyReplies {
         for r in reversed(mine) {
             rq = load(r.request_id);
             if not isinstance(rq, IntroRequest) or not readable(rq) {
+                continue;
+            }
+            if not visible_to_me(rq as IntroRequest) {
                 continue;
             }
             why = "";
@@ -765,6 +867,62 @@ walker:priv DeclineReply {
         }
         (r as IntroReply).status = "declined";
         report "declined";
+    }
+}
+
+# ---------------------------------------------------------------- friends & blocks (SOH-218)
+
+walker:priv ListFriends {
+    """Handles of Cards I hold (see friend_entries), one per handle, own root only."""
+    has reports: list[object] = [];
+
+    can go with Root entry {
+        m = my_me();
+        if m is None {
+            return;
+        }
+        for f in friend_entries(m as Me) {
+            report f;
+        }
+    }
+}
+
+"""Set or clear one handle on the caller's Me.blocked_handles; reports the list.
+Reassigns the list (never mutates in place) so the change persists."""
+def set_blocked(handle: str, block: bool) -> dict[str, object] {
+    h = handle.strip();
+    if not h {
+        return {"error": "bad_handle"};
+    }
+    m = my_me();
+    if m is None {
+        return {"error": "no_me"};
+    }
+    me = m as Me;
+    current = [x for x in me.blocked_handles if x != h];
+    if block {
+        current.append(h);
+    }
+    me.blocked_handles = current;
+    return {"blocked": list(me.blocked_handles)};
+}
+
+walker:priv BlockHandle {
+    """Never see requests or replies from this handle again (both sides)."""
+    has handle: str;
+    has reports: list[object] = [];
+
+    can go with Root entry {
+        report set_blocked(self.handle, True);
+    }
+}
+
+walker:priv UnblockHandle {
+    has handle: str;
+    has reports: list[object] = [];
+
+    can go with Root entry {
+        report set_blocked(self.handle, False);
     }
 }
 

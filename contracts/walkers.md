@@ -473,3 +473,15 @@ Bounded traversal over the caller's own root: every Note (text capped at 300 cha
   - **Promises need the speaker's commitment.** Extraction sem says so, and a deterministic guard backs it: a promise whose `span` has a want cue (wants/wanted/looking for/needs/is hiring/asked for) and no commitment cue (i said/i'll/i will/i promised/promised/owe/told/send/will send/i'd), in a note with no follow-up cue anywhere (follow up/follow-up/check back), is stored as `Intent(kind="need", source_kind="reported")` on that person via `AssertsIntent(span)` + `IntentAbout`, and reported under `intents`, not `promises`. "wants ROI deck by Fri. Follow up Thu." still yields the promise "send the ROI deck".
   - **Default `how_met`** (no `how_met` arg) on NEW `Knows` edges is a human line: `"from a debrief on YYYY-MM-DD"`, `"from a pasted note on …"`, `"from an import on …"`, `"from your about-me on …"` (date = the Note's `captured_at`). It never contains note text.
   - **"you", never "the author".** Fact/intent/promise text refers to the note's writer as "you": sem instruction plus a post-pass (`second_person`) that rewrites whole-word "the author/speaker/user/writer" (any case; "'s" -> "your", "was/is/has" -> "were/are/have").
+- 2026-09-26 — SOH-218 friend-gated Exchange (`exchange.sv.jac`). **Needs B**: an audience toggle on Post, a Friends list, a Block action.
+  - **Friends** = handles of Cards I hold: a Person under `[me ->:Knows:->]` with a `FromCard` edge (`edge.handle`), or a `Knows.source_note == "card:<handle>"` marker (a handshake whose cross-root attach was denied). Own root only.
+  - `PostRequest(need, about_line = "", ttl_days = 7, audience: str = "friends")` — report unchanged except the `IntroRequest` now carries `audience: "friends" | "everyone"` (anything else is stored as `"friends"`). **Default is friends-only**: a client that omits `audience` posts to friends only.
+  - `ListIncomingRequests()` — shape unchanged; a request is listed only if `audience == "everyone"` or its `from_handle` is one of my friends, and never when `from_handle` is in `Me.blocked_handles`.
+  - `ReplyToRequest(request_id)` — same gate; a request not visible to me reports `{ error: "not_visible" }` (after `not_found`/`forbidden`/own-request `invalid_state`).
+  - `ListMyReplies()` — shape unchanged; replies to requests no longer visible to me (e.g. requester blocked) are omitted.
+  - `ListMyRequests()` — shape unchanged; replies whose `from_handle` is in my `blocked_handles` are omitted.
+  - `ListFriends()` → one report per friend handle:
+    ```
+    { handle: str, person: Person, since: str }   # since = FromCard.received_at, "" for the source_note marker
+    ```
+  - `BlockHandle(handle: str)` / `UnblockHandle(handle: str)` → `[{ blocked: [str] }]` (the full list after the change; idempotent). Errors: `{ error: "bad_handle" }` (blank), `{ error: "no_me" }` (not onboarded).
