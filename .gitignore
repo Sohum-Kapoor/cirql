@@ -10,3 +10,4 @@ seed/seed.real.json
 android/
 ios/
 .DS_Store
+.claude/worktrees/
