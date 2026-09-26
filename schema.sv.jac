@@ -22,6 +22,25 @@ node Person {
     has org: str = "";
     has title: str = "";
     has status: str = "confirmed";   # confirmed | proposed (after import, before swipe-confirm)
+    # SOH-215..220 (product completeness, 2026-09-26 20:00). All optional, all own-root.
+    has email: str = "";             # contact details the user captured or imported; never crosses accounts
+    has phone: str = "";
+    has links: list[str] = [];       # personal site, GitHub, papers, company bio (Enrich fills from grounding)
+    has location: str = "";          # city / region as captured
+    has identity_tokens: list[str] = [];  # blinded HMAC tokens (name|org, email, phone, canonical url); the only thing about a person that may be compared across accounts
+    has archived: bool = False;      # soft delete: hidden from lists and rankings, restorable
+}
+
+node Circle {
+    has name: str;                   # a group the user names ("Michigan robotics", "family"); never a score
+    has created_at: str = "";
+}
+
+node Event {
+    has name: str;                   # where people were met ("JacHacks 2026", "Detroit hardware meetup")
+    has date: str = "";              # ISO date if known
+    has location: str = "";
+    has created_at: str = "";
 }
 
 node Note {
@@ -137,6 +156,16 @@ edge HasInterest: Me --> Interest {}
 edge HasGoal: Me --> Goal {}
 
 edge HasIntent: Me --> Intent {}
+
+edge HasCircle: Me --> Circle {}
+
+edge InCircle: Person --> Circle {}
+
+edge HasEvent: Me --> Event {}
+
+edge MetAt: Person --> Event {
+    has source_note: str = "";       # jid of the Note that placed them there, when known
+}
 
 edge PromiseTo: Promise --> Person {}
 
