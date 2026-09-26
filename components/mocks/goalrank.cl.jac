@@ -26,6 +26,9 @@ def:pub mock_goalrank(goal_id: str) -> list[dict[str, any]] {
     if "#partial" in text {
         return _partial_rows();
     }
+    if "#many" in text {
+        return _raise_rows() + _many_extra_rows();
+    }
     return _generic_rows(text);
 }
 
@@ -119,6 +122,33 @@ def _generic_rows(goal_text: str) -> list[dict[str, any]] {
             "reason": "Only her role lines up; nothing in your notes says more yet.",
             "evidence": [],
             "days_since_contact": 3,
+            "opener": ""
+        }
+    ];
+}
+
+"""SOH-213: two more rows so a goal ending in #many ranks six (the Home
+preview shows five + "See all (6)")."""
+def _many_extra_rows() -> list[dict[str, any]] {
+    return [
+        {
+            "person": _person("mock-person-priya", "Priya Raman", "Michigan Ross", "MBA candidate"),
+            "label": "route",
+            "strength": "weak",
+            "reason": "Runs the Ross energy club's investor night.",
+            "evidence": [
+                _ev("mock-note-priya", "note", "2026-09-18T20:00:00Z", "Priya said the investor night still has two demo slots.")
+            ],
+            "days_since_contact": 8,
+            "opener": ""
+        },
+        {
+            "person": _person("mock-person-omar", "Omar Haddad", "DTE Energy", "Grid analyst"),
+            "label": "cold",
+            "strength": "weak",
+            "reason": "Models industrial peak load; a useful sanity check on the pitch numbers.",
+            "evidence": [],
+            "days_since_contact": None,
             "opener": ""
         }
     ];

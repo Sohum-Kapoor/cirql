@@ -27,6 +27,29 @@ def:pub friend_status(ent: dict) -> str {
     return "new";
 }
 
+"""How many friends' asks are waiting on this user (the Asks tab badge, SOH-213):
+every unanswered incoming ask, plus this session's replies still mid-way
+(needs your OK / approved / contact said yes). Revealed and declined don't count."""
+def:pub asks_needing_you(incoming: list[dict], friend: dict) -> int {
+    n: int = 0;
+    ids: list[str] = [];
+    for r in incoming {
+        rid: str = r["_jac_id"] as str;
+        ids = ids + [rid];
+        st: str = friend_status((friend[rid] or {}) as dict);
+        if st != "revealed" and st != "declined" {
+            n = n + 1;
+        }
+    }
+    for rid in Object.keys(friend) {  # jac:ignore[W2001]
+        ent: dict = friend[rid] as dict;
+        if rid not in ids and ent["request"] and friend_status(ent) in ["pending", "approved", "opted_in"] {
+            n = n + 1;
+        }
+    }
+    return n;
+}
+
 def:pub AskRow(req: dict, status: str, onOpen: Callable[[str], None]) -> JsxElement {
     rid: str = req["_jac_id"] as str;
 
@@ -52,7 +75,12 @@ def:pub AskRow(req: dict, status: str, onOpen: Callable[[str], None]) -> JsxElem
         </li>;
 }
 
-def:pub AsksSection(incoming: list[dict], friend: dict, onOpen: Callable[[str], None]) -> JsxElement {
+def:pub AsksSection(
+    incoming: list[dict],
+    friend: dict,
+    onOpen: Callable[[str], None],
+    title: str = "Asks from friends"
+) -> JsxElement {
     ids: list[str] = [];
     for r in incoming {
         ids = ids + [r["_jac_id"] as str];
@@ -68,8 +96,8 @@ def:pub AsksSection(incoming: list[dict], friend: dict, onOpen: Callable[[str], 
         return <span hidden={True} />;
     }
     return
-        <section aria-label="Asks from friends" className="flex flex-col gap-3">
-            <h2 className="text-eyebrow text-muted-foreground">Asks from friends</h2>
+        <section aria-label={title} className="flex flex-col gap-3">
+            <h2 className="text-eyebrow text-muted-foreground">{title}</h2>
             <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">
                 {for r in incoming {
                     <AskRow
@@ -140,7 +168,7 @@ def:pub ApprovalView(
             <header className="-ml-2 flex items-center gap-2">
                 <Button size="sm" variant="ghost" onClick={handle_back}>
                     <ChevronLeftIcon />
-                    Home
+                    Asks
                 </Button>
             </header>
             {if not rid {

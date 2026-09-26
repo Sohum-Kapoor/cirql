@@ -1,22 +1,29 @@
-"""Logged-in home: asks from friends (Exchange inbox), goal picker, who can
-help with the active goal (GoalRank), gap alerts (GapFinder) with *Ask my
-network*, your asks (ListMyRequests), then the people you know (collapsed).
-Capture stays pinned at the bottom.
-Stateless apart from the picker's own UI state. OWNER: Person B.
+"""Logged-in home, split over a bottom tab bar (SOH-213). OWNER: Person B.
+
+  Home   — goal picker, who can help with the active goal (GoalRank; the first
+           RANK_PREVIEW rows, "See all (N)" expands in place), gaps for this goal
+           (GapFinder) with *Ask my network*. Nothing else.
+  Asks   — "Needs your OK" (friends' asks, ListIncomingRequests) first, then
+           "Your asks" (ListMyRequests). Dev "Act as friend" toggle under ?mock=1.
+  People — the people you know, SK's graph toggle (GraphView) and Today's
+           promises, exactly as they rendered on the old single page.
+The header (Cirql + overflow menu), the person sheet and the tab bar with its
+Capture action are shared by all three. The shell owns `tab` (remembered for
+the session, and set by deep links: Capture -> Done lands on Home, back from an
+ask / request lands on Asks).
 
 Switching goals only swaps the ranked list: the shell keeps GoalRank results per
 goal_id for the session, and a goal that isn't cached yet shows a loading state
-on the list alone — the header, picker and people list stay put.
+on the list alone — the header and picker stay put.
 """
 
 import from .ui.button { Button, buttonVariants }
 import from .ui.skeleton { Skeleton }
-import from .ui.collapsible { Collapsible, CollapsibleTrigger, CollapsibleContent }
 import from .ui.dropdown_menu {
     DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
     DropdownMenuSeparator
 }
-import from .ui.icons { MoreIcon, ChevronRightIcon }
+import from .ui.icons { MoreIcon, ChevronRightIcon, ChevronDownIcon }
 import from .settings.AppearanceSheet { AppearanceSheet }
 import from .ui.tabs { Tabs, TabsList, TabsTrigger, TabsContent }
 import from react { useEffect }
@@ -28,9 +35,47 @@ import from .goals.RankList { RankList, RankSkeleton, is_partial }
 import from .exchange.GapAlert { GapAlerts }
 import from .exchange.Requests { RequestsSection }
 import from .exchange.Inbox { AsksSection }
+import from .nav.TabBar { TabBar }
 import from ..lib.text { join_with }
 import from ..lib.utils { cn }
 sv import from ..schema { Person }
+
+glob RANK_PREVIEW: int = 5;
+
+"""One tappable row of the People list -> the person sheet. (A small component:
+lambda handlers inside a JSX `for` miscompile.)"""
+def:pub PersonRow(person: any, onOpen: Callable[[str], None]) -> JsxElement {
+    pid: str = (person["_jac_id"] or "") as str;
+    sub: str = join_with([s for s in [person["title"], person["org"]] if s], ", ");
+
+    def handle(e: MouseEvent) {
+        if pid {
+            onOpen(pid);
+        }
+    }
+
+    return
+        <li>
+            <button
+                type="button"
+                onClick={handle}
+                className="flex min-h-11 w-full items-center justify-between gap-2 pt-2.5 pb-2.5 pl-4 pr-3 text-left outline-none transition-colors hover:bg-secondary focus-visible:bg-secondary"
+            >
+                <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-body-sm">{person["name"]}</span>
+                    {sub and <span className="truncate text-caption text-muted-foreground">{sub}</span>}
+                </span>
+                <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
+            </button>
+        </li>;
+}
+
+def:pub EmptyNote(children: any = None) -> JsxElement {
+    return
+        <p className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm text-muted-foreground">
+            {children}
+        </p>;
+}
 
 def:pub HomeView(
     people: list[Person],
@@ -50,6 +95,9 @@ def:pub HomeView(
     onCreateGoal: Callable[[str], None],
     onCloseGoal: Callable[[str], None],
     onRerank: Callable[[], None],
+    tab: str = "home",
+    onTab: Callable[[str], None] | None = None,
+    asks_badge: int = 0,
     gaps: list[dict] = [],
     gaps_pending: bool = False,
     gaps_error: str = "",
@@ -76,14 +124,15 @@ def:pub HomeView(
     }
 
     has appearance_open: bool = False,
-        home_tab: str = "home",
         sheet_person_id: str = "",
         sheet_open: bool = False,
         today_key: int = 0,
         forgotten_ids: list[str] = [],
-        view_tab: str = "list";
+        view_tab: str = "list",
+        expanded_goal: str = "";
 
-    # Person sheet (SOH-207): opened from a ranked row or a Today promise.
+    # Person sheet (SOH-207): opened from a ranked row, a person row, the graph
+    # or a Today promise — on any tab.
     def open_person(pid: str) -> None {
         sheet_person_id = pid;
         sheet_open = True;
@@ -99,6 +148,15 @@ def:pub HomeView(
         }
     }, [open_person_id]);
 
+    # Every tab starts at the top.
+    useEffect(lambda {
+        try {
+            window.scrollTo(0, 0);  # jac:ignore[W2001]
+        } except Exception as e {
+            return;
+        }
+    }, [tab]);
+
     def close_person() -> None {
         sheet_open = False;
         today_key = today_key + 1;
@@ -109,8 +167,14 @@ def:pub HomeView(
         onRefresh();
     }
 
-    def set_home_tab(v: str) -> None {
-        home_tab = v;
+    def pick_tab(v: str) -> None {
+        if onTab {
+            onTab(v);
+        }
+    }
+
+    def go_home(e: MouseEvent) {
+        pick_tab("home");
     }
 
     def set_view_tab(v: str) -> None {
@@ -176,9 +240,20 @@ def:pub HomeView(
         }
     }
     shown_rows: list[dict] = [r for r in rank_rows if ((r["person"] or {})["_jac_id"] or "") not in forgotten_ids];
+    expanded: bool = expanded_goal != "" and expanded_goal == active_id;
+    more: int = len(shown_rows) - RANK_PREVIEW;
+    preview_rows: list[dict] = shown_rows if expanded or more <= 0 else shown_rows[:RANK_PREVIEW];
+
+    def toggle_all(e: MouseEvent) {
+        expanded_goal = "" if expanded else active_id;
+    }
+
+    known: list[Person] = [p for p in people if ((p["_jac_id"] or "") as str) not in forgotten_ids];
+    friend_ids: list[str] = [rid for rid in Object.keys(friend) if (friend[rid] or {})["request"]];  # jac:ignore[W2001]
+    has_friend_asks: bool = len(incoming) > 0 or len(friend_ids) > 0;
 
     return
-        <div className="flex flex-col gap-6 pb-24">
+        <div className="flex flex-col gap-6 pb-[calc(6rem+env(safe-area-inset-bottom))]">
             <header className="-mt-2 flex h-14 items-center justify-between gap-2">
                 <h1 className="text-subhead font-semibold">Cirql</h1>
                 <DropdownMenu modal={False}>
@@ -201,45 +276,91 @@ def:pub HomeView(
                 </DropdownMenu>
             </header>
             <AppearanceSheet open={appearance_open} onOpenChange={set_appearance} />
-            {mock_mode and
-                <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-border-strong pt-2 pb-2 pl-3 pr-2 text-caption text-muted-foreground">
-                    <span>{"Dev mock · your own asks " + ("also show as a friend's" if as_friend else "stay yours only")}</span>
-                    <Button size="xs" variant="outline" onClick={handle_toggle_friend}>
-                        {"Stop acting as friend" if as_friend else "Act as friend"}
-                    </Button>
-                </div>}
             <PersonSheet person_id={sheet_person_id} open={sheet_open} on_close={close_person} on_forgotten={person_forgotten} />
-            <Tabs value={home_tab} onValueChange={set_home_tab} className="gap-6">
-            <TabsList aria-label="View" className="w-full">
-                <TabsTrigger value="home">Home</TabsTrigger>
-                <TabsTrigger value="today">Today</TabsTrigger>
-            </TabsList>
-            <TabsContent value="today">
-                <Today on_open_person={open_person} refresh_key={today_key} />
-            </TabsContent>
-            <TabsContent value="home" className="flex flex-col gap-6">
-            <AsksSection incoming={incoming} friend={friend} onOpen={do_open_ask} />
-            {if not goals_loaded {
-                <div role="status" aria-label="Loading your goals" className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
-                    <Skeleton className="h-3 w-12" />
-                    <Skeleton className="h-4 w-3/4" />
+            {if tab == "asks" {
+                <div key="tab-asks" className="flex flex-col gap-6">
+                    {mock_mode and
+                        <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-border-strong pt-2 pb-2 pl-3 pr-2 text-caption text-muted-foreground">
+                            <span>{"Dev mock · your own asks " + ("also show as a friend's" if as_friend else "stay yours only")}</span>
+                            <Button size="xs" variant="outline" onClick={handle_toggle_friend}>
+                                {"Stop acting as friend" if as_friend else "Act as friend"}
+                            </Button>
+                        </div>}
+                    {if has_friend_asks {
+                        <AsksSection incoming={incoming} friend={friend} onOpen={do_open_ask} title="Needs your OK" />
+                    } else {
+                        <section aria-label="Needs your OK" className="flex flex-col gap-3">
+                            <h2 className="text-eyebrow text-muted-foreground">Needs your OK</h2>
+                            <EmptyNote>
+                                Nothing waiting. When a friend's agent asks your network for help, it lands here — only a count and a strength leave your graph until you approve.
+                            </EmptyNote>
+                        </section>
+                    }}
+                    {if len(mine) > 0 {
+                        <RequestsSection mine={mine} claims={claims} onOpen={do_open_request} />
+                    } else {
+                        <section aria-label="Your asks" className="flex flex-col gap-3">
+                            <h2 className="text-eyebrow text-muted-foreground">Your asks</h2>
+                            <EmptyNote>
+                                {"You haven't asked your network yet. Asks start from a gap on "}
+                                <Button variant="link" size="inline" onClick={go_home}>Home</Button>
+                                {"."}
+                            </EmptyNote>
+                        </section>
+                    }}
                 </div>
+            } elif tab == "people" {
+                <Tabs key="tab-people" value={view_tab} onValueChange={set_view_tab} className="gap-6">
+                    <TabsList aria-label="People view" className="w-full">
+                        <TabsTrigger value="list">List</TabsTrigger>
+                        <TabsTrigger value="graph">Graph</TabsTrigger>
+                        <TabsTrigger value="today">Today</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="list" className="flex flex-col gap-3">
+                        <section aria-label="People you know" className="flex flex-col gap-3">
+                            <div className="flex items-center justify-between gap-2">
+                                <h2 className="text-eyebrow text-muted-foreground">People you know</h2>
+                                <span className="text-caption tabular-nums text-muted-foreground">{str(len(known))}</span>
+                            </div>
+                            {if len(known) == 0 {
+                                <EmptyNote>
+                                    {"No one yet — "}
+                                    <Button variant="link" size="inline" onClick={handle_capture}>capture a conversation</Button>
+                                    {" to start."}
+                                </EmptyNote>
+                            } else {
+                                <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">
+                                    {for (idx, p) in enumerate(known) {
+                                        <PersonRow key={((p["_jac_id"] or "") as str) or str(idx)} person={p} onOpen={open_person} />
+                                    }}
+                                </ul>
+                            }}
+                        </section>
+                    </TabsContent>
+                    <TabsContent value="graph">
+                        <GraphView goal_id={active_id} on_open_person={open_person} />
+                    </TabsContent>
+                    <TabsContent value="today">
+                        <Today on_open_person={open_person} refresh_key={today_key} />
+                    </TabsContent>
+                </Tabs>
             } else {
-                <GoalPicker
-                    goals={goals}
-                    busy={goal_busy}
-                    error={goal_error}
-                    onSwitch={onSwitchGoal}
-                    onCreate={onCreateGoal}
-                    onClose={onCloseGoal}
-                />
-            }}
-            <Tabs value={view_tab} onValueChange={set_view_tab} className="gap-6">
-                <TabsList aria-label="Home view" className="w-full">
-                    <TabsTrigger value="list">List</TabsTrigger>
-                    <TabsTrigger value="graph">Graph</TabsTrigger>
-                </TabsList>
-                <TabsContent value="list" className="flex flex-col gap-6">
+                <div key="tab-home" className="flex flex-col gap-6">
+                    {if not goals_loaded {
+                        <div role="status" aria-label="Loading your goals" className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
+                            <Skeleton className="h-3 w-12" />
+                            <Skeleton className="h-4 w-3/4" />
+                        </div>
+                    } else {
+                        <GoalPicker
+                            goals={goals}
+                            busy={goal_busy}
+                            error={goal_error}
+                            onSwitch={onSwitchGoal}
+                            onCreate={onCreateGoal}
+                            onClose={onCloseGoal}
+                        />
+                    }}
                     {has_active and
                         <section aria-label="Who can help" className="flex flex-col gap-3">
                             <div className="flex items-center justify-between gap-2">
@@ -264,15 +385,30 @@ def:pub HomeView(
                                     Ranking is partial right now — tap Re-rank in a minute.
                                 </p>}
                             {if len(shown_rows) > 0 {
-                                <RankList rows={shown_rows} dim={rank_pending} on_open_person={open_person} />
+                                <RankList rows={preview_rows} dim={rank_pending} on_open_person={open_person} />
+                                if more > 0 {
+                                    <Button
+                                        variant="ghost"
+                                        className="w-full text-muted-foreground"
+                                        aria-expanded={expanded}
+                                        onClick={toggle_all}
+                                    >
+                                        {"Show top " + str(RANK_PREVIEW) if expanded else "See all (" + str(len(shown_rows)) + ")"}
+                                        {if expanded {
+                                            <ChevronDownIcon className="size-4 rotate-180" />
+                                        } else {
+                                            <ChevronDownIcon className="size-4" />
+                                        }}
+                                    </Button>
+                                }
                             } elif rank_pending or not rank_cached {
                                 <RankSkeleton />
                             } elif not rank_error {
-                                <p className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm text-muted-foreground">
+                                <EmptyNote>
                                     {"No one yet — "}
                                     <Button variant="link" size="inline" onClick={handle_capture}>capture a conversation</Button>
                                     {" to start."}
-                                </p>
+                                </EmptyNote>
                             }}
                         </section>}
                     {has_active and not (rank_pending and len(rank_rows) == 0) and
@@ -287,54 +423,9 @@ def:pub HomeView(
                             onAsk={do_ask}
                             onRetry={do_retry_gaps}
                         />}
-                    <RequestsSection mine={mine} claims={claims} onOpen={do_open_request} />
-                    <Collapsible className="overflow-hidden rounded-lg border bg-card shadow-edge">
-                        <CollapsibleTrigger
-                            className={cn(
-                                buttonVariants().call(None, {"variant": "ghost", "size": "row"}),
-                                "flex-row items-center justify-between rounded-none [&[data-state=open]>span>svg]:rotate-90"
-                            )}
-                        >
-                            <span className="flex items-center gap-1.5 text-body-sm font-medium">
-                                <ChevronRightIcon className="size-4 text-muted-foreground transition-transform" />
-                                People you know
-                            </span>
-                            <span className="text-caption tabular-nums text-muted-foreground">{str(len(people))}</span>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                            {if len(people) == 0 {
-                                <p className="border-t pt-3 pb-3 pl-4 pr-4 text-body-sm text-muted-foreground">
-                                    {"No one yet — "}
-                                    <Button variant="link" size="inline" onClick={handle_capture}>capture a conversation</Button>
-                                    {" to start."}
-                                </p>
-                            } else {
-                                <ul className="flex flex-col divide-y divide-border border-t">
-                                    {for (idx, p) in enumerate(people) {
-                                        <li key={str(idx)} className="flex flex-col pt-2.5 pb-2.5 pl-4 pr-4">
-                                            <span className="text-body-sm">{p.name}</span>
-                                            {(p.title or p.org) and
-                                                <span className="text-caption text-muted-foreground">
-                                                    {join_with([s for s in [p.title, p.org] if s], ", ")}
-                                                </span>}
-                                        </li>
-                                    }}
-                                </ul>
-                            }}
-                        </CollapsibleContent>
-                    </Collapsible>
-                </TabsContent>
-                <TabsContent value="graph">
-                    <GraphView goal_id={active_id} on_open_person={open_person} />
-                </TabsContent>
-            </Tabs>
-            </TabsContent>
-            </Tabs>
-            {status and <p className="text-caption text-muted-foreground">{status}</p>}
-            <div className="fixed inset-x-0 bottom-0 z-10 border-t bg-background/85 backdrop-blur">
-                <div className="mx-auto w-full max-w-md pt-3 pl-4 pr-4 pb-[max(16px,env(safe-area-inset-bottom))]">
-                    <Button className="w-full" size="lg" onClick={handle_capture}>Capture a conversation</Button>
                 </div>
-            </div>
+            }}
+            {status and <p className="text-caption text-muted-foreground">{status}</p>}
+            <TabBar tab={tab} onTab={pick_tab} onCapture={onCapture} asks_badge={asks_badge} />
         </div>;
 }
