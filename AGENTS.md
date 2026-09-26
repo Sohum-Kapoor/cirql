@@ -131,3 +131,5 @@ add it to this file under "Gotchas" — one line, with the fix.
 - Login must use the `username` identity (`{"identity":{"type":"username","value":...}}`); an email identity at login 400s with "identity.type must be 'username'" even though registration accepted both.
 - `is None` narrowing does not propagate inside a walker ability body or into an `else` after a mutating loop: guard, then cast `x as Type` at the use site (E1099 otherwise). `dict.get(key, default)` on an inline dict fails E1054; use if/elif.
 - Xcode's `/usr/bin/git` shim exits 69 until `sudo xcodebuild -license accept`; `/Library/Developer/CommandLineTools/usr/bin/git` works meanwhile (prepend it to PATH so `gh` finds it).
+- `jac test` takes ONE file; run each `*.sv.jac` separately. The walkers restart test spawns `jac` from PATH, so put `.venv/bin` on PATH first.
+- Reverse traversal across accounts works: `[req <-:RepliedTo:<-]` on the requester's root returns the friend's IntroReply once it was `allow_root`-granted; still filter with `check_read_access`. `grant(req, level=ConnectPerm)` is what lets a friend attach the edge.
