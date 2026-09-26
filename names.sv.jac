@@ -97,6 +97,10 @@ def _lasts_compatible(a: dict[str, str], b: dict[str, str]) -> bool {
     if len(lb) == 1 and la.startswith(lb) {
         return True;
     }
+    # Hyphenated surnames: "Marsh" is compatible with "Marsh-Whitcombe".
+    if la in lb.split("-") or lb in la.split("-") {
+        return True;
+    }
     return False;
 }
 

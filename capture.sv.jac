@@ -127,17 +127,20 @@ glob HEDGE_CUES: list[str] = [
     "might be", "i guess", "vielleicht", "glaube"
 ];
 glob HEDGE_KEPT: list[str] = [
-    "possibly", "maybe", "unsure", "unconfirmed", "not sure", "reportedly", "probably"
+    "possibly", "maybe", "unsure", "unconfirmed", "not sure", "reportedly", "probably",
+    "i think", "might be", "i guess", "vielleicht", "glaube", "?"
 ];
 
 """SOH-212 hedge guard: when the span the fact came from hedges ("maybe",
 "??", "not sure", ...) and the fact text states it flatly, prefix
 "Possibly: " so the uncertainty survives extraction."""
 def hedge_fact_text(text: str, span: str) -> str {
-    sp = (span or "").lower();
+    sp = " " + " ".join((span or "").lower().replace("?", " ? ").split()) + " ";
     hedged = False;
     for cue in HEDGE_CUES {
-        if cue in sp {
+        # Word-boundary match so "glaube" never fires on a surname like Glauber.
+        needle = " " + (" ".join(cue.replace("?", " ? ").split())) + " ";
+        if needle in sp {
             hedged = True;
             break;
         }
@@ -282,6 +285,15 @@ def resolve_person(
         }
     }
 
+    if not forced and len(same) > 1 {
+        # Two known people already match exactly: never pick one silently.
+        forced = True;
+        for p in same {
+            if p not in ambiguous {
+                ambiguous.append(p);
+            }
+        }
+    }
     if not forced and len(same) > 0 {
         entry = {"person": same[0], "is_new": False, "ambiguous_with": []};
         resolved[key] = entry;
@@ -356,6 +368,9 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = ""
 
     for xp in deduped_people {
         key = xp.name.strip().lower();
+        if len(key) == 0 {
+            continue;
+        }
         tie_target_only = key in tie_to_names and key not in primary_names;
         entry = resolve_person(
             xp.name, me, note, resolved, org=xp.org, title=xp.title,
