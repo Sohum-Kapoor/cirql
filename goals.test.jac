@@ -18,7 +18,7 @@ though `jac test` runs against one shared, persisted root (jac-testing) and
 earlier tests' nodes are still hanging around.
 """
 
-import from goals { Candidate, EvidenceItem, RankedItem, compute_days_since_contact, gather_evidence, collect_candidates, materialize }
+import from goals { Candidate, EvidenceItem, RankedItem, compute_days_since_contact, gather_evidence, collect_candidates, materialize, fallback_rank }
 import from schema { Me, Person, Goal, Fact, Intent, Note, Knows, Reported, FactAbout, IntentAbout, Mentions, AssertsIntent, RelevantTo }
 import from datetime { datetime }
 
@@ -263,4 +263,30 @@ test "materialize: dedupe by index, default entry for a missing index, evidence-
     assert by_name["P2 Unranked"]["strength"] == "weak", "a candidate `ranked` never mentions still gets a default report entry";
     assert by_name["P2 Unranked"]["reason"] == "No ranking returned for this person.";
     assert by_name["P2 Unranked"]["opener"] == "";
+}
+
+test "fallback_rank (SOH-169): reason text, evidence-gated strength, opener names the evidence span" {
+    with_evidence = (root ++> Person(name="With Evidence P", status="confirmed"))[0];
+    without_evidence = (root ++> Person(name="Without Evidence P", status="confirmed"))[0];
+
+    ev = EvidenceItem(id="ev-fallback", kind="fact", observed_at="2026-09-01", span="wants feedback from wheelchair users");
+    c_with = Candidate(person=with_evidence, label="known", evidence_items=[ev], days_since_contact=None);
+    c_without = Candidate(person=without_evidence, label="cold", evidence_items=[], days_since_contact=None);
+
+    ranked = fallback_rank([c_with, c_without]);
+
+    assert len(ranked) == 2;
+    for item in ranked {
+        assert item.reason == "Ranking unavailable right now; ordered by the evidence in your notes.";
+    }
+
+    with_item = ranked[0];
+    without_item = ranked[1];
+    assert with_item.strength == "medium", "evidence-gated: an intent/fact present -> medium";
+    assert with_item.evidence_indices == [0];
+    assert with_item.opener == "Hi With Evidence P, I was thinking about what you mentioned about wants feedback from wheelchair users.";
+
+    assert without_item.strength == "weak", "no intent/fact evidence -> weak";
+    assert without_item.evidence_indices == [];
+    assert without_item.opener == "", "no evidence -> no opener";
 }

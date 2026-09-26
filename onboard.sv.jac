@@ -29,7 +29,7 @@ obj OnboardExtraction {
 }
 sem OnboardExtraction.name = "The person's first name or full name as they refer to themselves; 'me' if absent.";
 sem OnboardExtraction.interests = "5 to 10 short topic phrases the person is into (e.g. 'accessible robotics'), lowercase, no duplicates.";
-sem OnboardExtraction.goals = "1 to 3 concrete things they are working toward right now, each one sentence.";
+sem OnboardExtraction.goals = "1 to 3 concrete outcomes the person is trying to achieve, phrased as the ask (e.g. 'Raise a pre-seed round from climate-tech investors', 'Land a summer 2027 VC internship'); never a description of what they do or build.";
 sem OnboardExtraction.needs = "What they are looking for from other people (intros, feedback, hires, funding), each one short phrase.";
 sem OnboardExtraction.offers = "What they can offer others (skills, access, resources), each one short phrase.";
 sem OnboardExtraction.headline = "A one-line headline for a contact card, under 80 characters.";
@@ -115,6 +115,32 @@ def find_intent(items: list[Intent], kind: str, text_lower: str) -> Intent | Non
     return None;
 }
 
+"""Reject candidates that describe what the person does/builds rather than
+asking for an outcome. Case-insensitive prefix check on the stripped text."""
+def looks_like_goal(text: str) -> bool {
+    t = text.strip().lower();
+    bad_prefixes = ["i am", "i'm", "i build", "i work", "we build", "we are"];
+    for prefix in bad_prefixes {
+        if t.startswith(prefix) {
+            return False;
+        }
+    }
+    return True;
+}
+
+"""Set the FIRST goal in `goals` (extraction order) active and every other
+Goal under `me` (including ones extraction never touched) inactive. No-op if
+`goals` is empty. Mirrors SetGoal's single-active-goal behavior."""
+def activate_first_goal(me: Me, goals: list[Goal]) -> None {
+    if not goals {
+        return;
+    }
+    first = goals[0];
+    for g in [me ->:HasGoal:->] {
+        g.active = jid(g) == jid(first);
+    }
+}
+
 # ---------------------------------------------------------------- walker
 
 walker:priv OnboardMe {
@@ -145,7 +171,8 @@ walker:priv OnboardMe {
                 name = extraction.name.strip();
             }
             interest_topics = clean_list(extraction.interests or []);
-            goal_texts = clean_list(extraction.goals or []);
+            candidate_goals = clean_list(extraction.goals or []);
+            goal_texts = [g for g in candidate_goals if looks_like_goal(g)];
             needs = clean_list(extraction.needs or []);
             offers = clean_list(extraction.offers or []);
             links = clean_list(extraction.links or []);
@@ -248,11 +275,16 @@ walker:priv OnboardMe {
             }
         }
 
-        # Extraction failed: report the graph's existing state, not empty lists.
+        # Extraction failed: report the graph's existing state, not empty lists,
+        # and leave goal activation untouched.
         if not extracted_ok {
             interests = [me ->:HasInterest:->];
             goals = [me ->:HasGoal:->];
             intents = [me ->:HasIntent:->];
+        } else {
+            # Exactly one active goal: the first extracted goal wins; every
+            # other Goal under Me (new or pre-existing) goes inactive.
+            activate_first_goal(me, goals);
         }
 
         # 5. Get-or-create the Card; update in place on rerun. Handle is stable
