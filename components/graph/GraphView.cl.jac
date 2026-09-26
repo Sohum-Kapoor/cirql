@@ -5,7 +5,10 @@ Visual rules: `knows` confirmed = solid line, proposed = dashed; `reported` =
 thin and lighter; `relevant_to` runs person -> goal, coloured by strength
 (strong / medium / weak = primary / success / ink-tertiary tokens). Me is the
 largest node, a person's radius follows its relevance to the goal, the goal is
-a ring. Drag to move, wheel / pinch to zoom, tap a person -> `on_open_person`.
+a ring. Drag to move, wheel / pinch to zoom. Tap a node to focus it: it and its
+direct neighbours stay lit, everything else dims, and the edges touching it show
+their labels; tap the focused person again (or "Details") -> `on_open_person`;
+tap empty canvas to clear. `height` (any CSS length) overrides the default box.
 d3 only lays out and draws inside the ref'd <svg>; every colour is a CSS token
 from assets/main.css, so light and dark follow the theme with no redraw.
 """
@@ -17,6 +20,7 @@ import from "d3" {
 }
 import from ..api { graph_view }
 import from ..ui.skeleton { Skeleton }
+import from ..ui.button { Button }
 
 glob STRENGTH_COLOR: dict[str, str] = {
          "strong": "var(--primary)",
@@ -131,12 +135,32 @@ def short_label(n: any) -> str {
     return label[:limit - 1] + "…" if len(label) > limit else label;
 }
 
+"""What an edge says when its node is focused: how_met / "reported" / strength."""
+def edge_label(e: any) -> str {
+    text: str = "";
+    if e["kind"] == "relevant_to" {
+        text = ((e["strength"] or e["label"] or "relevant") as str) + " for the goal";
+    } elif e["kind"] == "reported" {
+        text = "reported";
+    } else {
+        text = (e["label"] or "knows") as str;
+        if e["strength"] == "proposed" {
+            text = text + " · proposed";
+        }
+    }
+    return text[:31] + "…" if len(text) > 32 else text;
+}
+
+def end_id(end: any) -> str {
+    return (end["id"] if end and end["id"] else end) as str;
+}
+
 def noop() -> None {
     return;
 }
 
 """Lay out and draw `graph` into `svg_el`; returns the effect cleanup."""
-def draw(svg_el: any, graph: dict, open_cb: any) -> any {
+def draw(svg_el: any, graph: dict, open_ref: any, on_select: any) -> any {
     if not svg_el or not graph or not graph["nodes"] {
         return noop;
     }
@@ -164,8 +188,17 @@ def draw(svg_el: any, graph: dict, open_cb: any) -> any {
         nodes = nodes + [c];
     }
     links: list[dict] = [];
+    adj: dict = {};
     for e in (graph["edges"] or []) as list[dict] {
         if ids[e["from"]] and ids[e["to"]] {
+            if not adj[e["from"]] {
+                adj[e["from"]] = {};
+            }
+            if not adj[e["to"]] {
+                adj[e["to"]] = {};
+            }
+            adj[e["from"]][e["to"]] = True;
+            adj[e["to"]][e["from"]] = True;
             links = links + [{"source": e["from"], "target": e["to"], "kind": e["kind"], "strength": e["strength"], "label": e["label"]}];
         }
     }
@@ -205,6 +238,38 @@ def draw(svg_el: any, graph: dict, open_cb: any) -> any {
         .style("stroke-width", "3px")
         .style("pointer-events", "none");
     node_sel.append("title").text(node_tip);
+    elabel_sel: any = layer.append("g").selectAll("text").data(links).join("text")
+        .text(edge_label)
+        .attr("text-anchor", "middle")
+        .attr("dy", "-3")
+        .style("display", "none")
+        .style("font-size", "10px")
+        .style("font-weight", "500")
+        .style("fill", "var(--muted-foreground)")
+        .style("paint-order", "stroke")
+        .style("stroke", "var(--card)")
+        .style("stroke-width", "3px")
+        .style("pointer-events", "none");
+
+    focus: dict = {"id": ""};
+
+    def touches(d: any, fid: str) -> bool {
+        return end_id(d["source"]) == fid or end_id(d["target"]) == fid;
+    }
+
+    def apply_focus(fid: str) -> None {
+        focus["id"] = fid;
+        near: dict = (adj[fid] or {}) as dict if fid else {};
+        node_sel.style("opacity", lambda(d: any) -> float {
+            return 1.0 if not fid or d["id"] == fid or near[d["id"]] else 0.2;
+        });
+        link_sel.style("opacity", lambda(d: any) -> float {
+            return edge_opacity(d) if not fid or touches(d, fid) else 0.08;
+        });
+        elabel_sel.style("display", lambda(d: any) -> str {
+            return "block" if fid and touches(d, fid) else "none";
+        });
+    }
 
     sim: any = forceSimulation(nodes)
         .force(
@@ -227,6 +292,9 @@ def draw(svg_el: any, graph: dict, open_cb: any) -> any {
             .attr("x2", lambda(d: any) -> float { return d["target"]["x"] as float; })
             .attr("y2", lambda(d: any) -> float { return d["target"]["y"] as float; });
         node_sel.attr("transform", lambda(d: any) -> str { return "translate(" + str(d["x"]) + "," + str(d["y"]) + ")"; });
+        elabel_sel
+            .attr("x", lambda(d: any) -> float { return ((d["source"]["x"] as float) + (d["target"]["x"] as float)) / 2; })
+            .attr("y", lambda(d: any) -> float { return ((d["source"]["y"] as float) + (d["target"]["y"] as float)) / 2; });
     });
 
     drag_behavior: any = drag()
@@ -252,8 +320,21 @@ def draw(svg_el: any, graph: dict, open_cb: any) -> any {
         });
     node_sel.call(drag_behavior);
     node_sel.on("click", lambda(event: any, d: any) {
-        if d["kind"] == "person" and open_cb {
-            open_cb.call(None, d["id"]);
+        event.stopPropagation();
+        if focus["id"] == d["id"] {
+            open_cb: any = open_ref.current;
+            if d["kind"] == "person" and open_cb {
+                open_cb.call(None, d["id"]);
+            }
+            return;
+        }
+        apply_focus(d["id"] as str);
+        on_select.call(None, {"id": d["id"], "kind": d["kind"], "label": d["label"]});
+    });
+    svg.on("click", lambda(event: any) {
+        if focus["id"] {
+            apply_focus("");
+            on_select.call(None, {});
         }
     });
 
@@ -265,6 +346,7 @@ def draw(svg_el: any, graph: dict, open_cb: any) -> any {
     return lambda {
         sim.stop();
         svg.on(".zoom", None);
+        svg.on("click", None);
         svg.selectAll("*").remove();
     };
 }
@@ -302,8 +384,14 @@ def:pub GraphLegend(corner: bool = False) -> JsxElement {
         </div>;
 }
 
-def:pub GraphView(goal_id: str = "", on_open_person: Callable[[str], None] | None = None) -> JsxElement {
+def:pub GraphView(
+    goal_id: str = "",
+    on_open_person: Callable[[str], None] | None = None,
+    height: str = ""
+) -> JsxElement {
     has graph: dict = {},
+        selected: dict = {},
+        openRef: Ref[any] = Ref(None),
         loading: bool = True,
         error: str = "",
         svgRef: Ref[any] = Ref(),
@@ -330,8 +418,22 @@ def:pub GraphView(goal_id: str = "", on_open_person: Callable[[str], None] | Non
         }
     }
 
+    openRef.current = on_open_person;
+
+    def set_selected(sel: dict) -> None {
+        selected = sel;
+    }
+
+    def open_selected(e: MouseEvent) {
+        pid: str = (selected["id"] or "") as str;
+        if pid and on_open_person {
+            on_open_person(pid);
+        }
+    }
+
     useEffect(lambda {
-        return draw(svgRef.current, graph, on_open_person);
+        selected = {};
+        return draw(svgRef.current, graph, openRef, set_selected);
     }, [graph]);
 
     all_nodes: list[dict] = (graph["nodes"] or []) as list[dict];
@@ -347,7 +449,10 @@ def:pub GraphView(goal_id: str = "", on_open_person: Callable[[str], None] | Non
                 </span>
             </div>
             {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
-            <div className="relative ml-[calc(50%_-_min(50vw_-_16px,600px))] h-[440px] w-[min(calc(100vw_-_32px),1200px)] overflow-hidden rounded-lg border bg-card shadow-edge md:h-[560px] lg:h-[70vh]">
+            <div
+                className={"relative ml-[calc(50%_-_min(50vw_-_16px,600px))] w-[min(calc(100vw_-_32px),1200px)] overflow-hidden rounded-lg border bg-card shadow-edge" + ("" if height else " h-[440px] md:h-[560px] lg:h-[70vh]")}
+                style={{"height": height} if height else {}}
+            >
                 {if loading and not graph["nodes"] {
                     <div role="status" aria-label="Loading your graph" className="flex h-full flex-col items-center justify-center gap-3">
                         <Skeleton className="size-10 rounded-full" />
@@ -366,9 +471,16 @@ def:pub GraphView(goal_id: str = "", on_open_person: Callable[[str], None] | Non
                         className={"block h-full w-full touch-none select-none" + (" opacity-60" if loading else "")}
                     />
                     <GraphLegend corner={True} />
+                    if selected["id"] {
+                        <div className="absolute top-2 right-2 flex max-w-[calc(100%_-_16px)] items-center gap-2 rounded-md border bg-background/90 pt-1.5 pb-1.5 pl-3 pr-1.5 shadow-edge backdrop-blur">
+                            <span className="truncate text-caption font-medium">{selected["label"] as str}</span>
+                            {selected["kind"] == "person" and
+                                <Button size="xs" variant="outline" onClick={open_selected}>Details</Button>}
+                        </div>
+                    }
                 }}
             </div>
             {people > 0 and <GraphLegend />}
-            {people > 0 and <p className="text-caption text-muted-foreground">Drag to move · scroll or pinch to zoom · tap a person to open them.</p>}
+            {people > 0 and <p className="text-caption text-muted-foreground">Drag to move · scroll or pinch to zoom · tap a node to focus it, tap it again to open · tap empty space to clear.</p>}
         </section>;
 }
