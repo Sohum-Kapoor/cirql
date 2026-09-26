@@ -181,3 +181,10 @@ node IntroReply {
 edge Posted: Exchange --> IntroRequest {}
 
 edge RepliedTo: IntroReply --> IntroRequest {}
+
+node CardDirectory {
+    """One, under root.shared. Lists every Card published with visibility=link so get_card can find it by handle."""
+    has name: str = "main";
+}
+
+edge Lists: CardDirectory --> Card {}
