@@ -46,25 +46,28 @@ def draft_intro(
     friend_handle: str,
     card_name: str,
     card_headline: str,
-    card_about: str
+    card_about: str,
+    requester_name: str
 ) -> str by llm(temperature=0.4);
-sem draft_intro = "Write a three-way intro email under 120 words, written by the friend (friend_handle) to both the requester and the introduced person (card_name). Say who each is and why the need fits, plainly. No flattery, no superlatives, no subject line.";
+sem draft_intro = "Write a three-way intro email under 120 words, written by the friend (friend_handle) from the friend to both people, addressing them by name (requester_name and card_name), and why the need fits, plainly. No flattery, no superlatives, no subject line, never a placeholder like [Name].";
 sem draft_intro.requester_about = "What the requester says about themselves.";
 sem draft_intro.need = "What the requester is looking for.";
 sem draft_intro.friend_handle = "Handle of the mutual friend who is making the intro and signs the email.";
 sem draft_intro.card_name = "Name of the person being introduced.";
 sem draft_intro.card_headline = "Their one-line headline.";
 sem draft_intro.card_about = "What their card says about them.";
+sem draft_intro.requester_name = "Display name of the requester being introduced to card_name.";
 
-def intro_template(requester_about: str, need: str, friend_handle: str, card_name: str, card_headline: str) -> str {
+def intro_template(requester_about: str, need: str, friend_handle: str, card_name: str, card_headline: str, requester_name: str) -> str {
     who = card_name;
     if card_headline {
         who = f"{card_name} ({card_headline})";
     }
     me_line = requester_about.strip().rstrip(".") or "a friend of mine";
     return (
-        f"Hi both, connecting you two. {who}, meet my friend: {me_line}. "
-        f"They are looking for {need}, and I thought of you. "
+        f"Hi {card_name} and {requester_name}, connecting you two. "
+        f"{who}, meet {requester_name}: {me_line}. "
+        f"{requester_name} is looking for {need}, and I thought of you. "
         f"I'll let you two take it from here. - {friend_handle}"
     );
 }
@@ -396,14 +399,24 @@ walker:priv ClaimReveal {
             fact +>:FactAbout:+> pp;
         }
 
+        req_card = my_card();
+        requester_name = "";
+        if req_card is not None and (req_card as Card).name {
+            requester_name = (req_card as Card).name;
+        } elif me.name and me.name != "me" {
+            requester_name = me.name;
+        } else {
+            requester_name = req.from_handle;
+        }
+
         draft = "";
         try {
-            draft = draft_intro(me.about, req.need, reply.from_handle, card.name, headline, card.about);
+            draft = draft_intro(me.about, req.need, reply.from_handle, card.name, headline, card.about, requester_name);
         } except Exception {
             draft = "";
         }
         if not draft or not draft.strip() {
-            draft = intro_template(me.about, req.need, reply.from_handle, card.name, headline);
+            draft = intro_template(me.about, req.need, reply.from_handle, card.name, headline, requester_name);
         }
         report {"person": pp, "card": card, "intro_draft": draft};
     }
@@ -487,9 +500,11 @@ walker:priv ReplyToRequest {
         kept = [x for x in matches if x["strength"] == "strong" or x["strength"] == "medium"];
         strength = "weak";
         person_id = "";
+        why = "No strong match in your graph.";
         if kept {
             strength = str(kept[0]["strength"]);
             person_id = str(kept[0]["person_id"]);
+            why = str(kept[0]["why"]);
         }
         reply = (root.shared ++> IntroReply(
             request_id=rid,
@@ -499,9 +514,35 @@ walker:priv ReplyToRequest {
             status="pending"
         ))[0];
         Jac.allow_root(reply, UUID(owner_root(req)), ReadPerm);  # jac:ignore[E1053]
-        root ++> ReplyPrivate(reply_id=jid(reply), match_person_id=person_id);
+        root ++> ReplyPrivate(reply_id=jid(reply), match_person_id=person_id, why=why);
         reply +>:RepliedTo:+> req;  # kept for the graph view; nothing reads it
         report view(reply);
+    }
+}
+
+walker:priv ListMyReplies {
+    """Every shared IntroReply OWNED by me (friend side), newest first, with
+    its readable request and the friend-private "why it fits" text (from
+    ReplyPrivate.why, set at ReplyToRequest). `why` never enters ReplyView and
+    never crosses to the requester. Every status included, so a friend who
+    reloads mid-flow still sees their in-progress replies."""
+    has reports: list[object] = [];
+
+    can go with Root entry {
+        me_root = jid(root);
+        mine = [r for r in shared_replies() if owner_root(r) == me_root];
+        for r in reversed(mine) {
+            rq = load(r.request_id);
+            if not isinstance(rq, IntroRequest) or not readable(rq) {
+                continue;
+            }
+            why = "";
+            priv = my_private(jid(r));
+            if priv is not None {
+                why = (priv as ReplyPrivate).why;
+            }
+            report {"request": rq as IntroRequest, "reply": view(r), "why": why};
+        }
     }
 }
 
@@ -558,7 +599,7 @@ walker:priv OptIn {
         facts = [f for f in [person <-:FactAbout:<-]];
         basis = "your work";
         if facts {
-            basis = facts[0].text;
+            basis = facts[0].text.strip().rstrip(".").strip();
         }
         reply.status = "opted_in";
         draft = (

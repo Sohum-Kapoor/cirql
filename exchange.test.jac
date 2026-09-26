@@ -35,7 +35,7 @@ def _ex_harness(tmp_dir: str) -> str {
     f.write(
         "import from walkers { ListPeople, DevAddPerson }\n"
         "import from onboard { OnboardMe }\n"
-        "import from exchange { PostRequest, ListIncomingRequests, ReplyToRequest, ListMyRequests, "
+        "import from exchange { PostRequest, ListIncomingRequests, ReplyToRequest, ListMyRequests, ListMyReplies, "
         "ApproveReply, OptIn, Reveal, ClaimReveal, DeclineRequest, DeclineReply, DevMakeCard, DevSeedMatch }\n"
     );
     f.close();
@@ -156,6 +156,17 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
         assert req_id not in [str(r["_jac_id"]) for r in _run(cl, b, "ListIncomingRequests", {})];
         assert _err(_run(cl, b, "ReplyToRequest", {"request_id": req_id})) == "invalid_state";
 
+        # B's own replies, with the friend-private "why" (never in the view).
+        b_mine = _run(cl, b, "ListMyReplies", {});
+        assert len(b_mine) == 1, b_mine;
+        assert str(b_mine[0]["reply"]["_jac_id"]) == reply_id, b_mine;
+        assert str(b_mine[0]["request"]["_jac_id"]) == req_id, b_mine;
+        assert len(str(b_mine[0]["why"])) > 0, b_mine;
+        assert "why" not in dict(b_mine[0]["reply"]), b_mine;
+        assert "match_person_id" not in dict(b_mine[0]["reply"]), b_mine;
+        # A never sees B's replies here: ListMyReplies is friend-side, over MY OWN replies only.
+        assert _run(cl, a, "ListMyReplies", {}) == [];
+
         # A sees one pending reply, redacted.
         mine = _run(cl, a, "ListMyRequests", {});
         a_reports.extend(mine);
@@ -176,6 +187,7 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
         print(f"[ex] OptIn -> {oi}");
         assert str(oi["reply"]["status"]) == "opted_in" and len(str(oi["opt_in_draft"])) > 0;
         assert "Priya Rao" in str(oi["opt_in_draft"]);
+        assert ".)" not in str(oi["opt_in_draft"]), oi["opt_in_draft"];
         rl = _run(cl, b, "Reveal", {"reply_id": reply_id})[0];
         print(f"[ex] Reveal -> {rl}");
         handle = str(rl["revealed_card_handle"]);
@@ -195,6 +207,9 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
         assert str(cr["person"]["name"]) == "Priya Rao";
         assert str(cr["card"]["handle"]) == handle;
         assert len(str(cr["intro_draft"])) > 0;
+        assert str(cr["card"]["name"]) in str(cr["intro_draft"]), cr["intro_draft"];
+        assert "Alice" in str(cr["intro_draft"]), cr["intro_draft"];
+        assert "[Name]" not in str(cr["intro_draft"]), cr["intro_draft"];
         card_id = str(cr["card"]["_jac_id"]);
         a_priya_id = str(cr["person"]["_jac_id"]);
         assert a_priya_id != b_priya_id;
