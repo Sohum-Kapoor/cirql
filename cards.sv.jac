@@ -1,0 +1,158 @@
+"""PublishCard + get_card (SOH-178) — the Card is the only object that leaves
+an account. PublishCard drafts/updates the caller's own Card in place;
+get_card is the ONE public, unauthenticated read, and it emits Card fields
+only — never `visibility`, ids, or anything else off the Card node, and never
+a `handshake_only` card.
+
+OWNER: Person A. Report shapes: contracts/walkers.md (Tier 1, SOH-178).
+Idioms reused verbatim from gate.sv.jac / exchange.sv.jac: root.shared
+get-or-create for a container node, `grant`/container-`ConnectPerm`+
+leaf-`ReadPerm`, and onboard.sv.jac's `handle_from_name` + `jid_suffix` for a
+stable, unique handle (imported, not copied).
+"""
+
+import from datetime { datetime }
+import from schema { Me, Card, Owns, CardDirectory, Lists }
+import from onboard { handle_from_name, jid_suffix }
+
+def now_iso() -> str {
+    return datetime.now().isoformat();
+}
+
+"""Get-or-create the one CardDirectory under root.shared. Granted ConnectPerm
+(container) so every user's PublishCard can attach a Lists edge to it —
+same idiom as exchange.sv.jac's get_exchange()."""
+def get_card_directory() -> CardDirectory {
+    found = [root.shared --> [?:CardDirectory]];
+    if found {
+        return found[0];
+    }
+    dir = (root.shared ++> CardDirectory(name="main"))[0];
+    grant(dir, level=ConnectPerm);
+    return dir;
+}
+
+walker:priv PublishCard {
+    """Get-or-create the caller's Card (via their Me) and publish it. Only
+    non-empty arguments overwrite fields; `visibility` is always applied and
+    must be "link" or "handshake_only". `link` grants the Card read-only to
+    every user and lists it in the shared CardDirectory so get_card can find
+    it by handle; `handshake_only` unlists it and revokes the grant (this
+    runtime DOES have `revoke()`, so it is used here — belt and suspenders:
+    get_card also refuses anything but visibility=="link" on its own, so a
+    stale grant can never leak a handshake_only card)."""
+    has headline: str = "";
+    has about: str = "";
+    has looking_for: list[str] = [];
+    has can_offer: list[str] = [];
+    has links: list[str] = [];
+    has contact_pref: str = "";
+    has visibility: str = "link";
+    has name: str = "";
+    has reports: list[object] = [];
+
+    can go with Root entry {
+        if self.visibility != "link" and self.visibility != "handshake_only" {
+            report {"error": "bad_visibility"};
+            return;
+        }
+
+        existing_me = [root --> [?:Me]];
+        if existing_me {
+            me = existing_me[0];
+        } else {
+            me = (root ++> Me(name="me"))[0];
+        }
+
+        existing_card = [me ->:Owns:-> [?:Card]];
+        if existing_card {
+            card = existing_card[0];
+        } else {
+            handle = handle_from_name(self.name or "me") + "-" + jid_suffix(jid(me));
+            card = (me +>:Owns:+> Card(handle=handle))[0];
+        }
+
+        if self.headline {
+            card.headline = self.headline;
+        }
+        if self.about {
+            card.about = self.about;
+        }
+        if self.looking_for {
+            card.looking_for = self.looking_for;
+        }
+        if self.can_offer {
+            card.can_offer = self.can_offer;
+        }
+        if self.links {
+            card.links = self.links;
+        }
+        if self.contact_pref {
+            card.contact_pref = self.contact_pref;
+        }
+        if self.name {
+            card.name = self.name;
+        }
+        card.visibility = self.visibility;
+        card.updated_at = now_iso();
+
+        dir = get_card_directory();
+        if self.visibility == "link" {
+            grant(card, level=ReadPerm);
+            if not [edge dir ->:Lists:-> card] {
+                dir +>:Lists:+> card;
+            }
+        } else {
+            for e in [edge dir ->:Lists:-> card] {
+                del e;
+            }
+            revoke(card);
+        }
+
+        report card;
+    }
+}
+
+"""The ONE public read. `def:pub` — no JWT required; per `jac guide
+jac-sv-auth`, an anonymous caller's `root` IS `root.shared`, but a caller who
+DOES send a valid token runs on their own root instead — so this reaches the
+CardDirectory through `root.shared` explicitly, never bare `root`, or a
+token-holder's own graph would silently shadow the public directory. Returns
+a dict of Card fields only — never `visibility`, `_jac_id`, or anything else —
+and `found: false` with empty fields when no link-visible card matches."""
+def:pub get_card(handle: str) -> dict[str, object] {
+    empty: dict[str, object] = {
+        "found": False,
+        "name": "",
+        "handle": "",
+        "headline": "",
+        "about": "",
+        "looking_for": [],
+        "can_offer": [],
+        "links": [],
+        "contact_pref": "",
+        "updated_at": ""
+    };
+    dirs = [root.shared --> [?:CardDirectory]];
+    if not dirs {
+        return empty;
+    }
+    dir = dirs[0];
+    for card in [dir ->:Lists:-> [?:Card]] {
+        if card.handle == handle and card.visibility == "link" {
+            return {
+                "found": True,
+                "name": card.name,
+                "handle": card.handle,
+                "headline": card.headline,
+                "about": card.about,
+                "looking_for": card.looking_for,
+                "can_offer": card.can_offer,
+                "links": card.links,
+                "contact_pref": card.contact_pref,
+                "updated_at": card.updated_at
+            };
+        }
+    }
+    return empty;
+}
