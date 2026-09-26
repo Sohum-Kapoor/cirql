@@ -66,6 +66,15 @@ impl app.logout -> None {
     cap_error = "";
     cap_note = "";
     cap_result = {};
+    for k in list(RANK_ROWS.keys()) {
+        RANK_ROWS[k] = None;
+        RANK_PENDING[k] = False;
+        RANK_ERRORS[k] = "";
+    }
+    publish_rank();
+    goals_list = [];
+    goals_loaded = False;
+    goal_error = "";
     status = "logged out";
 }
 
@@ -84,6 +93,7 @@ impl app.enter -> None {
     if len(me_list) > 0 {
         view = "home";
         refresh();
+        load_goals();
     } else {
         step = 1;
         view = "onboarding";
@@ -93,9 +103,8 @@ impl app.enter -> None {
 impl app.refresh -> None {
     found: list[Person] = [];
     try {
-        ping = root spawn Ping();
-        status = "server says: " + str(ping.reports[0]);
         found = await list_people();
+        status = "";
     } except Exception as e {
         status = "couldn't reach the server";
     }
@@ -206,11 +215,15 @@ impl app.start_recall -> None {
     }
     rank_rows = out;
     rank_pending = False;
+    # Seed the home cache so landing on home doesn't spend a second GoalRank.
+    RANK_ROWS[goal_id] = {"ok": True, "rows": out};
+    publish_rank();
 }
 
 impl app.finish -> None {
     view = "home";
     refresh();
+    load_goals();
 }
 
 # ---------------------------------------------------------------- capture (SOH-167)
@@ -249,17 +262,170 @@ impl app.submit_capture -> None {
     view = "review";
 }
 
-"""Done -> home, refresh ListPeople so new people show up; clear the form."""
+"""Done -> home, refresh ListPeople so new people show up; clear the form.
+The new note can change who helps with the active goal, so its cached GoalRank
+is dropped and re-ranked (the old rows are gone; the list shows its skeleton)."""
 impl app.capture_done -> None {
+    gid: str = active_goal_id(goals_list);
     cap_text = "";
     cap_note = "";
     cap_result = {};
     view = "home";
     refresh();
+    if gid {
+        RANK_ROWS[gid] = None;
+        publish_rank();
+        ensure_rank(gid);
+    }
 }
 
 """Empty extraction -> back to the form with the text kept."""
 impl app.capture_retry -> None {
     cap_result = {};
     view = "capture";
+}
+
+# ---------------------------------------------------------------- goals + ranking (SOH-170)
+
+impl app.publish_rank -> None {
+    rank_cache = {**RANK_ROWS};
+    rank_pending_map = {**RANK_PENDING};
+    rank_error_map = {**RANK_ERRORS};
+}
+
+"""ListGoals -> goals_list; rank the active goal unless it's cached."""
+impl app.load_goals -> None {
+    found: list[dict] = [];
+    try {
+        found = await list_goals();
+    } except Exception as e {
+        goal_error = "Couldn't load your goals. " + str(e);
+        goals_loaded = True;
+        return;
+    }
+    goals_list = found;
+    goals_loaded = True;
+    gid: str = active_goal_id(found);
+    if gid {
+        ensure_rank(gid);
+    }
+}
+
+"""GoalRank(goal_id) into the cache. Skips when cached (unless `force`) or
+already in flight. A forced re-rank keeps the old rows on screen (dimmed)."""
+impl app.ensure_rank(goal_id: str, force: bool = False) -> None {
+    if not goal_id {
+        return;
+    }
+    entry: dict = (RANK_ROWS[goal_id] or {}) as dict;
+    if entry["ok"] and not force {
+        publish_rank();
+        return;
+    }
+    if RANK_PENDING[goal_id] {
+        return;
+    }
+    RANK_PENDING[goal_id] = True;
+    RANK_ERRORS[goal_id] = "";
+    publish_rank();
+    out: list[dict] = [];
+    try {
+        out = await goal_rank(goal_id);
+    } except Exception as e {
+        RANK_PENDING[goal_id] = False;
+        RANK_ERRORS[goal_id] = "Couldn't rank your network for this goal. Tap Re-rank to try again.";
+        publish_rank();
+        return;
+    }
+    RANK_ROWS[goal_id] = {"ok": True, "rows": out};
+    RANK_PENDING[goal_id] = False;
+    publish_rank();
+}
+
+"""Switch = SetGoal(<that goal's text>). The header flips and the list renders
+from cache (or starts ranking) immediately; SetGoal persists it alongside."""
+impl app.switch_goal(goal_id: str) -> None {
+    target: dict = {};
+    for g in goals_list {
+        if g["_jac_id"] == goal_id {
+            target = g;
+        }
+    }
+    if not target["_jac_id"] or target["active"] {
+        return;
+    }
+    before: list[dict] = goals_list;
+    goals_list = [mark_active(g, goal_id) for g in before];
+    goal_error = "";
+    ensure_rank(goal_id);
+    saved: dict = {};
+    try {
+        saved = await set_goal(target["text"] as str);
+    } except Exception as e {
+        goals_list = before;
+        goal_error = "Couldn't switch goals — try again. " + str(e);
+        return;
+    }
+}
+
+"""+ New goal -> SetGoal(text) (reactivates an identical goal) -> rank it."""
+impl app.create_goal(text: str) -> None {
+    clean: str = text.strip();
+    if not clean {
+        return;
+    }
+    before: list[dict] = goals_list;
+    saved: dict = {};
+    goal_busy = True;
+    goal_error = "";
+    try {
+        saved = await set_goal(clean);
+    } except Exception as e {
+        goal_busy = False;
+        goal_error = "Couldn't save that goal. " + str(e);
+        return;
+    }
+    gid: str = (saved["_jac_id"] or "") as str;
+    new_goal: dict = {**saved};
+    new_goal["active"] = True;
+    kept: list[dict] = [mark_active(g, gid) for g in before if g["_jac_id"] != gid];
+    goals_list = [new_goal] + kept;
+    goal_busy = False;
+    ensure_rank(gid);
+}
+
+"""CloseGoal(goal_id): inactive, never deleted; its RelevantTo edges are gone
+server-side, so drop its cached ranking too."""
+impl app.end_goal(goal_id: str) -> None {
+    before: list[dict] = goals_list;
+    out: str = "";
+    goal_busy = True;
+    goal_error = "";
+    try {
+        out = await close_goal(goal_id);
+    } except Exception as e {
+        goal_busy = False;
+        goal_error = "Couldn't close that goal. " + str(e);
+        return;
+    }
+    goal_busy = False;
+    if out != "closed" {
+        goal_error = "That goal wasn't found — refresh and try again.";
+        return;
+    }
+    next_goals: list[dict] = [];
+    for g in before {
+        ng: dict = {**g};
+        if g["_jac_id"] == goal_id {
+            ng["active"] = False;
+        }
+        next_goals = next_goals + [ng];
+    }
+    goals_list = next_goals;
+    RANK_ROWS[goal_id] = None;
+    publish_rank();
+}
+
+impl app.rerank -> None {
+    ensure_rank(active_goal_id(goals_list), True);
 }
