@@ -15,6 +15,7 @@ rsync -a --delete --exclude .git/ --exclude .jac/ --exclude .venv/ --exclude .cl
   --exclude ios/ --exclude android/ --exclude .env --exclude seed/seed.real.json --exclude .DS_Store "$REPO/" "$OUT/"
 cd "$OUT"
 npm install --no-audit --no-fund --loglevel=error
+"$REPO/.venv/bin/jac" install < /dev/null   # jac.toml [dependencies.npm] -> .jac/client (e.g. d3 for the graph view)
 [ -d ios ] || "$REPO/.venv/bin/jac" setup mobile --platform ios < /dev/null
 plist() { /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription $MIC" ios/App/App/Info.plist 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string $MIC" ios/App/App/Info.plist; }
