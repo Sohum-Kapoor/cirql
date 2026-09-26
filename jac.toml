@@ -35,6 +35,7 @@ base_route_app = "app"
 enabled = false
 
 [plugins.byllm.model]
-# Gemini via byLLM (GOOGLE_API_KEY in .env). Confirm the model string against
-# `jac guide jac-by-llm` and whatever the sponsor credits cover (SOH-161).
-default_model = "gemini/gemini-2.0-flash"
+# Gemini via byLLM (GOOGLE_API_KEY in .env).
+# Verified 2026-09-26 14:58 via `jac run` hello (SOH-161): 2.0/2.5 models are retired on
+# this key; gemini-3.8-flash answers. `jac run` auto-loads .env from cwd.
+default_model = "gemini/gemini-3.8-flash"
