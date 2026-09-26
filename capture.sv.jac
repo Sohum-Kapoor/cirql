@@ -132,7 +132,7 @@ def record_mention(
         return;
     }
     note +>:Mentions(span=span):+> p;
-    mentioned[key] = {"person": p, "is_new": is_new, "ambiguous_with": ambiguous_with};
+    mentioned[key] = {"person": p, "is_new": is_new, "ambiguous_with": ambiguous_with, "span": span};
     order.append(key);
 }
 
