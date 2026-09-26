@@ -11,6 +11,8 @@ import from gate { GateMyRoot, GatePostShared, GateListShared, GateMakeCard, Gat
 import from capture { Capture }
 import from gaps { GapFinder, GapDevSeed }
 import from goals { GoalRank, SetGoal, CloseGoal }
+import from scoring { ScoreAgainstNeed }
+import from intros { AdvanceIntroduction, DevProposeIntroduction }
 
 # Client-side UI
 cl {
