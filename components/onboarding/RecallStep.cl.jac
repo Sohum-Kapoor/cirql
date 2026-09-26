@@ -63,7 +63,7 @@ def:pub RecallStep(
                                 </div>
                             </div>
                             <p className="text-sm">{row["reason"]}</p>
-                            <p className="text-xs italic text-muted-foreground">{"Opener: " + row["opener"]}</p>
+                            {(<p className="text-xs italic text-muted-foreground">{"Opener: " + row["opener"]}</p>) if row["opener"] else None}
                         </li>
                     }}
                 </ul>
