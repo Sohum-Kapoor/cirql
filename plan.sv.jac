@@ -166,9 +166,25 @@ def route_why_talk(display_name: str, via_name: str) -> str {
 """Deterministic, testable directly on a hand-built `me` (no jobj/ownership
 involved beyond `find_path`'s own Note lookups) — see plan.test.jac. See the
 module docstring and contracts/walkers.md for the exact resolution rule and
-report shape. Capped at 60 names."""
+report shape. Capped at `GAMEPLAN_CAP` names; the rest are never silently
+dropped - they come back in `not_processed` (SOH-212)."""
+glob GAMEPLAN_CAP: int = 60;
+
+"""`total_names`, `processed`, `truncated`, `not_processed` for a guest list."""
+def cap_report(names: list[str]) -> dict[str, any] {
+    total = len(names);
+    processed = total if total <= GAMEPLAN_CAP else GAMEPLAN_CAP;
+    return {
+        "total_names": total,
+        "processed": processed,
+        "truncated": total > GAMEPLAN_CAP,
+        "not_processed": list(names[GAMEPLAN_CAP:])
+    };
+}
+
 def game_plan_for(me: Me, names: list[str], event: str) -> dict[str, any] {
-    capped = names[:60];
+    capped = names[:GAMEPLAN_CAP];
+    cap = cap_report(names);
     goal = active_goal(me);
     goal_text = goal.text if goal is not None else "";
 
@@ -261,7 +277,11 @@ def game_plan_for(me: Me, names: list[str], event: str) -> dict[str, any] {
         "routes": routes_out,
         "unknown": unknown_out,
         "ambiguous": ambiguous_out,
-        "suggested_order": suggested_order
+        "suggested_order": suggested_order,
+        "total_names": cap["total_names"],
+        "processed": cap["processed"],
+        "truncated": cap["truncated"],
+        "not_processed": cap["not_processed"]
     };
 }
 
@@ -277,9 +297,12 @@ walker:priv GamePlan {
     can go with Root entry {
         existing = [root --> [?:Me]];
         if not existing {
+            cap = cap_report(self.names);
             report {
                 "event": self.event, "known": [], "routes": [],
-                "unknown": self.names[:60], "ambiguous": [], "suggested_order": []
+                "unknown": self.names[:GAMEPLAN_CAP], "ambiguous": [], "suggested_order": [],
+                "total_names": cap["total_names"], "processed": cap["processed"],
+                "truncated": cap["truncated"], "not_processed": cap["not_processed"]
             };
             return;
         }

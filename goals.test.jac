@@ -18,7 +18,7 @@ though `jac test` runs against one shared, persisted root (jac-testing) and
 earlier tests' nodes are still hanging around.
 """
 
-import from goals { Candidate, EvidenceItem, RankedItem, compute_days_since_contact, gather_evidence, collect_candidates, materialize, fallback_rank, serve_cached, evidence_item_from_jid }
+import from goals { Candidate, EvidenceItem, RankedItem, compute_days_since_contact, gather_evidence, collect_candidates, materialize, fallback_rank, serve_cached, evidence_item_from_jid, collect_all_candidates, count_candidate_people, ranking_is_stale, annotate_ranking, RANK_CAP }
 import from schema { Me, Person, Goal, Fact, Intent, Note, Knows, Reported, FactAbout, IntentAbout, Mentions, AssertsIntent, RelevantTo }
 import from datetime { datetime }
 
@@ -372,4 +372,33 @@ test "serve_cached (SOH-169 cache): no RelevantTo edges -> empty, so GoalRank fa
 test "evidence_item_from_jid (SOH-169 cache): unknown jid resolves to None" {
     item = evidence_item_from_jid("definitely-not-a-real-jid");
     assert item is None;
+}
+
+# ---------------------------------------------------------------- SOH-212 staleness + cap
+
+test "SOH-212 GoalRank cap: 70 people -> 60 ranked, total_people 70, truncated true" {
+    now = datetime.now();
+    me = (root ++> Me(name="cap-test-me"))[0];
+    for i in range(70) {
+        me +>:Knows(status="confirmed", last_contact=""):+> Person(name=f"Cap212 P{i}", status="confirmed");
+    }
+    all_c = collect_all_candidates(me, now);
+    assert len(all_c) == 70;
+    assert len(collect_candidates(me, now)) == RANK_CAP;
+    assert count_candidate_people(me) == 70;
+    items: list[dict[str, any]] = [{"person": "x"}];
+    annotate_ranking(items, False, "2026-09-26T10:00:00", 70);
+    assert items[0]["truncated"] == True and items[0]["total_people"] == 70;
+    assert items[0]["stale"] == False and items[0]["ranked_at"] == "2026-09-26T10:00:00";
+    few: list[dict[str, any]] = [{"person": "y"}];
+    annotate_ranking(few, True, "", 12);
+    assert few[0]["truncated"] == False;
+}
+
+test "SOH-212 ranking_is_stale: a note captured after ranked_at makes it stale; none after -> fresh; no ranked_at -> stale" {
+    older = Note(text="old", kind="debrief", captured_at="2026-09-26T09:00:00");
+    newer = Note(text="new", kind="debrief", captured_at="2026-09-26T11:00:00");
+    assert not ranking_is_stale("2026-09-26T10:00:00", [older]);
+    assert ranking_is_stale("2026-09-26T10:00:00", [older, newer]);
+    assert ranking_is_stale("", [older]);
 }

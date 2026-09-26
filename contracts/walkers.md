@@ -423,3 +423,49 @@ Bounded traversal over the caller's own root: every Note (text capped at 300 cha
   - **Bounded budgets.** `WhoNeedsWhatIHave.limit` clamped to [0, 25]; `Recall.max_items` to [0, 100]; `Serendipity.limit`, `Tend.limit` to [0, 50]. `PathFinder.max_depth` was already capped at 4.
   - **Forget.** Forgetting a Fact/Intent/Promise deletes any `RelevantTo` edge whose `evidence` becomes empty (still counted in `retracted.relevant_to`); forgetting a Person removes its `RelevantTo` edges (node-delete cascade, now tested).
   - **Strict base64.** `Transcribe`: `audio_b64` longer than the base64 length of the 15 MB cap (20,971,520 chars) → `error: "too_large"` before decoding; non-strict base64 → `error: "bad_base64"` (was `"bad_audio"`). `CaptureImage`: same, cap = base64 length of 8 MB + 256 (a leading `data:…;base64,` prefix is stripped); non-strict base64 → `error: "bad_base64"` (was `"empty"`; an empty string is still `"empty"`).
+- 2026-09-26 — SOH-212 persona fixes (Rosa, Amara, Lena, Marcus) + SOH-166 asks from B. New module `names.sv.jac` (plain defs, no walker: `name_key`, `match_names`, `trim_words`, `display_how_met`). **Schema: `Goal` gains `has ranked_at: str = ""`** (ISO, set by every GoalRank rebuild). No new walkers; `main.jac` unchanged.
+
+  ### `Capture(text, kind = "debrief", audio_ref = "", how_met: str = "")` — shape unchanged, behavior:
+  - **Names** (shared rule in `names.sv.jac`, also used by `ProposeMerges`): honorifics (Dr./Prof./Professor/Rev./Reverend/Mr./Ms./Mrs.) are stripped from `Person.name` (a Dr/Prof/Rev honorific goes to `title` when `title` is empty); a parenthetical is an alias, not part of the name; trailing `?`s dropped. Exact clean-name match -> that person (`is_new: false`), **unless both orgs are set and differ** -> ambiguous. Same first name with non-contradicting last names ("Helen" vs "Dr. Helen Marsh-Whitcombe", "Maya O." vs "Maya Okafor") -> **ambiguous**: a NEW `Person(status="proposed")` + `Knows(status="proposed")`, `ambiguous_with: [jid]` filled — this now also applies when exactly ONE known person shares the first name (previously that silently resolved to them). "Maya Lindqvist" vs "Maya Okafor" -> distinct.
+  - Extraction obj additions: `XPerson.named: bool` (false = known only by description; the description is the name; created `proposed`, promises to them still attach), `XPerson.distinct_from: str` ("not the X one" -> forced new proposed Person, `ambiguous_with` includes X), `XFact.source_kind` (`self` for notes-to-self such as "conflict of interest", "keep in mind").
+  - Hedges: a fact whose `span` hedges ("maybe", "??", "not sure", "I think", "possibly", "probably", ...) but whose text does not carry one of possibly/maybe/unsure/unconfirmed/not sure/reportedly/probably is stored as `"Possibly: <text>"`.
+  - Promises: sem now asks for the concrete deliverable even when phrased as the other person's want ("wants ROI deck by Fri" -> Promise "send the ROI deck", due "Fri"). The model does not reliably follow it, so a deterministic guard backs it: a bare "follow up"/"check in" promise to a person who has a `need` intent in the same note is stored as `"Follow up on: <that need>"` (e.g. `"Follow up on: ROI deck by Fri"`, due kept).
+  - `how_met` (SOH-166, **Needs B** to pass it): non-empty -> every NEW `Knows` edge this capture creates carries it; existing people's edges untouched. Default `how_met` is now `"{kind}: {first 60 chars cut on a word boundary}…"`.
+
+  ### `Recall(question, max_items = 40)` — shape unchanged
+  Gathers Facts/Intents/Promises through each Note's `Asserts*` edges (they never hung off root, so promises were invisible). A question containing promise/promised/said I would/send/owe/follow up keeps every promise item first; fallback text for a promise reads `"you promised {person}: {text} ({observed_at})"`.
+
+  ### `ProposeMerges()` — shape unchanged
+  Adds the `names.sv.jac` rule: honorific-only difference -> `same_name`/`high`; "Helen" vs "Dr. Helen Marsh-Whitcombe" -> `first_name_only_vs_full`; "Maya O." vs "Maya Okafor" -> `same_first_last_initial`.
+
+  ### `OnboardMe(about: str, name: str = "")` — **Needs B**: pass the signup name
+  `name` non-empty -> `Me.name` and `Card.name` = it. Else the extracted name (sem: "the speaker's own name if they state it, else empty"); else a deterministic "I'm Sam, …"/"My name is …" read of `about`; else unchanged (`"me"` for a new Me). Report shape unchanged.
+
+  ### `NotedCard(person_id)` — shape unchanged
+  `how_met` shown on a word boundary with "…" (legacy 60-char cuts are re-trimmed for display).
+
+  ### `ApplyCorrection(person_id, text, replace_fact_id = "", kind = "fact", replace_intent_id: str = "")` — SOH-166
+  `replace_intent_id` names an Intent about this person: its `expires_at` is set to now (ISO, `datetime.now().isoformat()`, same as freshness) — never deleted — and the replacement Intent is created as before (`source_kind="self"`, default expiry). Report shape unchanged (`[{ intent: Intent }]`).
+
+  ### `Serendipity(text, url, limit)` — shape unchanged
+  Matches only on the person's OWN Facts/Intents (`FactAbout`/`IntentAbout`); a Note that merely mentions them no longer counts, and `evidence` lists only those Facts/Intents. `why` = `"{name} {clause}; this piece is about {topic}."` where an intent already leading with a verb ("Looking for …") is used as-is, otherwise `"wants …"` / `"can offer …"` (offer intents); quoted text is lower-cased at the first letter and loses its trailing period.
+
+  ### `GapFinder()` — shape unchanged; `suggested_need` sem: one short sentence, everyday words, no jargon, <= 14 words.
+
+  ### `ImportPeople(rows, source)` — unchanged
+  Could not reproduce "26 new rows all `is_new: false`" (fresh and concurrent runs report `true`; a re-import of the same names correctly reports `false`, which a retried call would do). Regression test added.
+
+  ### `GoalRank(goal_id, refresh = False)` — every entry gains four keys
+  ```
+  { ...existing keys..., stale: bool, ranked_at: str, truncated: bool, total_people: int }
+  ```
+  `ranked_at` = `Goal.ranked_at` (set at every rebuild). `stale` = some `Note.captured_at` is later than `ranked_at` (always `false` on a fresh rebuild; `true` for a cached ranking with no `ranked_at`). Never auto-refreshes: the client decides (`refresh: true`). `total_people` = distinct candidate people before the 60 cap; `truncated` = `total_people > 60`.
+
+  ### `GamePlan(names, event = "")` — the report dict gains
+  ```
+  { ...existing keys..., total_names: int, processed: int, truncated: bool, not_processed: [str] }
+  ```
+  Only the first 60 names are resolved; the rest come back verbatim, in order, in `not_processed` (never silently dropped).
+
+  ### Known, not fixed here: `warnings` on every response after `PublishCard`/`PostRequest`
+  Reproduced: once a user has run `PublishCard` or `PostRequest`, EVERY later response for that user (even `Ping`) carries two `"Permission denied: field_write on Root[<root.shared>] owned by root[<system>]"` warnings, until the server restarts. Not caused by the read walkers: `cards.sv.jac`/`exchange.sv.jac` traverse/attach on `root.shared` (`[root.shared -->]`, `root.shared ++> …`), which leaves the shared root's anchor dirty in that user's memory; every commit then retries the denied write. Fix belongs in `cards.sv.jac` / `exchange.sv.jac` (outside this change).

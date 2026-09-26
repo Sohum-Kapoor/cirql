@@ -19,7 +19,7 @@ raw list length against the whole root.
 import from serendipity {
     serendipity_for, pick_top_evidence, _confirmed_known_people,
     _match_person, _qualifies, _topic_phrase, _why_fragment,
-    _newest_observed_at
+    _newest_observed_at, _intent_clause
 }
 import from goals { EvidenceItem, gather_evidence }
 import from schema {
@@ -288,4 +288,31 @@ test "_newest_observed_at: newest wins, unparsable/empty ignored" {
     ];
     assert _newest_observed_at(items) == "2026-09-01T00:00:00";
     assert _newest_observed_at([]) == "";
+}
+
+# ---------------------------------------------------------------- SOH-212
+
+test "SOH-212 serendipity_for: a co-mentioning Note never makes Tom match; why uses the intent text as-is" {
+    now = datetime(2026, 9, 26, 12, 0, 0);
+    me = (root ++> Me(name="Serendipity-212 Me"))[0];
+
+    helen = (me +>:Knows(status="confirmed", last_contact=""):+> Person(name="Helen S212", status="confirmed"))[0];
+    tom = (me +>:Knows(status="confirmed", last_contact=""):+> Person(name="Tom S212", status="confirmed"))[0];
+    shared_note = (root ++> Note(text="Lunch with Helen and Tom: Helen runs the nursing residency program", kind="debrief", captured_at="2026-09-20T00:00:00"))[0];
+    shared_note +>:Mentions(span="Helen"):+> helen;
+    shared_note +>:Mentions(span="Tom"):+> tom;
+    h_intent = (root ++> Intent(kind="need", text="Looking for nursing residency mentors.", expires_at=""))[0];
+    h_intent +>:IntentAbout():+> helen;
+    shared_note +>:AssertsIntent(span="nursing residency"):+> h_intent;
+
+    result = serendipity_for(me, "Nursing residency programs expand mentoring across Michigan", "", 5, now);
+    names = _names(result);
+    assert "Tom S212" not in names, f"Tom only shares a note with Helen, got {names}";
+    assert names == ["Helen S212"], f"got {names}";
+    why = result[0]["why"] as str;
+    assert why.startswith("Helen S212 looking for nursing residency mentors; this piece is about"), why;
+    assert "wants Looking" not in why;
+
+    assert _intent_clause("A VC intro.", "need") == "wants a VC intro";
+    assert _intent_clause("Design reviews", "offer") == "can offer design reviews";
 }

@@ -6,8 +6,8 @@ carries a random per-call suffix (`_uid()`) — this guarantees a name is always
 genuinely new, whether this is the first run ever or the hundredth.
 """
 
-import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction }
-import from schema { Fact, Intent, Knows, Me, Mentions, Note, Person, Promise, Reported }
+import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction, hedge_fact_text, fact_source_kind, specific_follow_up }
+import from schema { Fact, Intent, Knows, Me, Mentions, Note, Person, Promise, Reported, PromiseTo }
 import uuid;
 import from datetime { datetime }
 
@@ -73,7 +73,7 @@ test "ambiguity: two known people share a first token, never guessed" {
     assert jid(p) != jid(b);
 }
 
-test "single-token name matching exactly ONE known person resolves to them" {
+test "single-token name matching exactly ONE known person is ambiguous, never a silent merge (SOH-212)" {
     me = _fresh_me();
     note = _fresh_note("Ran into Maya at the cafe.");
     suffix = _uid();
@@ -84,15 +84,15 @@ test "single-token name matching exactly ONE known person resolves to them" {
     known_entry = resolve_person(full_name, me, note, r0);
     known = known_entry["person"] as Person;
 
-    # Fresh dict: simulate a later Capture call that only saw the first name,
-    # and exactly one known person shares that first token.
+    # Fresh dict: a later Capture call that only saw the first name.
     r1: dict[str, any] = {};
     entry = resolve_person(first_name, me, note, r1);
     p = entry["person"] as Person;
 
-    assert not entry["is_new"];
-    assert jid(p) == jid(known);
-    assert len(entry["ambiguous_with"] as list[str]) == 0;
+    assert entry["is_new"];
+    assert p.status == "proposed";
+    assert jid(p) != jid(known);
+    assert entry["ambiguous_with"] == [jid(known)];
 }
 
 test "span lookup: verbatim substring wins, else fallback, else 80-char note prefix" {
@@ -396,4 +396,164 @@ test "empty extraction still yields note_id and empty arrays — note never lost
     assert result["promises"] == [];
     assert result["ties"] == [];
     assert note.text == "Small talk, nothing extractable.";
+}
+
+# ---------------------------------------------------------------- SOH-212 persona fixes
+
+test "names: honorific / initial / bare-first vs known people -> ambiguous; different last names -> distinct" {
+    me = _fresh_me();
+    note = _fresh_note("Saw Helen and Maya O. again.");
+    u = _uid();
+    r0: dict[str, any] = {};
+    helen = resolve_person(f"Dr. Helen{u} Marsh-Whitcombe", me, note, r0)["person"] as Person;
+    maya = resolve_person(f"Maya{u} Okafor", me, note, r0)["person"] as Person;
+    assert helen.name == f"Helen{u} Marsh-Whitcombe", "honorific dropped from the display name";
+    assert helen.title == "Dr.";
+
+    r1: dict[str, any] = {};
+    e_helen = resolve_person(f"Helen{u}", me, note, r1);
+    assert e_helen["is_new"] and (e_helen["person"] as Person).status == "proposed";
+    assert e_helen["ambiguous_with"] == [jid(helen)];
+
+    e_mo = resolve_person(f"Maya{u} O.", me, note, r1);
+    assert e_mo["is_new"] and (e_mo["person"] as Person).status == "proposed";
+    assert e_mo["ambiguous_with"] == [jid(maya)];
+
+    e_ml = resolve_person(f"Maya{u} Lindqvist", me, note, r1);
+    assert e_ml["is_new"];
+    assert (e_ml["person"] as Person).status == "confirmed";
+    assert e_ml["ambiguous_with"] == [];
+
+    # Same clean name with a different honorific -> the same person.
+    r2: dict[str, any] = {};
+    e_same = resolve_person(f"Prof Helen{u} Marsh-Whitcombe", me, note, r2);
+    assert not e_same["is_new"];
+    assert jid(e_same["person"] as Person) == jid(helen);
+}
+
+test "same name, different org -> ambiguous; distinct_from forces a new proposed person" {
+    me = _fresh_me();
+    note = _fresh_note("Dana (NOT the MidWest Cold Chain one) runs ops at Fleetly.");
+    u = _uid();
+    r0: dict[str, any] = {};
+    dana = resolve_person(f"Dana{u} Whitfield", me, note, r0, org="MidWest Cold Chain")["person"] as Person;
+
+    r1: dict[str, any] = {};
+    e_org = resolve_person(f"Dana{u} Whitfield", me, note, r1, org="Fleetly");
+    assert e_org["is_new"] and (e_org["person"] as Person).status == "proposed";
+    assert e_org["ambiguous_with"] == [jid(dana)];
+
+    x = CaptureExtraction(
+        people=[XPerson(name=f"Dana{u}", org="", title="", span="Dana", distinct_from=f"Dana{u} Whitfield")],
+        facts=[], intents=[], promises=[], ties=[]
+    );
+    result = apply_extraction(note, me, x);
+    people = result["people"] as list[dict[str, any]];
+    assert len(people) == 1;
+    p = people[0]["person"] as Person;
+    assert people[0]["is_new"];
+    assert p.status == "proposed";
+    assert jid(p) != jid(dana);
+    assert jid(dana) in (people[0]["ambiguous_with"] as list[str]);
+}
+
+test "a person known only by description is created proposed and the promise to them still attaches" {
+    me = _fresh_me();
+    u = _uid();
+    desc = f"the young man from the robotics thing {u}";
+    note = _fresh_note(f"{desc}, cannot remember his name, built the wheelchair sensor. I said I would send him the grant form.");
+    x = CaptureExtraction(
+        people=[XPerson(name=desc, org="", title="", span=desc, named=False)],
+        facts=[XFact(about_name=desc, text="built the wheelchair sensor", span="built the wheelchair sensor")],
+        intents=[],
+        promises=[XPromise(to_name=desc, text="send him the grant form", due="", span="I said I would send him the grant form")],
+        ties=[]
+    );
+    result = apply_extraction(note, me, x);
+    people = result["people"] as list[dict[str, any]];
+    assert len(people) == 1;
+    p = people[0]["person"] as Person;
+    assert p.status == "proposed";
+    assert p.name == desc;
+    knows = [edge me ->:Knows:-> p];
+    assert len(knows) == 1 and knows[0].status == "proposed";
+    promises = result["promises"] as list[dict[str, any]];
+    assert len(promises) == 1 and promises[0]["to"] == jid(p);
+    assert len([p <-:PromiseTo:<-]) == 1;
+}
+
+test "hedge guard: a hedged span keeps its hedge; a flat span is untouched; notes-to-self are source_kind=self" {
+    assert hedge_fact_text("Works at Siemens in Detroit.", "er arbeitet bei siemens?? in detroit") == "Possibly: Works at Siemens in Detroit.";
+    assert hedge_fact_text("Maybe looking for a room.", "maybe a room") == "Maybe looking for a room.";
+    assert hedge_fact_text("Possibly works at Siemens.", "I think siemens") == "Possibly works at Siemens.";
+    assert hedge_fact_text("Works at Siemens.", "works at Siemens") == "Works at Siemens.";
+    assert fact_source_kind("reported", "so there is a potential conflict of interest I should note") == "self";
+    assert fact_source_kind("self", "anything") == "self";
+    assert fact_source_kind("reported", "runs the youth program") == "reported";
+
+    me = _fresh_me();
+    u = _uid();
+    note = _fresh_note(f"Klaus{u} - er arbeitet bei siemens?? maybe a room.");
+    x = CaptureExtraction(
+        people=[XPerson(name=f"Klaus{u}", org="", title="", span=f"Klaus{u}")],
+        facts=[XFact(about_name=f"Klaus{u}", text="Works at Siemens in Detroit.", span="er arbeitet bei siemens??")],
+        intents=[], promises=[], ties=[]
+    );
+    result = apply_extraction(note, me, x);
+    f = (result["facts"] as list[dict[str, any]])[0]["fact"] as Fact;
+    assert f.text.startswith("Possibly: ");
+}
+
+test "SOH-166 how_met: an explicit how_met labels NEW Knows edges only; the default is word-trimmed" {
+    me = _fresh_me();
+    u = _uid();
+    r0: dict[str, any] = {};
+    seed_note = _fresh_note(f"Met Omar{u} Haddad after the county accessibility panel downtown last night, great chat.");
+    omar = resolve_person(f"Omar{u} Haddad", me, seed_note, r0)["person"] as Person;
+    old_how = ([edge me ->:Knows:-> omar])[0].how_met;
+    assert old_how.endswith("…"), f"default how_met is cut on a word boundary with an ellipsis, got {old_how}";
+    assert "pane…" not in old_how;
+
+    note = _fresh_note(f"Coffee with Lena{u} Vogel and Omar{u} Haddad.");
+    x = CaptureExtraction(
+        people=[
+            XPerson(name=f"Lena{u} Vogel", org="", title="", span=f"Lena{u} Vogel"),
+            XPerson(name=f"Omar{u} Haddad", org="", title="", span=f"Omar{u} Haddad")
+        ],
+        facts=[], intents=[], promises=[], ties=[]
+    );
+    result = apply_extraction(note, me, x, how_met="coffee chat — Ross café");
+    people = result["people"] as list[dict[str, any]];
+    assert len(people) == 2;
+    for entry in people {
+        p = entry["person"] as Person;
+        k = ([edge me ->:Knows:-> p])[0];
+        if entry["is_new"] {
+            assert k.how_met == "coffee chat — Ross café";
+        } else {
+            assert jid(p) == jid(omar);
+            assert k.how_met == old_how, "an existing person's edge is untouched";
+        }
+    }
+}
+
+test "SOH-212 a bare 'follow up' promise names what the person wanted in the same note" {
+    assert specific_follow_up("Follow up", ["wants ROI deck by Fri"]) == "Follow up on: ROI deck by Fri";
+    assert specific_follow_up("Follow up.", []) == "Follow up.";
+    assert specific_follow_up("send the ROI deck", ["ROI deck"]) == "send the ROI deck";
+
+    me = _fresh_me();
+    u = _uid();
+    note = _fresh_note(f"Dana{u} W, Fleetly ops. wants ROI deck by Fri. Follow up Thu.");
+    x = CaptureExtraction(
+        people=[XPerson(name=f"Dana{u} W", org="Fleetly", title="ops", span=f"Dana{u} W")],
+        facts=[],
+        intents=[XIntent(about_name=f"Dana{u} W", kind="need", text="Wants ROI deck by Fri", span="wants ROI deck by Fri")],
+        promises=[XPromise(to_name=f"Dana{u} W", text="Follow up", due="Thu", span="Follow up Thu")],
+        ties=[]
+    );
+    result = apply_extraction(note, me, x);
+    pr = (result["promises"] as list[dict[str, any]])[0]["promise"] as Promise;
+    assert pr.text == "Follow up on: ROI deck by Fri", pr.text;
+    assert pr.due == "Thu";
 }

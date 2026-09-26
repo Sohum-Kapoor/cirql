@@ -30,6 +30,7 @@ import from schema {
     Knows, Asserts, AssertsIntent, FactAbout, IntentAbout, PromiseTo
 }
 import from freshness { default_expiry }
+import from names { display_how_met }
 
 # ---------------------------------------------------------------- errors
 
@@ -60,7 +61,7 @@ def find_known_person(me: Me, person_id: str) -> Person | None {
 def how_met_for(me: Me, p: Person) -> str {
     edges = [edge me ->:Knows:-> p];
     if edges {
-        return edges[0].how_met;
+        return display_how_met(edges[0].how_met);
     }
     return "";
 }
@@ -212,9 +213,19 @@ needed): writes the correction Note + Fact/Intent + edges, and — for a fact
 naming `replace_fact_id` — flips the old Fact's status to `"stale"` (never
 deletes it). Returns `{ "fact": Fact }` or `{ "intent": Intent }`. Caller
 (the walker below) has already validated `kind` and resolved `person`."""
-def apply_correction_for(person: Person, text: str, replace_fact_id: str, kind: str, now_dt: datetime) -> dict[str, any] {
+def apply_correction_for(person: Person, text: str, replace_fact_id: str, kind: str, now_dt: datetime, replace_intent_id: str = "") -> dict[str, any] {
     now = now_dt.isoformat();
     note = (root ++> Note(kind="correction", text=text, captured_at=now))[0];
+
+    # SOH-166: an Intent has no status, so "stale, never deleted" means its
+    # expires_at is set to now (same ISO shape freshness writes).
+    if replace_intent_id {
+        for old_it in [person <-:IntentAbout:<-] {
+            if jid(old_it) == replace_intent_id {
+                old_it.expires_at = now;
+            }
+        }
+    }
 
     if kind == "fact" {
         f = (note +>:Asserts(span=text):+> Fact(
@@ -250,6 +261,7 @@ walker:priv ApplyCorrection {
     has person_id: str;
     has text: str;
     has replace_fact_id: str = "";
+    has replace_intent_id: str = "";   # SOH-166: expire this Intent (expires_at = now) and add the replacement
     has kind: str = "fact";
     has reports: list[dict[str, any]] = [];
 
@@ -273,6 +285,6 @@ walker:priv ApplyCorrection {
         }
 
         now_dt = datetime.now();
-        report apply_correction_for(person, self.text, self.replace_fact_id, self.kind, now_dt);
+        report apply_correction_for(person, self.text, self.replace_fact_id, self.kind, now_dt, replace_intent_id=self.replace_intent_id);
     }
 }

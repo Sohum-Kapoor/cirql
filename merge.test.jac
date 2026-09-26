@@ -18,7 +18,7 @@ than asserting totals on the shared, ever-growing `Knows` list or the
 shared `ProposeMerges` report list.
 """
 
-import from merge { ProposeMerges, MergePeople, UndoMerge }
+import from merge { ProposeMerges, MergePeople, UndoMerge, _match_pair, _find_candidates, _select_pairs }
 import from schema {
     Me, Person, Note, Fact, Promise, Goal,
     Knows, Reported, Asserts, AssertsPromise, FactAbout, PromiseTo,
@@ -207,4 +207,28 @@ test "MergePeople: unknown ids -> not_found; UndoMerge: unknown record -> not_fo
     r3 = root spawn UndoMerge(record_id="definitely-not-a-jid");
     err3 = r3.reports[0] as dict[str, any];
     assert err3["error"] == "not_found";
+}
+
+test "SOH-212: ProposeMerges pairs Helen / Dr. Helen and Maya O. / Maya Okafor, never Maya Lindqvist / Maya Okafor" {
+    helen = Person(name="Helen");
+    dr_helen = Person(name="Dr. Helen Marsh-Whitcombe");
+    maya_o = Person(name="Maya O.");
+    maya_ok = Person(name="Maya Okafor");
+    maya_l = Person(name="Maya Lindqvist");
+
+    m1 = _match_pair(helen, dr_helen);
+    assert m1 is not None and m1["reason"] == "first_name_only_vs_full";
+    m2 = _match_pair(maya_o, maya_ok);
+    assert m2 is not None and m2["reason"] == "same_first_last_initial";
+    assert _match_pair(maya_l, maya_ok) is None;
+    m3 = _match_pair(Person(name="Prof. Helen Marsh-Whitcombe"), dr_helen);
+    assert m3 is not None and m3["reason"] == "same_name";
+
+    selected = _select_pairs(_find_candidates([helen, dr_helen, maya_o, maya_ok, maya_l]));
+    pairs: list[str] = [];
+    for c in selected {
+        pairs.append((c["a"] as Person).name + "|" + (c["b"] as Person).name);
+    }
+    assert "Helen|Dr. Helen Marsh-Whitcombe" in pairs, f"got {pairs}";
+    assert "Maya O.|Maya Okafor" in pairs, f"got {pairs}";
 }

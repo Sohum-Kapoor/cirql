@@ -52,6 +52,7 @@ import from schema {
     RelevantTo, Proposes, FromCard
 }
 import from datetime { datetime }
+import from names { name_key, match_names }
 
 # ---------------------------------------------------------------- ownership idiom
 # Mirrored from forget.sv.jac / reads.sv.jac.
@@ -150,6 +151,22 @@ def _match_pair(a: Person, b: Person) -> dict[str, str] | None {
 
     if na == nb {
         return {"reason": "same_name", "confidence": "high"};
+    }
+
+    # SOH-212: the shared names.sv.jac rule (honorifics and parentheticals
+    # stripped; "Helen" vs "Dr. Helen Marsh-Whitcombe", "Maya O." vs
+    # "Maya Okafor"). Same wording as capture's resolve_person.
+    verdict = match_names(a.name, b.name);
+    if verdict == "same" {
+        return {"reason": "same_name", "confidence": "high"};
+    }
+    if verdict == "ambiguous" {
+        ka = name_key(a.name);
+        kb = name_key(b.name);
+        if len(ka["last"]) == 0 or len(kb["last"]) == 0 {
+            return {"reason": "first_name_only_vs_full", "confidence": "medium"};
+        }
+        return {"reason": "same_first_last_initial", "confidence": "medium"};
     }
 
     ta = _tokens(a.name);
