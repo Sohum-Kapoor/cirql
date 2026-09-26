@@ -10,6 +10,9 @@ span (Review's SourceQuote). One chip open at a time across the whole list.
 """
 
 import from ..ui.badge { Badge }
+import from ..ui.button { Button }
+import from ..ui.icons { QuoteIcon }
+import from ..ui.skeleton { Skeleton }
 import from ..capture.Review { SourceQuote }
 import from ...lib.text { join_with, short_date }
 import from ...lib.utils { cn }
@@ -68,19 +71,16 @@ def:pub EvidenceChip(
     }
 
     return
-        <button
-            type="button"
+        <Button
+            variant="chip"
+            size="chip"
             aria-expanded={is_open}
             aria-label={("Hide " if is_open else "Show ") + "evidence: " + _chip_label(ev)}
-            className={cn(
-                "inline-flex h-6 shrink-0 items-center gap-1 rounded-full border pl-2 pr-2 text-xs transition-colors",
-                "border-primary bg-accent text-accent-foreground" if is_open else "text-muted-foreground hover:bg-muted hover:text-foreground"
-            )}
             onClick={handle_toggle}
         >
-            <span aria-hidden="true" className="font-serif text-sm leading-none">“</span>
+            <QuoteIcon className="size-3" />
             <span>{_chip_label(ev)}</span>
-        </button>;
+        </Button>;
 }
 
 def:pub RankRow(row: dict, open_key: str, onToggle: Callable[[str], None]) -> JsxElement {
@@ -99,20 +99,20 @@ def:pub RankRow(row: dict, open_key: str, onToggle: Callable[[str], None]) -> Js
     has_open: bool = open_key.startswith(pid + ":");
 
     return
-        <li className="flex flex-col gap-1.5 pt-3 pb-3 pl-3 pr-3">
+        <li className="flex flex-col gap-2 pt-3 pb-3 pl-4 pr-4">
             <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 flex-col">
-                    <span className="truncate text-sm font-medium">{person["name"] as str}</span>
-                    {sub and <span className="truncate text-xs text-muted-foreground">{sub}</span>}
+                    <span className="truncate text-body font-medium">{person["name"] as str}</span>
+                    {sub and <span className="truncate text-caption text-muted-foreground">{sub}</span>}
                 </div>
                 <div className="flex shrink-0 gap-1">
                     <Badge variant={strength_variant(row["strength"] as str)}>{row["strength"] as str}</Badge>
                     <Badge variant="outline">{row["label"] as str}</Badge>
                 </div>
             </div>
-            <p className="text-sm">{row["reason"] as str}</p>
-            {contact and <span className="text-xs text-muted-foreground">{contact}</span>}
-            {opener and <p className="text-xs italic text-muted-foreground">{"Opener: " + opener}</p>}
+            <p className="text-body-sm text-ink-muted">{row["reason"] as str}</p>
+            {contact and <span className="text-caption text-muted-foreground">{contact}</span>}
+            {opener and <p className="text-caption italic text-muted-foreground">{"Opener: " + opener}</p>}
             {len(evidence) > 0 and
                 <div className="flex flex-wrap gap-1.5 pt-0.5">
                     {for (i, ev) in enumerate(evidence) {
@@ -141,7 +141,7 @@ def:pub RankList(rows: list[dict], dim: bool = False) -> JsxElement {
         <ul
             aria-busy={dim}
             className={cn(
-                "flex flex-col divide-y divide-border rounded-md border transition-opacity",
+                "flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge transition-opacity",
                 "opacity-60" if dim else ""
             )}
         >
@@ -152,6 +152,23 @@ def:pub RankList(rows: list[dict], dim: bool = False) -> JsxElement {
                     open_key={open_key}
                     onToggle={toggle}
                 />
+            }}
+        </ul>;
+}
+
+"""Placeholder rows while a goal ranks for the first time (list only)."""
+def:pub RankSkeleton() -> JsxElement {
+    return
+        <ul aria-hidden="true" className="flex flex-col divide-y divide-border rounded-lg border bg-card shadow-edge">
+            {for i in range(3) {
+                <li key={str(i)} className="flex flex-col gap-2 pt-3 pb-3 pl-4 pr-4">
+                    <div className="flex items-center justify-between gap-2">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-5 w-20 rounded-full" />
+                    </div>
+                    <Skeleton className="h-3.5 w-full" />
+                    <Skeleton className="h-3.5 w-2/3" />
+                </li>
             }}
         </ul>;
 }

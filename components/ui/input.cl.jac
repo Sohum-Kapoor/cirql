@@ -1,5 +1,8 @@
 import from ...lib.utils { cn }
 
+# jac-shadcn Input, restyled to DESIGN.md `text-input` (SOH-206): surface-1,
+# body 16px (also stops iOS zoom-on-focus), rounded.md, 8px 12px, 44px tap
+# height; focus keeps the surface and adds a 2px primary-focus ring at 50%.
 def:pub Input(props: any) -> JsxElement {
     attrs: dict[str, any] = {** props};
     return
@@ -7,7 +10,7 @@ def:pub Input(props: any) -> JsxElement {
             {**attrs}
             data-slot="input"
             className={cn(
-                "dark:bg-input/30 border-input focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 disabled:bg-input/50 dark:disabled:bg-input/80 h-8 rounded-lg border bg-transparent px-2.5 py-1 text-base transition-colors file:h-6 file:text-sm file:font-medium focus-visible:ring-3 aria-invalid:ring-3 md:text-sm dark:bg-input/30 border-input focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 disabled:bg-input/50 dark:disabled:bg-input/80 h-8 rounded-lg border bg-transparent px-2.5 py-1 text-base transition-colors file:h-6 file:text-sm file:font-medium focus-visible:ring-3 aria-invalid:ring-3 md:text-sm file:text-foreground placeholder:text-muted-foreground w-full min-w-0 outline-none file:inline-flex file:border-0 file:bg-transparent disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
+                "h-11 w-full min-w-0 rounded-md border border-input bg-card pt-2 pb-2 pl-3 pr-3 text-body text-foreground outline-none transition-colors placeholder:text-ink-tertiary focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/30 file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-body-sm file:font-medium file:text-foreground",
                 props["className"]
             )}
         />;

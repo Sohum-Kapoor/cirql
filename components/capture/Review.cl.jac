@@ -13,6 +13,7 @@ matches usually point at people you already know, not ones in this report.
 
 import from "..ui.button" { Button }
 import from "..ui.badge" { Badge }
+import from "..ui.icons" { QuoteIcon }
 import from ...lib.text { join_with }
 import from ...lib.utils { cn }
 sv import from ...schema { Person }
@@ -45,18 +46,18 @@ def:pub SourceQuote(span: str, note_text: str) -> JsxElement {
     parts: list[str] = span_excerpt(note_text, span);
     found: bool = parts[3] == "1";
     return
-        <blockquote className="flex flex-col gap-1 rounded-md border-l-2 border-primary bg-muted pt-2 pb-2 pl-3 pr-3">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <blockquote className="flex flex-col gap-1 rounded-md border-l-2 border-primary bg-secondary pt-2 pb-2 pl-3 pr-3">
+            <span className="text-eyebrow text-muted-foreground">
                 {"From your note" if found else "Source"}
             </span>
             {if found {
-                <p className="text-sm leading-relaxed text-muted-foreground">
+                <p className="text-body-sm text-muted-foreground">
                     {parts[0]}
-                    <mark className="rounded-sm bg-accent pl-0.5 pr-0.5 text-accent-foreground">{parts[1]}</mark>
+                    <mark className="rounded-xs bg-primary/20 pl-0.5 pr-0.5 text-foreground">{parts[1]}</mark>
                     {parts[2]}
                 </p>
             } else {
-                <p className="text-sm leading-relaxed">{"“" + (span or "No quote recorded for this item.") + "”"}</p>
+                <p className="text-body-sm">{"“" + (span or "No quote recorded for this item.") + "”"}</p>
             }}
         </blockquote>;
 }
@@ -75,22 +76,19 @@ def:pub ReviewRow(
     }
 
     return
-        <li className="flex flex-col gap-2 pt-3 pb-3 pl-3 pr-3">
+        <li className="flex flex-col gap-2 pt-3 pb-3 pl-4 pr-4">
             <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">{children}</div>
-                <button
-                    type="button"
+                <Button
+                    variant="chip"
+                    size="chip"
                     aria-expanded={is_open}
                     aria-label={"Show source" if not is_open else "Hide source"}
-                    className={cn(
-                        "inline-flex h-6 shrink-0 items-center gap-1 rounded-full border pl-2 pr-2 text-xs transition-colors",
-                        "border-primary bg-accent text-accent-foreground" if is_open else "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
                     onClick={handle_toggle}
                 >
-                    <span aria-hidden="true" className="font-serif text-sm leading-none">“</span>
+                    <QuoteIcon className="size-3" />
                     <span>source</span>
-                </button>
+                </Button>
             </div>
             {is_open and <SourceQuote span={span} note_text={note_text} />}
         </li>;
@@ -100,10 +98,10 @@ def:pub ReviewSection(title: str, count: int, children: any = None) -> JsxElemen
     return
         <section className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between">
-                <h2 className="text-sm font-medium">{title}</h2>
-                <span className="text-xs tabular-nums text-muted-foreground">{str(count)}</span>
+                <h2 className="text-eyebrow text-muted-foreground">{title}</h2>
+                <span className="text-caption tabular-nums text-muted-foreground">{str(count)}</span>
             </div>
-            <ul className="flex flex-col divide-y divide-border rounded-md border">{children}</ul>
+            <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">{children}</ul>
         </section>;
 }
 
@@ -141,12 +139,12 @@ def:pub PersonItem(
             onToggle={onToggle}
         >
             <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-medium">{person["name"]}</span>
-                <Badge variant={"default" if row["is_new"] else "outline"}>{"new" if row["is_new"] else "known"}</Badge>
+                <span className="truncate text-body font-medium">{person["name"]}</span>
+                <Badge variant={"success" if row["is_new"] else "outline"}>{"new" if row["is_new"] else "known"}</Badge>
             </div>
-            {sub and <span className="truncate text-xs text-muted-foreground">{sub}</span>}
+            {sub and <span className="truncate text-caption text-muted-foreground">{sub}</span>}
             {len(maybe) > 0 and
-                <span className="text-xs text-muted-foreground">{"Might be the same as " + join_with(maybe, " or ")}</span>}
+                <span className="text-caption text-muted-foreground">{"Might be the same as " + join_with(maybe, " or ")}</span>}
         </ReviewRow>;
 }
 
@@ -235,23 +233,23 @@ def:pub Review(
     }
 
     return
-        <div className="flex flex-col gap-5">
-            <header className="flex flex-col gap-1">
-                <h1 className="text-base font-semibold tracking-tight">
+        <div className="flex flex-col gap-6 pb-6">
+            <header className="flex flex-col gap-1 pt-2">
+                <h1 className="text-card-title">
                     {"Here's what Cirql read" if total > 0 else "Note saved"}
                 </h1>
                 {total > 0 and
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-body-sm text-muted-foreground">
                         Saved to your graph. Tap source on any row to see the words it came from.
                     </p>}
             </header>
             {if total == 0 {
                 <div className="flex flex-col gap-3">
-                    <p role="status" className="rounded-md border border-dashed pt-4 pb-4 pl-3 pr-3 text-sm">
+                    <p role="status" className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm">
                         Saved your note. Cirql couldn't pull out people this time — it's kept, and you can try again.
                     </p>
                     <SourceQuote span={note_text} note_text="" />
-                    <Button variant="outline" className="w-full" onClick={handle_retry}>Try again</Button>
+                    <Button variant="secondary" className="w-full" onClick={handle_retry}>Try again</Button>
                 </div>
             }}
             {if len(people) > 0 {
@@ -280,8 +278,8 @@ def:pub Review(
                             note_text={note_text}
                             onToggle={toggle}
                         >
-                            <span className="text-sm">{row["fact"]["text"]}</span>
-                            <span className="text-xs text-muted-foreground">{"about " + _name(names, row["about"] as str)}</span>
+                            <span className="text-body-sm">{row["fact"]["text"]}</span>
+                            <span className="text-caption text-muted-foreground">{"about " + _name(names, row["about"] as str)}</span>
                         </ReviewRow>
                     }}
                 </ReviewSection>
@@ -301,9 +299,9 @@ def:pub Review(
                                 <Badge variant={"default" if row["intent"]["kind"] == "need" else "secondary"}>
                                     {_INTENT_LABEL[row["intent"]["kind"] as str] or (row["intent"]["kind"] as str)}
                                 </Badge>
-                                <span className="text-sm">{row["intent"]["text"]}</span>
+                                <span className="text-body-sm">{row["intent"]["text"]}</span>
                             </div>
-                            <span className="text-xs text-muted-foreground">{_name(names, row["about"] as str)}</span>
+                            <span className="text-caption text-muted-foreground">{_name(names, row["about"] as str)}</span>
                         </ReviewRow>
                     }}
                 </ReviewSection>
@@ -319,8 +317,8 @@ def:pub Review(
                             note_text={note_text}
                             onToggle={toggle}
                         >
-                            <span className="text-sm">{row["promise"]["text"]}</span>
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-body-sm">{row["promise"]["text"]}</span>
+                            <span className="text-caption text-muted-foreground">
                                 {join_with(
                                     [s for s in ["to " + _name(names, row["to"] as str), ("due " + (row["promise"]["due"] as str)) if row["promise"]["due"] else ""] if s],
                                     " · "
@@ -341,14 +339,14 @@ def:pub Review(
                             note_text={note_text}
                             onToggle={toggle}
                         >
-                            <span className="text-sm">
+                            <span className="text-body-sm">
                                 {_name(names, row["from"] as str) + " ↔ " + _name(names, row["to"] as str)}
                             </span>
-                            <span className="text-xs text-muted-foreground">know each other</span>
+                            <span className="text-caption text-muted-foreground">know each other</span>
                         </ReviewRow>
                     }}
                 </ReviewSection>
             }}
-            <Button className="w-full" onClick={handle_done}>Done</Button>
+            <Button className="w-full" size="lg" onClick={handle_done}>Done</Button>
         </div>;
 }

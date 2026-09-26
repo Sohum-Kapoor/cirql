@@ -47,7 +47,7 @@ def:pub req_active(status: str) -> bool {
 
 def _chip_variant(status: str) -> str {
     if status == "revealed" {
-        return "default";
+        return "success";
     }
     if status == "declined" or status == "expired" {
         return "outline";
@@ -71,11 +71,11 @@ def:pub StepTrack(status: str) -> JsxElement {
                 <li key={name} className="flex min-w-0 flex-1 flex-col gap-1">
                     <span
                         aria-hidden="true"
-                        className={cn("h-1 rounded-full", "bg-primary" if i <= idx else "bg-muted")}
+                        className={cn("h-1 rounded-full", "bg-primary" if i <= idx else "bg-border-strong")}
                     />
                     <span
                         className={cn(
-                            "truncate text-[10px]",
+                            "truncate text-caption",
                             "font-medium text-foreground" if i == idx else "text-muted-foreground"
                         )}
                         aria-current={"step" if i == idx else "false"}
@@ -102,13 +102,13 @@ def:pub DraftBlock(title: str, text: str, note: str = "") -> JsxElement {
     }
 
     return
-        <div className="flex flex-col gap-2 rounded-md border bg-muted pt-3 pb-3 pl-3 pr-3">
+        <div className="flex flex-col gap-2 rounded-md border bg-secondary pt-3 pb-3 pl-3 pr-3">
             <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</span>
-                <Button size="xs" variant="outline" onClick={do_copy}>{"Copied" if copied else "Copy"}</Button>
+                <span className="text-eyebrow text-muted-foreground">{title}</span>
+                <Button size="xs" variant="secondary" onClick={do_copy}>{"Copied" if copied else "Copy"}</Button>
             </div>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed">{text}</p>
-            {note and <span className="text-xs text-muted-foreground">{note}</span>}
+            <p className="whitespace-pre-wrap text-body-sm">{text}</p>
+            {note and <span className="text-caption text-muted-foreground">{note}</span>}
         </div>;
 }
 

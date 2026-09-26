@@ -9,6 +9,11 @@ approved, the contact opted in and the friend revealed.
 """
 
 import from ..ui.button { Button }
+import from ..ui.alert_dialog {
+    AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription,
+    AlertDialogFooter, AlertDialogAction, AlertDialogCancel
+}
+import from ..ui.icons { ChevronLeftIcon }
 import from .common { StatusChip, StepTrack, DraftBlock, req_label, req_active }
 import from ...lib.text { short_date }
 import from ...lib.utils { cn }
@@ -82,20 +87,18 @@ def:pub RequestRow(item: dict, claimed: bool, onOpen: Callable[[str], None]) -> 
 
     return
         <li>
-            <button
-                type="button"
-                className={cn(
-                    "flex w-full flex-col gap-1.5 pt-3 pb-3 pl-3 pr-3 text-left transition-colors hover:bg-muted",
-                    "opacity-60" if status == "declined" or status == "expired" else ""
-                )}
+            <Button
+                variant="ghost"
+                size="row"
+                className={cn("opacity-60" if status == "declined" or status == "expired" else "")}
                 onClick={handle_open}
             >
                 <div className="flex items-start justify-between gap-2">
-                    <span className="line-clamp-2 min-w-0 text-sm font-medium">{req["need"] as str}</span>
+                    <span className="line-clamp-2 min-w-0 text-body-sm font-medium">{req["need"] as str}</span>
                     <StatusChip status={status} label={req_label(status)} />
                 </div>
-                <span className="text-xs text-muted-foreground">{req_summary(status, replies, claimed)}</span>
-            </button>
+                <span className="text-caption text-muted-foreground">{req_summary(status, replies, claimed)}</span>
+            </Button>
         </li>;
 }
 
@@ -104,9 +107,9 @@ def:pub RequestsSection(mine: list[dict], claims: dict, onOpen: Callable[[str], 
         return <span hidden={True} />;
     }
     return
-        <section aria-label="Your asks" className="flex flex-col gap-2">
-            <h2 className="text-sm font-medium">Your asks</h2>
-            <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-md border">
+        <section aria-label="Your asks" className="flex flex-col gap-3">
+            <h2 className="text-eyebrow text-muted-foreground">Your asks</h2>
+            <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">
                 {for item in mine {
                     <RequestRow
                         key={(item["request"] or {})["_jac_id"] as str}
@@ -132,10 +135,10 @@ def _any_claimed(item: dict, claims: dict) -> bool {
 def _list_block(title: str, items: list[str]) -> JsxElement {
     return
         <div className="flex flex-col gap-1">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</span>
+            <span className="text-eyebrow text-muted-foreground">{title}</span>
             <ul className="flex flex-col gap-0.5">
                 {for (i, s) in enumerate(items) {
-                    <li key={str(i)} className="text-sm">{"· " + s}</li>
+                    <li key={str(i)} className="text-body-sm">{"· " + s}</li>
                 }}
             </ul>
         </div>;
@@ -151,25 +154,25 @@ def:pub RevealCard(claim: dict, friend_handle: str) -> JsxElement {
     name: str = (card["name"] or person["name"] or "") as str;
 
     return
-        <article aria-label="Revealed card" className="flex flex-col gap-3 rounded-md border border-primary bg-card pt-4 pb-4 pl-3 pr-3">
-            <div className="flex flex-col gap-0.5">
-                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <article aria-label="Revealed card" className="flex flex-col gap-4 rounded-lg border border-border-strong bg-secondary pt-4 pb-4 pl-4 pr-4 shadow-edge">
+            <div className="flex flex-col gap-1">
+                <span className="text-eyebrow text-muted-foreground">
                     {"Card granted read-only by @" + friend_handle}
                 </span>
-                <h3 className="text-base font-semibold tracking-tight">{name}</h3>
-                {card["headline"] and <span className="text-sm text-muted-foreground">{card["headline"] as str}</span>}
+                <h3 className="text-card-title">{name}</h3>
+                {card["headline"] and <span className="text-body-sm text-ink-muted">{card["headline"] as str}</span>}
             </div>
-            {card["about"] and <p className="text-sm">{card["about"] as str}</p>}
+            {card["about"] and <p className="text-body-sm">{card["about"] as str}</p>}
             {len(looking) > 0 and _list_block("Looking for", looking)}
             {len(offer) > 0 and _list_block("Can offer", offer)}
             {card["contact_pref"] and
-                <span className="text-xs text-muted-foreground">{"How to reach them: " + (card["contact_pref"] as str)}</span>}
+                <span className="text-caption text-muted-foreground">{"How to reach them: " + (card["contact_pref"] as str)}</span>}
             <DraftBlock
                 title="Three-way intro · draft"
                 text={(claim["intro_draft"] or "") as str}
                 note="Nothing sends. Copy it into your own email."
             />
-            <p className="rounded-md bg-accent pt-2 pb-2 pl-3 pr-3 text-xs text-accent-foreground">
+            <p className="rounded-md bg-success/10 pt-2 pb-2 pl-3 pr-3 text-caption text-success-text">
                 {"Added to your people — how you met: intro via @" + friend_handle}
             </p>
         </article>;
@@ -178,9 +181,9 @@ def:pub RevealCard(claim: dict, friend_handle: str) -> JsxElement {
 def:pub ReplyLine(r: dict) -> JsxElement {
     status: str = (r["status"] or "pending") as str;
     return
-        <li className="flex items-center justify-between gap-2 pt-2 pb-2 pl-3 pr-3 text-sm">
+        <li className="flex items-center justify-between gap-2 pt-2.5 pb-2.5 pl-3 pr-3 text-body-sm">
             <span className="min-w-0 truncate">{"@" + (r["from_handle"] as str) + " · " + match_phrase(r)}</span>
-            <span className="shrink-0 text-xs text-muted-foreground">{status.replace("_", " ")}</span>
+            <span className="shrink-0 text-caption text-muted-foreground">{status.replace("_", " ")}</span>
         </li>;
 }
 
@@ -210,8 +213,8 @@ def:pub RequestDetail(
         confirming = True;
     }
 
-    def keep(e: MouseEvent) {
-        confirming = False;
+    def set_confirming(v: bool) -> None {
+        confirming = v;
     }
 
     def do_cancel(e: MouseEvent) {
@@ -221,48 +224,54 @@ def:pub RequestDetail(
 
     return
         <div className="flex flex-col gap-4 pb-10">
-            <header className="flex items-center gap-2">
-                <Button size="sm" variant="ghost" onClick={handle_back}>← Home</Button>
+            <header className="-ml-2 flex items-center gap-2">
+                <Button size="sm" variant="ghost" onClick={handle_back}>
+                    <ChevronLeftIcon />
+                    Home
+                </Button>
             </header>
             {if not rid {
-                <p className="text-sm text-muted-foreground">This ask isn't on your list anymore.</p>
+                <p className="text-body-sm text-muted-foreground">This ask isn't on your list anymore.</p>
             } else {
-                <section aria-label="Your ask" className="flex flex-col gap-3 rounded-md border bg-card pt-4 pb-4 pl-3 pr-3">
+                <section aria-label="Your ask" className="flex flex-col gap-4 rounded-lg border bg-card pt-4 pb-4 pl-4 pr-4 shadow-edge">
                     <div className="flex items-start justify-between gap-2">
-                        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Your ask</span>
+                        <span className="text-eyebrow text-muted-foreground">Your ask</span>
                         <StatusChip status={status} label={req_label(status)} />
                     </div>
-                    <h2 className="text-base font-semibold tracking-tight">{req["need"] as str}</h2>
-                    {req["about_line"] and <p className="text-sm text-muted-foreground">{"About you: " + (req["about_line"] as str)}</p>}
+                    <h2 className="text-subhead font-medium">{req["need"] as str}</h2>
+                    {req["about_line"] and <p className="text-body-sm text-muted-foreground">{"About you: " + (req["about_line"] as str)}</p>}
                     {status != "declined" and status != "expired" and <StepTrack status={status} />}
-                    <p className="text-sm">{req_summary(status, replies, len(revealed) > 0 and _any_claimed(item, claims))}</p>
-                    <span className="text-xs text-muted-foreground">
+                    <p className="text-body-sm">{req_summary(status, replies, len(revealed) > 0 and _any_claimed(item, claims))}</p>
+                    <span className="text-caption text-muted-foreground">
                         {"Posted as @" + (req["from_handle"] as str) + (" · expires " + expires if expires and req_active(status) else "")}
                     </span>
                     {len(replies) > 0 and
-                        <ul aria-label="Replies" className="flex flex-col divide-y divide-border rounded-md border">
+                        <ul aria-label="Replies" className="flex flex-col divide-y divide-border rounded-md border bg-background">
                             {for r in replies {
                                 <ReplyLine key={r["_jac_id"] as str} r={r} />
                             }}
                         </ul>}
                     {req_active(status) and
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-caption text-muted-foreground">
                             Friends' agents each check their own graph and answer with a count and a strength — no name — until the friend and their contact both say yes.
                         </p>}
-                    {error and <p role="alert" className="text-sm text-destructive/80">{error}</p>}
-                    {if req_active(status) and not confirming {
+                    {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
+                    {req_active(status) and
                         <div>
-                            <Button size="sm" variant="outline" disabled={busy} onClick={ask_cancel}>Withdraw ask</Button>
-                        </div>
-                    } elif req_active(status) {
-                        <div role="alertdialog" aria-label="Withdraw ask" className="flex flex-col gap-2">
-                            <p className="text-sm">Withdraw this ask? Friends stop seeing it. No reason is sent.</p>
-                            <div className="flex gap-2">
-                                <Button className="flex-1" size="sm" variant="destructive" disabled={busy} onClick={do_cancel}>Withdraw</Button>
-                                <Button className="flex-1" size="sm" variant="outline" disabled={busy} onClick={keep}>Keep it</Button>
-                            </div>
-                        </div>
-                    }}
+                            <Button size="sm" variant="secondary" disabled={busy} onClick={ask_cancel}>Withdraw ask</Button>
+                        </div>}
+                    <AlertDialog open={confirming and req_active(status)} onOpenChange={set_confirming}>
+                        <AlertDialogContent aria-label="Withdraw ask">
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Withdraw this ask?</AlertDialogTitle>
+                                <AlertDialogDescription>Friends stop seeing it. No reason is sent.</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel disabled={busy}>Keep it</AlertDialogCancel>
+                                <AlertDialogAction variant="destructive" disabled={busy} onClick={do_cancel}>Withdraw</AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
                 </section>
                 for r in revealed {
                     <RevealSlot
@@ -292,14 +301,14 @@ def:pub RevealSlot(reply: dict, claim: dict, claiming: bool, onClaim: Callable[[
     }
     if claiming {
         return
-            <p role="status" className="rounded-md border border-dashed pt-4 pb-4 pl-3 pr-3 text-sm text-muted-foreground">
+            <p role="status" className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm text-muted-foreground">
                 {"@" + friend + " shared a card. Adding it to your people and drafting the intro…"}
             </p>;
     }
     return
-        <div className="flex flex-col gap-2 rounded-md border border-dashed pt-3 pb-3 pl-3 pr-3">
-            <p className="text-sm">{"@" + friend + " shared a card with you."}</p>
-            {claim["error"] and <p role="alert" className="text-xs text-destructive/80">{"Couldn't open it (" + (claim["error"] as str) + ")."}</p>}
+        <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border-strong pt-3 pb-3 pl-4 pr-4">
+            <p className="text-body-sm">{"@" + friend + " shared a card with you."}</p>
+            {claim["error"] and <p role="alert" className="text-caption text-destructive">{"Couldn't open it (" + (claim["error"] as str) + ")."}</p>}
             <div>
                 <Button size="sm" onClick={handle_claim}>Open the card</Button>
             </div>

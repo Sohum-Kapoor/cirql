@@ -121,9 +121,9 @@ def:pub FieldDescription(props: any) -> JsxElement {
             {**attrs}
             data-slot="field-description"
             className={cn(
-                "text-muted-foreground text-left text-sm [[data-variant=legend]+&]:-mt-1.5 text-muted-foreground text-left text-sm [[data-variant=legend]+&]:-mt-1.5 leading-normal font-normal group-has-data-horizontal/field:text-balance",
+                "text-muted-foreground text-left text-body-sm [[data-variant=legend]+&]:-mt-1.5 font-normal group-has-data-horizontal/field:text-balance",
                 "last:mt-0 nth-last-2:-mt-1",
-                "[&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4",
+                "[&>a]:text-link [&>a]:underline [&>a]:underline-offset-4",
                 props["className"]
             )}
         />;
@@ -199,7 +199,7 @@ def:pub FieldError(props: any) -> any {
             role="alert"
             data-slot="field-error"
             className={cn(
-                "text-destructive text-sm text-destructive text-sm font-normal",
+                "text-destructive text-body-sm font-normal",
                 props["className"]
             )}
         >
