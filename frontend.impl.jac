@@ -61,6 +61,11 @@ impl app.logout -> None {
     capture_error = "";
     rank_rows = [];
     rank_error = "";
+    cap_text = "";
+    cap_kind = "debrief";
+    cap_error = "";
+    cap_note = "";
+    cap_result = {};
     status = "logged out";
 }
 
@@ -90,8 +95,7 @@ impl app.refresh -> None {
     try {
         ping = root spawn Ping();
         status = "server says: " + str(ping.reports[0]);
-        result = root spawn ListPeople();
-        found = result.reports;
+        found = await list_people();
     } except Exception as e {
         status = "couldn't reach the server";
     }
@@ -207,4 +211,55 @@ impl app.start_recall -> None {
 impl app.finish -> None {
     view = "home";
     refresh();
+}
+
+# ---------------------------------------------------------------- capture (SOH-167)
+
+impl app.open_capture -> None {
+    cap_error = "";
+    view = "capture";
+}
+
+impl app.close_capture -> None {
+    cap_error = "";
+    view = "home";
+}
+
+"""Capture(text, kind) -> review. The note is saved server-side even when the
+extraction comes back empty; the review screen says so."""
+impl app.submit_capture -> None {
+    text: str = cap_text.strip();
+    if not text {
+        cap_error = "Write something first.";
+        return;
+    }
+    out: dict = {};
+    cap_pending = True;
+    cap_error = "";
+    try {
+        out = await capture(text, cap_kind);
+    } except Exception as e {
+        cap_pending = False;
+        cap_error = "Couldn't capture that — your text is still here. " + str(e);
+        return;
+    }
+    cap_note = text;
+    cap_result = out;
+    cap_pending = False;
+    view = "review";
+}
+
+"""Done -> home, refresh ListPeople so new people show up; clear the form."""
+impl app.capture_done -> None {
+    cap_text = "";
+    cap_note = "";
+    cap_result = {};
+    view = "home";
+    refresh();
+}
+
+"""Empty extraction -> back to the form with the text kept."""
+impl app.capture_retry -> None {
+    cap_result = {};
+    view = "capture";
 }

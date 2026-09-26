@@ -6,6 +6,7 @@ components/ (onboarding steps in components/onboarding/). Walkers that are not
 live yet go through components/api.cl.jac, the single mock/live swap point.
 
 Views: auth -> loading (GetMe) -> onboarding (4 steps) | home.
+home -> capture (form, Capture call) -> review (extraction + source chips) -> home.
 """
 
 import from "@jac/runtime" { jacLogin, jacSignup, jacLogout, jacIsLoggedIn }
@@ -18,10 +19,12 @@ import from .components.onboarding.AboutStep { AboutStep }
 import from .components.onboarding.CardStep { CardStep }
 import from .components.onboarding.PeopleStep { PeopleStep }
 import from .components.onboarding.RecallStep { RecallStep }
-import from .components.api { onboard_me, capture, goal_rank }
+import from .components.capture.CaptureForm { CaptureForm }
+import from .components.capture.Review { Review }
+import from .components.api { onboard_me, capture, goal_rank, list_people }
 import from .lib.text { join_lines }
 
-sv import from walkers { Ping, GetMe, ListPeople }
+sv import from walkers { Ping, GetMe }
 sv import from schema { Person }
 
 glob STEP_LABELS: list[str] = ["About you", "Your card", "Bring five people", "First recall"];
@@ -49,7 +52,13 @@ def:pub app -> JsxElement {
         captured_count: int = -1,
         rank_rows: list[dict] = [],
         rank_pending: bool = False,
-        rank_error: str = "";
+        rank_error: str = "",
+        cap_text: str = "",
+        cap_kind: str = "debrief",
+        cap_pending: bool = False,
+        cap_error: str = "",
+        cap_note: str = "",
+        cap_result: dict = {};
 
     can with entry {
         if jacIsLoggedIn() {
@@ -70,6 +79,11 @@ def:pub app -> JsxElement {
     def people_next -> None;
     async def start_recall -> None;
     def finish -> None;
+    def open_capture -> None;
+    def close_capture -> None;
+    async def submit_capture -> None;
+    def capture_done -> None;
+    def capture_retry -> None;
 
     goals: list[dict] = (onboard["goals"] or []) as list[dict];
     interests: list[dict] = (onboard["interests"] or []) as list[dict];
@@ -93,7 +107,35 @@ def:pub app -> JsxElement {
             } elif view == "loading" {
                 <p key="loading" className="text-sm text-muted-foreground">Loading your graph…</p>
             } elif view == "home" {
-                <HomeView key="home" people={people} status={status} onRefresh={refresh} onLogout={logout} />
+                <HomeView
+                    key="home"
+                    people={people}
+                    status={status}
+                    onRefresh={refresh}
+                    onLogout={logout}
+                    onCapture={open_capture}
+                />
+            } elif view == "capture" {
+                <CaptureForm
+                    key="capture"
+                    text={cap_text}
+                    kind={cap_kind}
+                    pending={cap_pending}
+                    error={cap_error}
+                    onTextChange={lambda v: str { cap_text = v; }}
+                    onKindChange={lambda v: str { cap_kind = v; }}
+                    onSubmit={submit_capture}
+                    onBack={close_capture}
+                />
+            } elif view == "review" {
+                <Review
+                    key="review"
+                    result={cap_result}
+                    note_text={cap_note}
+                    known={people}
+                    onDone={capture_done}
+                    onRetry={capture_retry}
+                />
             } else {
                 <StepIndicator key="indicator" step={step} total={4} label={STEP_LABELS[step - 1]} />
                 if step == 1 {
