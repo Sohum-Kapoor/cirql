@@ -101,7 +101,39 @@ def safe_span(span: str, note: Note, fallback: str) -> str {
     if len(fallback) > 0 {
         return fallback;
     }
-    return "note";
+    return note.text[:80];
+}
+
+def normalize_intent_kind(kind: str) -> str {
+    k = (kind or "").strip().lower();
+    if k in ["need", "needs", "want", "wants", "looking for"] {
+        return "need";
+    }
+    if k in ["offer", "offers", "can offer"] {
+        return "offer";
+    }
+    return "open_to";
+}
+
+"""Dedupe by jid(p): the first call for a given person creates the Mentions
+edge and records them; later calls for the same person (from a different
+category - fact, tie, ...) are no-ops."""
+def record_mention(
+    note: Note,
+    p: Person,
+    is_new: bool,
+    ambiguous_with: list[str],
+    span: str,
+    mentioned: dict[str, any],
+    order: list[str]
+) {
+    key = jid(p);
+    if key in mentioned {
+        return;
+    }
+    note +>:Mentions(span=span):+> p;
+    mentioned[key] = {"person": p, "is_new": is_new, "ambiguous_with": ambiguous_with};
+    order.append(key);
 }
 
 """Get-or-create a Person by name. Memoized per-call via `resolved` (name.lower() -> entry)."""
@@ -138,6 +170,13 @@ def resolve_person(
                 matches.append(p);
             }
         }
+        if len(matches) == 1 {
+            # Exactly one known person shares this first token - not ambiguous,
+            # not a guess: resolve straight to them.
+            entry = {"person": matches[0], "is_new": False, "ambiguous_with": []};
+            resolved[key] = entry;
+            return entry;
+        }
         if len(matches) >= 2 {
             ambiguous_with = [jid(p) for p in matches];
         }
@@ -147,11 +186,11 @@ def resolve_person(
     how_met = f"{note.kind}: {note.text[:60]}";
 
     if len(ambiguous_with) > 0 {
-        new_p = (me +>:Knows(how_met=how_met, last_contact=now, source_note=jid(note)):+> Person(name=name, status="proposed"))[0];
+        new_p = (me +>:Knows(how_met=how_met, last_contact=now, source_note=jid(note), status="proposed"):+> Person(name=name, status="proposed"))[0];
     } elif confirmed_if_new {
-        new_p = (me +>:Knows(how_met=how_met, last_contact=now, source_note=jid(note)):+> Person(name=name, org=org, title=title, status="confirmed"))[0];
+        new_p = (me +>:Knows(how_met=how_met, last_contact=now, source_note=jid(note), status="reported"):+> Person(name=name, org=org, title=title, status="confirmed"))[0];
     } else {
-        new_p = (me +>:Knows(how_met=how_met, last_contact=now, source_note=jid(note)):+> Person(name=name, status="proposed"))[0];
+        new_p = (me +>:Knows(how_met=how_met, last_contact=now, source_note=jid(note), status="proposed"):+> Person(name=name, status="proposed"))[0];
     }
 
     entry = {"person": new_p, "is_new": True, "ambiguous_with": ambiguous_with};
@@ -165,11 +204,28 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction) -> dict[str, any]
     resolved: dict[str, any] = {};
     now = datetime.now().isoformat();
 
-    people_report: list[dict[str, any]] = [];
+    # Every unique person resolved anywhere (people/facts/intents/promises/ties)
+    # ends up here exactly once, keyed by jid - one Mentions edge, one entry in
+    # the `people` report, no matter how many categories reference them.
+    mentioned: dict[str, any] = {};
+    mention_order: list[str] = [];
+
     facts_report: list[dict[str, any]] = [];
     intents_report: list[dict[str, any]] = [];
     promises_report: list[dict[str, any]] = [];
     ties_report: list[dict[str, any]] = [];
+
+    # Dedupe x.people by normalized name; never create a Person with an empty name.
+    seen_names: list[str] = [];
+    deduped_people: list[XPerson] = [];
+    for xp in x.people {
+        key = xp.name.strip().lower();
+        if len(key) == 0 or key in seen_names {
+            continue;
+        }
+        seen_names.append(key);
+        deduped_people.append(xp);
+    }
 
     # A person who ONLY shows up as the far end of a reported tie (someone the
     # author never met, only heard about) stays "proposed" even if the LLM also
@@ -177,48 +233,56 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction) -> dict[str, any]
     # acquaintance mentioned, tie targets included). "Primary" = the author has
     # independent evidence about them (a fact/intent/promise, or they are the
     # NEAR end of a tie - the person actually introducing someone else).
-    tie_to_names: list[str] = [xt.to_name.strip().lower() for xt in x.ties];
-    primary_names: list[str] = [xf.about_name.strip().lower() for xf in x.facts];
-    primary_names += [xi.about_name.strip().lower() for xi in x.intents];
-    primary_names += [xpr.to_name.strip().lower() for xpr in x.promises];
-    primary_names += [xt.from_name.strip().lower() for xt in x.ties];
+    tie_to_names: list[str] = [xt.to_name.strip().lower() for xt in x.ties if len(xt.to_name.strip()) > 0];
+    primary_names: list[str] = [xf.about_name.strip().lower() for xf in x.facts if len(xf.about_name.strip()) > 0];
+    primary_names += [xi.about_name.strip().lower() for xi in x.intents if len(xi.about_name.strip()) > 0];
+    primary_names += [xpr.to_name.strip().lower() for xpr in x.promises if len(xpr.to_name.strip()) > 0];
+    primary_names += [xt.from_name.strip().lower() for xt in x.ties if len(xt.from_name.strip()) > 0];
 
-    for xp in x.people {
+    for xp in deduped_people {
         key = xp.name.strip().lower();
         tie_target_only = key in tie_to_names and key not in primary_names;
         entry = resolve_person(xp.name, me, note, resolved, org=xp.org, title=xp.title, confirmed_if_new=not tie_target_only);
         p = entry["person"] as Person;
         span = safe_span(xp.span, note, xp.name);
-        note +>:Mentions(span=span):+> p;
-        people_report.append({"person": p, "is_new": entry["is_new"], "ambiguous_with": entry["ambiguous_with"]});
+        record_mention(note, p, entry["is_new"] as bool, entry["ambiguous_with"] as list[str], span, mentioned, mention_order);
     }
 
     for xf in x.facts {
+        if len(xf.about_name.strip()) == 0 {
+            continue;
+        }
         entry = resolve_person(xf.about_name, me, note, resolved, confirmed_if_new=False);
         p = entry["person"] as Person;
         span = safe_span(xf.span, note, xf.text);
+        record_mention(note, p, entry["is_new"] as bool, entry["ambiguous_with"] as list[str], span, mentioned, mention_order);
         f = (note +>:Asserts(span=span):+> Fact(text=xf.text, observed_at=now, source_kind="reported"))[0];
         f +>:FactAbout:+> p;
         facts_report.append({"fact": f, "about": jid(p), "span": span});
     }
 
     for xi in x.intents {
+        if len(xi.about_name.strip()) == 0 {
+            continue;
+        }
         entry = resolve_person(xi.about_name, me, note, resolved, confirmed_if_new=False);
         p = entry["person"] as Person;
         span = safe_span(xi.span, note, xi.text);
-        norm_kind = xi.kind.strip().lower();
-        if norm_kind not in ["need", "offer", "open_to"] {
-            norm_kind = "open_to";
-        }
+        record_mention(note, p, entry["is_new"] as bool, entry["ambiguous_with"] as list[str], span, mentioned, mention_order);
+        norm_kind = normalize_intent_kind(xi.kind);
         it = (note +>:AssertsIntent(span=span):+> Intent(kind=norm_kind, text=xi.text, source_kind="reported"))[0];
         it +>:IntentAbout:+> p;
         intents_report.append({"intent": it, "about": jid(p), "span": span});
     }
 
     for xpr in x.promises {
+        if len(xpr.to_name.strip()) == 0 {
+            continue;
+        }
         entry = resolve_person(xpr.to_name, me, note, resolved, confirmed_if_new=False);
         p = entry["person"] as Person;
         span = safe_span(xpr.span, note, xpr.text);
+        record_mention(note, p, entry["is_new"] as bool, entry["ambiguous_with"] as list[str], span, mentioned, mention_order);
         pr = (note +>:AssertsPromise(span=span):+> Promise(text=xpr.text, due=xpr.due))[0];
         pr +>:PromiseTo:+> p;
         promises_report.append({"promise": pr, "to": jid(p), "span": span});
@@ -228,6 +292,9 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction) -> dict[str, any]
         if len(xt.from_name.strip()) == 0 or len(xt.to_name.strip()) == 0 {
             continue;
         }
+        if xt.from_name.strip().lower() == xt.to_name.strip().lower() {
+            continue;
+        }
         a_entry = resolve_person(xt.from_name, me, note, resolved, confirmed_if_new=False);
         b_entry = resolve_person(xt.to_name, me, note, resolved, confirmed_if_new=False);
         a = a_entry["person"] as Person;
@@ -235,10 +302,24 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction) -> dict[str, any]
         if jid(a) == jid(b) {
             continue;
         }
-        span = safe_span(xt.span, note, f"{xt.from_name} knows {xt.to_name}");
-        a +>:Reported(source_note=jid(note), span=span):+> b;
+        span = safe_span(xt.span, note, "");
+        record_mention(note, a, a_entry["is_new"] as bool, a_entry["ambiguous_with"] as list[str], span, mentioned, mention_order);
+        record_mention(note, b, b_entry["is_new"] as bool, b_entry["ambiguous_with"] as list[str], span, mentioned, mention_order);
+
+        already: list[Person] = [a ->:Reported:->];
+        edge_exists = False;
+        for existing_b in already {
+            if jid(existing_b) == jid(b) {
+                edge_exists = True;
+            }
+        }
+        if not edge_exists {
+            a +>:Reported(source_note=jid(note), span=span):+> b;
+        }
         ties_report.append({"from": jid(a), "to": jid(b), "span": span});
     }
+
+    people_report: list[dict[str, any]] = [mentioned[k] as dict[str, any] for k in mention_order];
 
     return {
         "note_id": jid(note),
@@ -278,10 +359,12 @@ walker:priv Capture {
 
         try {
             extraction = extract_capture(self.text);
-            result = apply_extraction(note, me, extraction);
-            report result;
         } except Exception {
             report empty_shape;
+            disengage;
         }
+
+        result = apply_extraction(note, me, extraction);
+        report result;
     }
 }

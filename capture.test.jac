@@ -7,7 +7,7 @@ genuinely new, whether this is the first run ever or the hundredth.
 """
 
 import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction }
-import from schema { Fact, Intent, Knows, Me, Note, Person, Promise }
+import from schema { Fact, Intent, Knows, Me, Mentions, Note, Person, Promise, Reported }
 import uuid;
 import from datetime { datetime }
 
@@ -73,11 +73,33 @@ test "ambiguity: two known people share a first token, never guessed" {
     assert jid(p) != jid(b);
 }
 
-test "span lookup: verbatim substring wins, else fallback, never empty" {
+test "single-token name matching exactly ONE known person resolves to them" {
+    me = _fresh_me();
+    note = _fresh_note("Ran into Maya at the cafe.");
+    suffix = _uid();
+    full_name = "Maya" + suffix + " Chen";
+    first_name = "Maya" + suffix;
+
+    r0: dict[str, any] = {};
+    known_entry = resolve_person(full_name, me, note, r0);
+    known = known_entry["person"] as Person;
+
+    # Fresh dict: simulate a later Capture call that only saw the first name,
+    # and exactly one known person shares that first token.
+    r1: dict[str, any] = {};
+    entry = resolve_person(first_name, me, note, r1);
+    p = entry["person"] as Person;
+
+    assert not entry["is_new"];
+    assert jid(p) == jid(known);
+    assert len(entry["ambiguous_with"] as list[str]) == 0;
+}
+
+test "span lookup: verbatim substring wins, else fallback, else 80-char note prefix" {
     note = _fresh_note("She works on accessible robotics and knows Arjun.");
     assert safe_span("accessible robotics", note, "fallback") == "accessible robotics";
     assert safe_span("not anywhere in the note", note, "the fallback text") == "the fallback text";
-    assert safe_span("also not in note", note, "") == "note";
+    assert safe_span("also not in note", note, "") == note.text[:80];
 }
 
 test "apply_extraction: J2 example — five kinds, all provenance-linked" {
@@ -100,14 +122,27 @@ test "apply_extraction: J2 example — five kinds, all provenance-linked" {
 
     assert result["note_id"] == jid(note);
 
+    # Every unique person touched anywhere (Maya via `people`, Arjun via the
+    # tie only) shows up exactly once in `people`.
     people = result["people"] as list[dict[str, any]];
-    assert len(people) == 1;
-    maya_entry = people[0];
+    assert len(people) == 2;
+
+    by_name: dict[str, any] = {};
+    for entry in people {
+        p = entry["person"] as Person;
+        by_name[p.name] = entry;
+    }
+
+    maya_entry = by_name[maya_name];
     maya = maya_entry["person"] as Person;
-    assert maya.name == maya_name;
     assert maya_entry["is_new"];
     assert len(maya_entry["ambiguous_with"] as list[str]) == 0;
     assert maya.status == "confirmed";
+
+    arjun_entry = by_name[arjun_name];
+    arjun = arjun_entry["person"] as Person;
+    assert arjun_entry["is_new"];
+    assert arjun.status == "proposed";
 
     facts = result["facts"] as list[dict[str, any]];
     assert len(facts) == 1;
@@ -133,20 +168,7 @@ test "apply_extraction: J2 example — five kinds, all provenance-linked" {
     assert len(ties) == 1;
     tie = ties[0];
     assert tie["from"] == jid(maya);
-    arjun_id = tie["to"] as str;
-    assert arjun_id != jid(maya);
-
-    # Arjun was never in `people` — resolved only via the tie, created proposed.
-    known: list[Person] = [me ->:Knows:->];
-    arjun_matches: list[Person] = [];
-    for p in known {
-        if jid(p) == arjun_id {
-            arjun_matches.append(p);
-        }
-    }
-    assert len(arjun_matches) == 1;
-    assert arjun_matches[0].name == arjun_name;
-    assert arjun_matches[0].status == "proposed";
+    assert tie["to"] == jid(arjun);
 }
 
 test "tie-only person stays proposed even when the LLM also lists them in people" {
@@ -188,6 +210,150 @@ test "tie-only person stays proposed even when the LLM also lists them in people
     arjun = arjun_entry["person"] as Person;
     assert arjun.status == "proposed";
     assert arjun_entry["is_new"];
+}
+
+test "one person touched by multiple categories: one people entry, one Mentions edge" {
+    me = _fresh_me();
+    suffix = _uid();
+    name = "Devika" + suffix;
+    note = _fresh_note(f"Met {name}. She is a product manager. {name} wants intros to designers. I promised to send her my notes.");
+
+    extraction = CaptureExtraction(
+        people=[XPerson(name=name, org="", title="PM", span=f"Met {name}")],
+        facts=[XFact(about_name=name, text="is a product manager", span="is a product manager")],
+        intents=[XIntent(about_name=name, kind="need", text="intros to designers", span="wants intros to designers")],
+        promises=[XPromise(to_name=name, text="send her my notes", due="", span="I promised to send her my notes")],
+        ties=[]
+    );
+
+    result = apply_extraction(note, me, extraction);
+    people = result["people"] as list[dict[str, any]];
+    assert len(people) == 1;
+
+    p = people[0]["person"] as Person;
+    mentions: list[Person] = [note ->:Mentions:->];
+    count = 0;
+    for m in mentions {
+        if jid(m) == jid(p) {
+            count += 1;
+        }
+    }
+    assert count == 1;
+}
+
+test "duplicate people entries in x.people are deduped by normalized name" {
+    me = _fresh_me();
+    suffix = _uid();
+    name = "Farah" + suffix;
+    note = _fresh_note(f"Met {name} twice in the note, once as {name.upper()}.");
+
+    extraction = CaptureExtraction(
+        people=[
+            XPerson(name=name, org="", title="", span=f"Met {name}"),
+            XPerson(name=name.upper(), org="", title="", span=f"Met {name}")
+        ],
+        facts=[],
+        intents=[],
+        promises=[],
+        ties=[]
+    );
+
+    result = apply_extraction(note, me, extraction);
+    people = result["people"] as list[dict[str, any]];
+    assert len(people) == 1;
+}
+
+test "empty about/to/from names are skipped; no Person with an empty name" {
+    me = _fresh_me();
+    note = _fresh_note("Some vague debrief with no clear names.");
+
+    extraction = CaptureExtraction(
+        people=[XPerson(name="", org="", title="", span="")],
+        facts=[XFact(about_name="  ", text="some fact", span="some fact")],
+        intents=[XIntent(about_name="", kind="need", text="some need", span="some need")],
+        promises=[XPromise(to_name="   ", text="some promise", due="", span="some promise")],
+        ties=[XTie(from_name="", to_name="Someone", span="knows Someone")]
+    );
+
+    result = apply_extraction(note, me, extraction);
+
+    assert result["people"] == [];
+    assert result["facts"] == [];
+    assert result["intents"] == [];
+    assert result["promises"] == [];
+    assert result["ties"] == [];
+
+    known: list[Person] = [me ->:Knows:->];
+    assert len(known) == 0;
+    for p in known {
+        assert len(p.name.strip()) > 0;
+    }
+}
+
+test "reported tie: equal-name self-tie skipped; duplicate ties don't duplicate the edge" {
+    me = _fresh_me();
+    suffix = _uid();
+    a_name = "Priya" + suffix;
+    b_name = "Rahul" + suffix;
+    note = _fresh_note(f"{a_name} knows {b_name}.");
+
+    extraction = CaptureExtraction(
+        people=[],
+        facts=[],
+        intents=[],
+        promises=[],
+        ties=[
+            XTie(from_name=a_name, to_name=b_name, span=f"{a_name} knows {b_name}"),
+            XTie(from_name=a_name, to_name=b_name, span=f"{a_name} knows {b_name}"),
+            XTie(from_name=a_name, to_name=a_name, span="self-tie, must be skipped")
+        ]
+    );
+
+    result = apply_extraction(note, me, extraction);
+    ties = result["ties"] as list[dict[str, any]];
+    # Both A->B entries are still reported ...
+    assert len(ties) == 2;
+
+    a_id = ties[0]["from"] as str;
+    b_id = ties[0]["to"] as str;
+    a = jobj(a_id) as Person;
+    b = jobj(b_id) as Person;
+
+    # ... but only one physical Reported edge was ever created.
+    edges: list[Person] = [a ->:Reported:->];
+    edge_count = 0;
+    for e in edges {
+        if jid(e) == jid(b) {
+            edge_count += 1;
+        }
+    }
+    assert edge_count == 1;
+}
+
+test "intent kind synonyms normalize to need / offer / open_to" {
+    me = _fresh_me();
+    note = _fresh_note("Various asks and offers.");
+    suffix = _uid();
+    name = "Kai" + suffix;
+
+    raw_kinds: list[str] = ["need", "needs", "want", "wants", "looking for", "offer", "offers", "can offer", "open_to", "", "weird"];
+    expected_kinds: list[str] = ["need", "need", "need", "need", "need", "offer", "offer", "offer", "open_to", "open_to", "open_to"];
+
+    for i = 0 to i < len(raw_kinds) by i += 1 {
+        raw = raw_kinds[i];
+        expected = expected_kinds[i];
+        extraction = CaptureExtraction(
+            people=[],
+            facts=[],
+            intents=[XIntent(about_name=name, kind=raw, text="something", span="something")],
+            promises=[],
+            ties=[]
+        );
+        result = apply_extraction(note, me, extraction);
+        intents = result["intents"] as list[dict[str, any]];
+        intent = intents[0]["intent"] as Intent;
+        assert intent.kind == expected, f"kind '{raw}' -> expected '{expected}' got '{intent.kind}'";
+    }
 }
 
 test "empty extraction still yields note_id and empty arrays — note never lost" {
