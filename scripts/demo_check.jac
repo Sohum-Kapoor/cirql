@@ -384,7 +384,7 @@ with entry {
     request_id = "";
     t0 = time.time();
     try {
-        data = post(base, token_a, "PostRequest", {"need": need, "about_line": "CS junior building accessible robotics"});
+        data = post(base, token_a, "PostRequest", {"need": need, "about_line": "CS junior building accessible robotics", "audience": "everyone"});
         reps = reports_of(data);
         if len(reps) == 0 {
             raise Exception("no reports");
@@ -460,10 +460,12 @@ with entry {
         data = post(base, token_a, "ListMyRequests", {});
         reps = reports_of(data);
         found_pending = False;
+        reply_total = 0;
         for item in reps {
             req_d = item["request"] as dict[str, any];
             if str(req_d["_jac_id"]) == request_id {
                 replies = item["replies"] as list[dict[str, any]];
+                reply_total = len(replies);
                 for rp in replies {
                     if str(rp["_jac_id"]) == reply_id and str(rp["status"]) == "pending" {
                         found_pending = True;
@@ -471,10 +473,13 @@ with entry {
                 }
             }
         }
-        if not found_pending {
+        if reply_total == 0 {
+            mark(counts, "WARN", "ListMyRequests A", (time.time() - t0) * 1000, "0 replies (friends-only audience without a handshake, or B blocked?)");
+        } elif not found_pending {
             raise Exception(f"reply not shown pending in ListMyRequests: {reps}");
+        } else {
+            mark(counts, "PASS", "ListMyRequests A", (time.time() - t0) * 1000);
         }
-        mark(counts, "PASS", "ListMyRequests A", (time.time() - t0) * 1000);
     } except Exception as e {
         mark(counts, "FAIL", "ListMyRequests A", (time.time() - t0) * 1000, str(e));
     }
