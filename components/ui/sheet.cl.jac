@@ -62,9 +62,10 @@ def:pub SheetContent(props: any) -> JsxElement {
                     <SheetPrimitive.Close data-slot="sheet-close" asChild={True}>
                         <button
                             type="button"
+                            aria-label="Close"
                             className={cn(
                                 buttonVariants().call(None, {"variant": "ghost", "size": "icon-sm"}),
-                                "absolute top-3 right-3 text-muted-foreground"
+                                "absolute top-3 right-3 size-11 text-muted-foreground"
                             )}
                         >
                             <XIcon />
