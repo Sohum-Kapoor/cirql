@@ -21,6 +21,7 @@ import from drafts { DraftFollowUp }
 import from recall { Recall }
 import from freshness { FreshnessSweep, ReconfirmFact, ReconfirmIntent }
 import from forget { Forget }
+import from handshake { OfferHandshake, ListHandshakes, AcceptHandshake, DeclineHandshake }
 
 # Client-side UI
 cl {
