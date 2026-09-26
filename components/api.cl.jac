@@ -12,7 +12,7 @@ mocks (no Gemini budget spent) even though `USE_MOCKS` ships False.
 
 import from .mocks.onboard { mock_onboardme }
 import from .mocks.capture { mock_capture, mock_list_people }
-import from .mocks.edits { mock_transcribe, mock_apply_correction, mock_forget }
+import from .mocks.edits { mock_transcribe, mock_apply_correction }
 import from ..lib.local_edits { local_put, local_view }
 import from .mocks.goalrank { mock_goalrank }
 import from .mocks.goals { mock_list_goals, mock_set_goal, mock_close_goal }
@@ -35,7 +35,6 @@ sv import from ..exchange {
 }
 sv import from ..voice { Transcribe }
 sv import from ..noted { ApplyCorrection }
-sv import from ..forget { Forget }
 sv import from ..schema { Person }
 # SOH-185 / SOH-192 (appended): graph view + badge photo capture.
 import from .mocks.graph { mock_graph_view }
@@ -129,19 +128,6 @@ async def:pub apply_correction(person_id: str, text: str, replace_fact_id: str =
     }
     result = root spawn ApplyCorrection(person_id=person_id, text=text, replace_fact_id=replace_fact_id, kind=kind);
     out = _first(result, "ApplyCorrection") as dict;
-    return out;
-}
-
-"""Forget(id) -> { deleted, id, retracted } | { error: "not_found" }. The Note is never touched."""
-async def:pub forget(node_id: str) -> dict {
-    out: dict = {};
-    if mocks_on() {
-        await fake_delay(MOCK_FAST_MS);
-        out = mock_forget(node_id);
-        return out;
-    }
-    result = root spawn Forget(id=node_id);
-    out = _first(result, "Forget") as dict;
     return out;
 }
 
