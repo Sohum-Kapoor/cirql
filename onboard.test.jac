@@ -5,7 +5,7 @@ here. The LLM extraction path itself is proven live via curl (see the SOH-164
 deliverable), not by a test.
 """
 
-import from onboard { OnboardExtraction, handle_from_name, clean_list, jid_suffix, find_by_topic, find_goal_by_text, find_intent, looks_like_goal, activate_first_goal }
+import from onboard { OnboardExtraction, name_from_about, handle_from_name, clean_list, jid_suffix, find_by_topic, find_goal_by_text, find_intent, looks_like_goal, activate_first_goal }
 import from schema { Me, Interest, Goal, Intent, HasGoal }
 
 test "OnboardExtraction obj holds the fields the walker copies out" {
@@ -92,4 +92,12 @@ test "activate_first_goal is a no-op on an empty goal list" {
     activate_first_goal(me, []);
 
     assert g.active;
+}
+
+test "SOH-212 name_from_about: the speaker's own name when stated, else empty" {
+    assert name_from_about("I'm Sam, a nurse in Ann Arbor.") == "Sam";
+    assert name_from_about("Hi! My name is Amara Osei and I study housing.") == "Amara Osei";
+    assert name_from_about("I am a community organizer in Detroit.") == "";
+    assert name_from_about("Community organizer, Detroit. I'm Rosa.") == "Rosa";
+    assert name_from_about("") == "";
 }

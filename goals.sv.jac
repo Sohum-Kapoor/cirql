@@ -194,7 +194,19 @@ def evidence_item_from_jid(some_id: str) -> dict[str, any] | None {
 
 """Candidate collection — deterministic, no LLM. See the module docstring
 for the known / route / cold rule."""
+glob RANK_CAP: int = 60;
+
 def collect_candidates(me: Me, now: datetime) -> list[Candidate] {
+    all_c = collect_all_candidates(me, now);
+    if len(all_c) > RANK_CAP {
+        return all_c[:RANK_CAP];
+    }
+    return all_c;
+}
+
+"""Every candidate (known, then route, then cold), deduped, uncapped -
+`GoalRank` ranks the first `RANK_CAP` and reports how many it left out."""
+def collect_all_candidates(me: Me, now: datetime) -> list[Candidate] {
     known: list[Candidate] = [];
     known_jids: list[str] = [];
     proposed_people: list[Person] = [];
@@ -270,11 +282,58 @@ def collect_candidates(me: Me, now: datetime) -> list[Candidate] {
         result.append(c);
     }
 
-    if len(result) > 60 {
-        result = result[:60];
-    }
-
     return result;
+}
+
+"""How many distinct people `collect_all_candidates` would consider (every
+`Knows` person plus every person reported by a confirmed-known one), without
+gathering evidence - cheap enough for the cached path."""
+def count_candidate_people(me: Me) -> int {
+    ids: list[str] = [];
+    for p in [me ->:Knows:->] {
+        pid = jid(p);
+        if pid not in ids {
+            ids.append(pid);
+        }
+        matched = [edge me ->:Knows:-> p];
+        if matched and p.status == "confirmed" and matched[0].status != "proposed" {
+            for q in [p ->:Reported:->] {
+                qid = jid(q);
+                if qid not in ids {
+                    ids.append(qid);
+                }
+            }
+        }
+    }
+    return len(ids);
+}
+
+"""True when any of `notes` was captured after `ranked_at` (or when the
+ranking has no `ranked_at` at all - a ranking from before SOH-212 has
+unknown freshness). Unparsable captured_at values are ignored."""
+def ranking_is_stale(ranked_at: str, notes: list[Note]) -> bool {
+    ranked_dt = _parse_naive_utc(ranked_at);
+    if ranked_dt is None {
+        return True;
+    }
+    for n in notes {
+        dt = _parse_naive_utc(n.captured_at);
+        if dt is not None and dt > ranked_dt {
+            return True;
+        }
+    }
+    return False;
+}
+
+"""Adds `stale`, `ranked_at`, `truncated`, `total_people` to every item."""
+def annotate_ranking(items: list[dict[str, any]], stale: bool, ranked_at: str, total_people: int) -> list[dict[str, any]] {
+    for item in items {
+        item["stale"] = stale;
+        item["ranked_at"] = ranked_at;
+        item["truncated"] = total_people > RANK_CAP;
+        item["total_people"] = total_people;
+    }
+    return items;
 }
 
 """One compact line per candidate for the single batched `by llm` call."""
@@ -583,6 +642,11 @@ walker:priv GoalRank {
         if not self.refresh {
             cached = serve_cached(goal, me);
             if cached {
+                # SOH-212: never auto-refresh; tell the client whether notes
+                # arrived after this ranking and whether the cap cut people.
+                notes: list[Note] = [root --> [?:Note]];
+                stale = ranking_is_stale(goal.ranked_at, notes);
+                annotate_ranking(cached, stale, goal.ranked_at, count_candidate_people(me));
                 for item in cached {
                     report item;
                 }
@@ -591,7 +655,9 @@ walker:priv GoalRank {
         }
 
         now = datetime.now();
-        candidates = collect_candidates(me, now);
+        all_candidates = collect_all_candidates(me, now);
+        total_people = len(all_candidates);
+        candidates = all_candidates[:RANK_CAP] if total_people > RANK_CAP else all_candidates;
 
         ranked: list[RankedItem] = [];
         if candidates {
@@ -613,6 +679,8 @@ walker:priv GoalRank {
         }
 
         results = materialize(goal, ranked, candidates);
+        goal.ranked_at = now.isoformat();
+        annotate_ranking(results, False, goal.ranked_at, total_people);
         for item in results {
             report item;
         }

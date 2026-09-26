@@ -28,7 +28,7 @@ obj OnboardExtraction {
     has card_about: str;
     has links: list[str];
 }
-sem OnboardExtraction.name = "The person's first name or full name as they refer to themselves; 'me' if absent.";
+sem OnboardExtraction.name = "The speaker's own name if they state it (e.g. 'I'm Sam, ...' -> 'Sam'), else empty.";
 sem OnboardExtraction.interests = "5 to 10 short topic phrases the person is into (e.g. 'accessible robotics'), lowercase, no duplicates.";
 sem OnboardExtraction.goals = "1 to 3 concrete outcomes the person is trying to achieve, phrased as the ask (e.g. 'Raise a pre-seed round from climate-tech investors', 'Land a summer 2027 VC internship'); never a description of what they do or build.";
 sem OnboardExtraction.needs = "What they are looking for from other people (intros, feedback, hires, funding), each one short phrase.";
@@ -40,6 +40,46 @@ sem OnboardExtraction.links = "Any URLs or handles mentioned, verbatim; empty li
 def extract_onboarding(about: str) -> OnboardExtraction by llm(temperature=0.2);
 
 # ---------------------------------------------------------------- deterministic helpers
+
+glob NAME_CUES: list[str] = ["my name is ", "i'm ", "i am ", "im ", "this is ", "call me "];
+
+"""SOH-212 fallback when the model is unavailable: the speaker's own name
+from "I'm Sam, ..." / "My name is Sam ..." / "I am Sam Lee." - only a
+Capitalized word counts (so "I am a community organizer" yields "")."""
+def name_from_about(about: str) -> str {
+    text = (about or "").strip();
+    low = text.lower();
+    for cue in NAME_CUES {
+        idx = -1;
+        if low.startswith(cue) {
+            idx = 0;
+        } else {
+            pos = low.find(" " + cue);
+            if pos >= 0 {
+                idx = pos + 1;
+            }
+        }
+        if idx < 0 {
+            continue;
+        }
+        rest = text[idx + len(cue):].strip();
+        words: list[str] = [];
+        for w in rest.split() {
+            word = w.strip(",.;:!?");
+            if len(word) == 0 or not word[0].isupper() or not word.replace("-", "").replace("'", "").isalpha() {
+                break;
+            }
+            words.append(word);
+            if len(words) >= 2 or w != word {
+                break;
+            }
+        }
+        if len(words) > 0 {
+            return " ".join(words);
+        }
+    }
+    return "";
+}
 
 def handle_from_name(name: str) -> str {
     slug = "";
@@ -147,6 +187,7 @@ def activate_first_goal(me: Me, goals: list[Goal]) -> None {
 walker:priv OnboardMe {
     """Extract a self-onboarding paragraph into the caller's graph."""
     has about: str;
+    has name: str = "";      # SOH-212: the signup name; wins over anything extracted
     has reports: list[dict] = [];
 
     can go with Root entry {
@@ -185,13 +226,28 @@ walker:priv OnboardMe {
             extracted_ok = False;
         }
 
+        # SOH-212: explicit name > extracted name > "I'm Sam" in the text > "me".
+        name_given = False;
+        if len(self.name.strip()) > 0 {
+            name = self.name.strip();
+            name_given = True;
+        } elif name.lower() == "me" {
+            guessed = name_from_about(self.about);
+            if len(guessed) > 0 {
+                name = guessed;
+                name_given = True;
+            }
+        } else {
+            name_given = extracted_ok;
+        }
+
         # 3. Get-or-create Me. On rerun, always refresh about; refresh name too
         # when this call's extraction succeeded and found a real name.
         existing_me = [root --> [?:Me]];
         if existing_me {
             me = existing_me[0];
             me.about = self.about;
-            if extracted_ok and name and name.lower() != "me" {
+            if name_given and name and name.lower() != "me" {
                 me.name = name;
             }
         } else {

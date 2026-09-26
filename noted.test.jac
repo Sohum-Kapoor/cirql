@@ -234,3 +234,26 @@ test "find_known_person: resolves a person under Me's own Knows, None for anyone
     missing = find_known_person(me, jid(stranger));
     assert missing is None;
 }
+
+test "SOH-166 apply_correction_for: replace_intent_id expires the old intent (never deletes) and adds a self-sourced replacement" {
+    tag = rid();
+    p = (root ++> Person(name=f"Noted-test Intent P {tag}", status="confirmed"))[0];
+    src = (root ++> Note(kind="debrief", text=f"wants a VC intro {tag}", captured_at="2026-09-20T10:00:00"))[0];
+    old = (src +>:AssertsIntent(span="wants a VC intro"):+> Intent(kind="need", text=f"a VC intro {tag}", expires_at="2026-12-01T00:00:00"))[0];
+    old +>:IntentAbout:+> p;
+    now_dt = datetime.now();
+
+    result = apply_correction_for(p, f"an angel intro, not VC {tag}", "", "need", now_dt, replace_intent_id=jid(old));
+    fresh = result["intent"] as Intent;
+    assert fresh.source_kind == "self";
+    assert fresh.kind == "need";
+    assert jid(fresh) != jid(old);
+    assert old.expires_at == now_dt.isoformat(), f"old intent expires now, got {old.expires_at}";
+    ids = [jid(i) for i in [p <-:IntentAbout:<-]];
+    assert jid(old) in ids and jid(fresh) in ids, "old intent is kept, never deleted";
+
+    # Also: a legacy 60-char how_met is shown on a word boundary.
+    me = (root ++> Me(name=f"noted-me-{tag}"))[0];
+    q = (me +>:Knows(how_met="debrief: " + "Met Reverend Okafor after the county accessibility panel downtown"[:60]):+> Person(name=f"Q {tag}"))[0];
+    assert how_met_for(me, q).endswith("accessibility panel…");
+}

@@ -19,7 +19,7 @@ obj NeededKind {
 }
 sem NeededKind.kind = "A kind of person this goal needs, as a short noun phrase such as 'climate-tech VC' or 'wheelchair user willing to test a prototype'; never a specific person.";
 sem NeededKind.why_needed = "One sentence on why the goal needs this kind of person.";
-sem NeededKind.suggested_need = "The one-line request a friend's agent could act on, e.g. 'an intro to a climate-tech VC who takes cold student pitches'; no names.";
+sem NeededKind.suggested_need = "The request a friend's agent could act on, in plain words a non-native English speaker understands: one short sentence, everyday words, no jargon, 14 words or fewer, e.g. 'someone who invests in young climate companies and reads student emails'; no names.";
 sem NeededKind.covered_by = "The # numbers of listed warm people who already are this kind of person or can directly provide it; empty if none.";
 
 obj GapExtraction {

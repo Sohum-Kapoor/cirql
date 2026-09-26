@@ -48,6 +48,7 @@ node Goal {
     has text: str;
     has created_at: str;
     has active: bool = True;
+    has ranked_at: str = "";         # ISO; set by GoalRank on every rebuild (SOH-212 staleness)
 }
 
 node Intent {

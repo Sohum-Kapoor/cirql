@@ -167,3 +167,21 @@ test "SkipPerson / ConfirmPerson: unknown person_id -> not_found" {
     err2 = r2.reports[0] as dict[str, any];
     assert err2["error"] == "not_found";
 }
+
+test "SOH-212 ImportPeople: 26 genuinely new rows all report is_new=true; the same rows re-imported report false" {
+    tag = uuid.uuid4().hex[:8];
+    rows: list[dict[str, str]] = [];
+    for i in range(26) {
+        rows.append({"name": f"Marcus212 Row{i} {tag}", "org": "Acme", "how_met": "linkedin"});
+    }
+    first = (root spawn ImportPeople(rows=rows, source="linkedin csv")).reports[0] as dict[str, any];
+    imported = first["imported"] as list[dict[str, any]];
+    assert len(imported) == 26;
+    flags = [e["is_new"] as bool for e in imported];
+    assert all(flags), f"every genuinely new row must be is_new=true, got {flags}";
+
+    again = (root spawn ImportPeople(rows=rows[:3], source="linkedin csv")).reports[0] as dict[str, any];
+    reused = again["imported"] as list[dict[str, any]];
+    assert len(reused) == 3;
+    assert not any([e["is_new"] as bool for e in reused]), "a reused name is is_new=false";
+}

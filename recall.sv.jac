@@ -22,7 +22,7 @@ from `onboard.sv.jac`, `exchange.sv.jac` imports from `scoring.sv.jac`).
 import from datetime { datetime }
 import from schema {
     Note, Fact, Intent, Promise,
-    FactAbout, IntentAbout, PromiseTo, Mentions, AssertsIntent, AssertsPromise
+    FactAbout, IntentAbout, PromiseTo, Mentions, Asserts, AssertsIntent, AssertsPromise
 }
 import from llm { llm }
 import from goals { _parse_naive_utc }
@@ -80,7 +80,15 @@ merged newest-first by `observed_at`/`captured_at`/`due`-note and bounded to
 product spec calls for; it runs BEFORE the token pre-filter."""
 def gather_recall_items(max_items: int) -> list[RecallItem] {
     items: list[RecallItem] = [];
+    seen: list[str] = [];
 
+    # Facts/Intents/Promises hang off their Note (`Asserts*`), not off root
+    # (SOH-212: a root-only traversal never found a single promise). Walk
+    # every Note's children, plus anything a few older paths still attach
+    # straight under root; dedupe by jid.
+    facts: list[Fact] = [];
+    intents: list[Intent] = [];
+    promises: list[Promise] = [];
     for n in [root --> [?:Note]] {
         person_name = "";
         mentioned = [n ->:Mentions:->];
@@ -88,15 +96,29 @@ def gather_recall_items(max_items: int) -> list[RecallItem] {
             person_name = mentioned[0].name;
         }
         items.append(RecallItem(id=jid(n), kind="note", observed_at=n.captured_at, span=n.text[:300], person=person_name));
+        facts += [n ->:Asserts:->];
+        intents += [n ->:AssertsIntent:->];
+        promises += [n ->:AssertsPromise:->];
     }
+    facts += [root --> [?:Fact]];
+    intents += [root --> [?:Intent]];
+    promises += [root --> [?:Promise]];
 
-    for f in [root --> [?:Fact]] {
+    for f in facts {
+        if jid(f) in seen {
+            continue;
+        }
+        seen.append(jid(f));
         about = [f ->:FactAbout:->];
         person_name = about[0].name if about else "";
         items.append(RecallItem(id=jid(f), kind="fact", observed_at=f.observed_at, span=f.text, person=person_name));
     }
 
-    for i in [root --> [?:Intent]] {
+    for i in intents {
+        if jid(i) in seen {
+            continue;
+        }
+        seen.append(jid(i));
         about = [i ->:IntentAbout:->];
         person_name = about[0].name if about else "";
         observed_at = "";
@@ -107,7 +129,11 @@ def gather_recall_items(max_items: int) -> list[RecallItem] {
         items.append(RecallItem(id=jid(i), kind="intent", observed_at=observed_at, span=i.text, person=person_name));
     }
 
-    for pr in [root --> [?:Promise]] {
+    for pr in promises {
+        if jid(pr) in seen {
+            continue;
+        }
+        seen.append(jid(pr));
         to_list = [pr ->:PromiseTo:->];
         person_name = to_list[0].name if to_list else "";
         observed_at = "";
@@ -170,12 +196,41 @@ def _tokenize(text: str) -> list[str] {
     return tokens;
 }
 
+glob PROMISE_CUES: list[str] = [
+    "promise", "promised", "said i would", "said i'd", "i would send", "send",
+    "owe", "follow up", "follow-up", "get back to"
+];
+
+"""True when the question asks about something the user said they would do."""
+def is_promise_question(question: str) -> bool {
+    q = question.lower();
+    for cue in PROMISE_CUES {
+        if cue in q {
+            return True;
+        }
+    }
+    return False;
+}
+
 """The strict token-overlap pre-filter itself — exposed separately from
 `select_recall_evidence` so a test can assert on it directly."""
 def prefilter_matches(pool: list[RecallItem], question: str) -> list[RecallItem] {
     q_tokens = _tokenize(question);
+    wants_promises = is_promise_question(question);
     matched: list[RecallItem] = [];
+    # A promise-shaped question ("who did I say I would send ... to?") keeps
+    # every promise item, ahead of the token matches.
+    if wants_promises {
+        for it in pool {
+            if it.kind == "promise" {
+                matched.append(it);
+            }
+        }
+    }
     for it in pool {
+        if wants_promises and it.kind == "promise" {
+            continue;
+        }
         it_tokens = _tokenize(it.span);
         shared = False;
         for t in it_tokens {
@@ -204,10 +259,20 @@ def select_recall_evidence(pool: list[RecallItem], question: str) -> list[Recall
         return [];
     }
     if len(matched) < 3 {
-        if len(pool) > 12 {
-            return pool[:12];
+        # Widen with the newest pool items, but keep the actual matches first
+        # so the fallback's top 3 still contains them.
+        widened: list[RecallItem] = list(matched);
+        ids: list[str] = [m.id for m in matched];
+        for it in pool {
+            if len(widened) >= 12 {
+                break;
+            }
+            if it.id not in ids {
+                widened.append(it);
+                ids.append(it.id);
+            }
         }
-        return pool;
+        return widened;
     }
     return matched;
 }
@@ -253,7 +318,12 @@ def fallback_recall(selected: list[RecallItem]) -> dict[str, any] {
     top = selected[:3];
     parts: list[str] = [];
     for it in top {
-        parts.append(f"{it.person}: {it.span} ({it.observed_at})");
+        who = it.person if it.person else "someone unnamed";
+        if it.kind == "promise" {
+            parts.append(f"you promised {who}: {it.span} ({it.observed_at})");
+        } else {
+            parts.append(f"{who}: {it.span} ({it.observed_at})");
+        }
     }
     answer = "Your notes mention: " + "; ".join(parts);
     citations = [item_to_citation(it) for it in top];

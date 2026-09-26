@@ -21,9 +21,9 @@ sort+cap step pulled out of `gather_recall_items`) is used for the
 import from recall {
     RecallItem, prefilter_matches, select_recall_evidence, fallback_recall,
     cap_and_sort_items, gather_recall_items, map_recall_indices,
-    build_recall_evidence_text, item_to_citation
+    build_recall_evidence_text, item_to_citation, is_promise_question
 }
-import from schema { Note, Fact }
+import from schema { Note, Fact, Person, Promise, AssertsPromise, PromiseTo }
 
 # ---------------------------------------------------------------- prefilter / select / fallback (hand-built items, no graph)
 
@@ -136,4 +136,32 @@ test "gather_recall_items: reads real Note/Fact nodes off root with the right ki
     assert by_kind["note"].span == f"{unique} note text about Dana"[:300];
     assert by_kind["fact"].id == jid(fact);
     assert by_kind["fact"].observed_at == "2026-09-23T10:00:00";
+}
+
+# ---------------------------------------------------------------- SOH-212: promises hang off the Note, not root
+
+test "gather_recall_items finds a Promise attached via its Note; a promise question selects it and the fallback names the person" {
+    note = (root ++> Note(text="Met the Reverend after the panel.", kind="debrief", captured_at="2026-09-24T11:00:00"))[0];
+    okafor = (root ++> Person(name="Reverend Okafor"))[0];
+    pr = (note +>:AssertsPromise(span="I said I would send him the scholarship link"):+> Promise(text="send him the scholarship link", due="Friday"))[0];
+    pr +>:PromiseTo:+> okafor;
+
+    pool = gather_recall_items(0);
+    mine = [it for it in pool if it.id == jid(pr)];
+    assert len(mine) == 1, f"the promise hangs off its Note and must be gathered exactly once, got {len(mine)}";
+    assert mine[0].kind == "promise";
+    assert mine[0].person == "Reverend Okafor";
+    assert mine[0].observed_at == "2026-09-24T11:00:00";
+
+    question = "who did I say I would send the scholarship link to?";
+    assert is_promise_question(question);
+    distractors = [
+        RecallItem(id=f"d-{i}", kind="note", observed_at=f"2026-09-2{i}T00:00:00", span="violin weekends downtown", person=f"P{i}")
+        for i in range(5)
+    ];
+    selected = select_recall_evidence(distractors + mine, question);
+    assert len(selected) > 0 and selected[0].id == jid(pr), "the promise must lead the selection";
+    fb = fallback_recall(selected);
+    assert not fb["insufficient"];
+    assert "Reverend Okafor" in (fb["answer"] as str), f"fallback must name the person, got {fb['answer']}";
 }

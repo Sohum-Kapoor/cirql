@@ -32,7 +32,7 @@ root) there is exactly one `Me`.
 """
 
 import from datetime { datetime }
-import from schema { Me, Person, Knows }
+import from schema { Me, Person, Knows, IntentAbout }
 import from goals { EvidenceItem, gather_evidence, _parse_naive_utc }
 import from recall { _tokenize }
 
@@ -216,15 +216,51 @@ def _topic_phrase(text_tokens: list[str], matched: list[str]) -> str {
 wheelchair users; this piece is about accessible robotics.' Falls back to
 `org`/`title` when no single evidence item overlapped (matched only via
 org/title)."""
-def _why_fragment(p: Person, top: EvidenceItem | None, topic: str) -> str {
+glob INTENT_LEADS: list[str] = [
+    "looking for", "wants", "want", "needs", "need", "seeking", "hoping",
+    "can ", "is ", "open to", "offers", "would like"
+];
+
+"""Quoted evidence text for the middle of a sentence: first letter
+lower-cased, trailing period dropped (SOH-212)."""
+def _inline(text: str) -> str {
+    t = (text or "").strip().rstrip(".").strip();
+    if len(t) == 0 {
+        return t;
+    }
+    return t[:1].lower() + t[1:];
+}
+
+"""The verb phrase for one intent: its own text when it already leads with a
+verb ("Looking for a nurse mentor" -> "looking for a nurse mentor"), else
+"wants ..." / "can offer ..." by intent kind."""
+def _intent_clause(text: str, kind: str) -> str {
+    inline = _inline(text);
+    low = inline.lower();
+    for lead in INTENT_LEADS {
+        if low.startswith(lead) {
+            return inline;
+        }
+    }
+    if kind == "offer" {
+        return f"can offer {inline}";
+    }
+    return f"wants {inline}";
+}
+
+def _why_fragment(p: Person, top: EvidenceItem | None, topic: str, intent_kinds: dict[str, str] = {}) -> str {
     if top is not None {
         t = top as EvidenceItem;
         if t.kind == "intent" {
-            clause = f"wants {t.span}";
+            kind = "need";
+            if t.id in intent_kinds {
+                kind = intent_kinds[t.id];
+            }
+            clause = _intent_clause(t.span, kind);
         } elif t.kind == "fact" {
-            clause = f"is known for {t.span}";
+            clause = f"is known for {_inline(t.span)}";
         } else {
-            clause = f"was noted for {t.span}";
+            clause = f"was noted for {_inline(t.span)}";
         }
     } elif p.title and p.org {
         clause = f"works as {p.title} at {p.org}";
@@ -256,7 +292,7 @@ def _count_key(item: dict[str, any]) -> int {
 
 """Deterministic, testable directly on a hand-built `me` (see
 serendipity.test.jac): tokenize `text`; for every confirmed-known person,
-gather their Facts/non-expired-Intents/mentioning-Notes via
+gather their OWN Facts/non-expired-Intents (never co-mentioning Notes) via
 `goals.sv.jac`'s `gather_evidence`; a person qualifies at >=2 matched tokens
 (shared with their evidence spans or their org/title) or >=1 when an Intent
 supplied one of those tokens; ordered by matched-token count desc, then
@@ -270,7 +306,14 @@ def serendipity_for(me: Me, text: str, url: str, limit: int, now: datetime) -> l
     rows: list[dict[str, any]] = [];
 
     for p in _confirmed_known_people(me) {
-        evidence = gather_evidence(p, now);
+        # SOH-212: match only on the person's OWN Facts/Intents (FactAbout /
+        # IntentAbout), never on a Note that merely mentions them alongside
+        # someone else ("Tom" matched a nursing article via Helen's note).
+        evidence: list[EvidenceItem] = [e for e in gather_evidence(p, now) if e.kind != "note"];
+        intent_kinds: dict[str, str] = {};
+        for it in [p <-:IntentAbout:<-] {
+            intent_kinds[jid(it)] = it.kind;
+        }
         m = _match_person(text_tokens, p, evidence);
         matched = m["matched"] as list[str];
         matched_from_intent = m["matched_from_intent"] as bool;
@@ -281,7 +324,7 @@ def serendipity_for(me: Me, text: str, url: str, limit: int, now: datetime) -> l
 
         top = pick_top_evidence(text_tokens, evidence);
         topic = _topic_phrase(text_tokens, matched);
-        fragment = _why_fragment(p, top, topic);
+        fragment = _why_fragment(p, top, topic, intent_kinds);
         why = f"{p.name} {fragment}.";
 
         excerpt = url if url else text[:80];

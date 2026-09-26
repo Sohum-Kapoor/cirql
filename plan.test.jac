@@ -14,7 +14,7 @@ per AGENTS.md's testing gotcha, so exact-name / single-token matching is
 never confused by a same-named fixture left over from an earlier run.
 """
 
-import from plan { game_plan_for, match_known, find_reported_route }
+import from plan { game_plan_for, match_known, find_reported_route, cap_report }
 import from schema {
     Me, Person, Note, Fact, Promise, Goal,
     Knows, Reported, AssertsPromise, PromiseTo, FactAbout, HasGoal, RelevantTo
@@ -170,4 +170,19 @@ test "find_reported_route: only a direct Reported hop off a known person counts,
 
     missing = find_reported_route(me, "Nobody At All " + suffix);
     assert missing is None;
+}
+
+test "SOH-212 GamePlan: 70 names against the 60 cap -> 60 processed, 10 in not_processed, nothing silently eaten" {
+    me = (root ++> Me(name=f"plan-cap-me-{uuid.uuid4().hex[:6]}"))[0];
+    names = [f"Guest212 {i}" for i in range(70)];
+    out = game_plan_for(me, names, "gala");
+    assert out["total_names"] == 70;
+    assert out["processed"] == 60;
+    assert out["truncated"] == True;
+    rest = out["not_processed"] as list[str];
+    assert rest == names[60:];
+    assert len(out["unknown"] as list[str]) == 60, "the 60 processed names all land in a bucket";
+
+    small = cap_report(["a", "b"]);
+    assert small["truncated"] == False and small["not_processed"] == [] and small["processed"] == 2;
 }
