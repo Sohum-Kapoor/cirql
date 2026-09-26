@@ -35,6 +35,7 @@ import from vision { CaptureImage }
 import from person { PersonDetail, Brief }
 import from enrich { Enrich }
 import from export { ExportGraph }
+import from edits { UpdatePerson, UpdatePromise }
 
 # Client-side UI
 cl {
