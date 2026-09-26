@@ -7,9 +7,17 @@ reused verbatim from gate.sv.jac (proven with three real accounts).
 Ownership (there is no cross-root write):
   - The requester owns each IntroRequest (root.shared -> Exchange -Posted->
     IntroRequest), granted ConnectPerm so friends read it and attach RepliedTo.
-  - The friend owns each IntroReply (under the friend's root), allow_root'ed
-    read-only to the requester only. `match_person_id` and `revealed_card_id`
-    never leave the server: every report builds a ReplyView dict.
+  - The friend owns each IntroReply, hung under root.shared (SOH-205: the
+    requester must find it by traversal from a root it can traverse; an edge
+    a friend adds onto the requester's node is NOT found by a typed traversal
+    after a restart or on another worker), allow_root'ed read-only to the
+    requester only. The RepliedTo edge is still attached; nothing reads it.
+  - The friend's private half (`match_person_id`, `revealed_card_id`) lives on
+    a ReplyPrivate under the FRIEND's root: root.shared is enumerable and jobj
+    never authorizes, so nothing identity-bearing sits on the shared node.
+    Every report builds a ReplyView dict.
+  - Traversals of shared containers (root.shared, Exchange, CardDirectory)
+    are UNTYPED then type-filtered; see cards.sv.jac listed_cards().
   - Request status is derived by the requester on read; reply status is
     written only by the friend.
   - The only graph object that crosses accounts is the Card granted at Reveal.
@@ -23,8 +31,9 @@ import from datetime { datetime, timedelta }
 import from schema {
     Me, Person, Knows, Fact, FactAbout, Intent, IntentAbout, Note, Asserts,
     AssertsIntent, Card, Owns, FromCard, Exchange, IntroRequest, IntroReply,
-    Posted, RepliedTo
+    Posted, RepliedTo, ReplyPrivate
 }
+import from cards { listed_cards, list_card }
 import from scoring { score_against_need }
 import from onboard { handle_from_name, jid_suffix }
 
@@ -101,7 +110,7 @@ def my_card() -> Card | None {
 
 """Get-or-create the one Exchange under root.shared (ConnectPerm container)."""
 def get_exchange() -> Exchange {
-    found = [root.shared --> [?:Exchange]];
+    found = [x for x in [root.shared -->] if isinstance(x, Exchange)];
     if found {
         return found[0];
     }
@@ -115,8 +124,8 @@ get_exchange() can race and leave two Exchanges; readers must see both."""
 def all_requests() -> list[IntroRequest] {
     seen: list[str] = [];
     out: list[IntroRequest] = [];
-    for ex in [root.shared --> [?:Exchange]] {
-        for req in [ex ->:Posted:-> [?:IntroRequest]] {
+    for ex in [x for x in [root.shared -->] if isinstance(x, Exchange)] {
+        for req in [x for x in [ex -->] if isinstance(x, IntroRequest)] {
             k = jid(req);
             if k not in seen {
                 seen.append(k);
@@ -140,7 +149,23 @@ def readable(n: object) -> bool {
     return bool(Jac.check_read_access(getattr(n, "__jac__")));  # jac:ignore[E1053]
 }
 
-"""The redacted reply shape. Never includes match_person_id or revealed_card_id."""
+"""Every IntroReply under root.shared the caller can READ (their own, or
+allow_root'ed to them). Readability is checked before any field is touched."""
+def shared_replies() -> list[IntroReply] {
+    out: list[IntroReply] = [];
+    seen: list[str] = [];
+    for r in [x for x in [root.shared -->] if isinstance(x, IntroReply)] {
+        k = jid(r);
+        if k not in seen and readable(r) {
+            seen.append(k);
+            out.append(r);
+        }
+    }
+    return out;
+}
+
+"""The redacted reply shape. Never includes match_person_id, revealed_card_id
+or revealed_card_handle."""
 def view(r: IntroReply) -> dict[str, object] {
     return {
         "_jac_id": jid(r),
@@ -152,11 +177,20 @@ def view(r: IntroReply) -> dict[str, object] {
     };
 }
 
-"""An IntroReply under the caller's own root, by id; None if not mine."""
+"""A shared IntroReply OWNED by the caller, by id; None if unknown or not mine."""
 def my_reply(reply_id: str) -> IntroReply | None {
-    for r in [root --> [?:IntroReply]] {
-        if jid(r) == reply_id {
-            return r;
+    n = load(reply_id);
+    if isinstance(n, IntroReply) and owner_root(n) == jid(root) {
+        return n as IntroReply;
+    }
+    return None;
+}
+
+"""The caller's private half of one of their replies (own root only)."""
+def my_private(reply_id: str) -> ReplyPrivate | None {
+    for p in [root --> [?:ReplyPrivate]] {
+        if p.reply_id == reply_id {
+            return p;
         }
     }
     return None;
@@ -235,16 +269,13 @@ walker:priv ListMyRequests {
     can go with Root entry {
         me_root = jid(root);
         now = now_iso();
+        visible = shared_replies();
         for req in all_requests() {
             if owner_root(req) != me_root {
                 continue;
             }
-            replies: list[IntroReply] = [];
-            for r in [req <-:RepliedTo:<-] {
-                if isinstance(r, IntroReply) and readable(r) {
-                    replies.append(r);
-                }
-            }
+            rid = jid(req);
+            replies = [r for r in visible if r.request_id == rid];
             req.status = derive_status(req, replies, now);
             report {"request": req, "replies": [view(r) for r in replies]};
         }
@@ -304,20 +335,24 @@ walker:priv ClaimReveal {
             report err("forbidden");
             return;
         }
-        if reply.status != "revealed" or not reply.revealed_card_id {
+        if reply.status != "revealed" or not reply.revealed_card_handle {
             report err("invalid_state");
             return;
         }
-        cn = load(reply.revealed_card_id);
-        if not isinstance(cn, Card) {
+        # Handles are self-chosen: only a Card owned by the replying friend,
+        # granted to us, and carrying that handle counts.
+        friend_root = owner_root(reply);
+        found: Card | None = None;
+        for cn in listed_cards() {
+            if found is None and readable(cn) and owner_root(cn) == friend_root and cn.handle == reply.revealed_card_handle {
+                found = cn;
+            }
+        }
+        if found is None {
             report err("not_found");
             return;
         }
-        if not readable(cn) {
-            report err("forbidden");
-            return;
-        }
-        card = cn as Card;
+        card = found as Card;
         m = my_me();
         if m is None {
             report err("no_card");
@@ -383,7 +418,7 @@ walker:priv ListIncomingRequests {
     can go with Root entry {
         me_root = jid(root);
         now = now_iso();
-        answered = [r.request_id for r in [root --> [?:IntroReply]]];
+        answered = [r.request_id for r in shared_replies() if owner_root(r) == me_root];
         # Ownership is by root only; handles are self-chosen and spoofable.
         for req in all_requests() {
             if owner_root(req) == me_root {
@@ -425,8 +460,9 @@ walker:priv ReplyToRequest {
             report err("invalid_state");
             return;
         }
-        for r in [root --> [?:IntroReply]] {
-            if r.request_id == rid {
+        me_root = jid(root);
+        for r in shared_replies() {
+            if owner_root(r) == me_root and r.request_id == rid {
                 report err("invalid_state");
                 return;
             }
@@ -455,16 +491,16 @@ walker:priv ReplyToRequest {
             strength = str(kept[0]["strength"]);
             person_id = str(kept[0]["person_id"]);
         }
-        reply = (root ++> IntroReply(
+        reply = (root.shared ++> IntroReply(
             request_id=rid,
             from_handle=card.handle,
             match_count=len(kept),
             strength=strength,
-            status="pending",
-            match_person_id=person_id
+            status="pending"
         ))[0];
-        reply +>:RepliedTo:+> req;
         Jac.allow_root(reply, UUID(owner_root(req)), ReadPerm);  # jac:ignore[E1053]
+        root ++> ReplyPrivate(reply_id=jid(reply), match_person_id=person_id);
+        reply +>:RepliedTo:+> req;  # kept for the graph view; nothing reads it
         report view(reply);
     }
 }
@@ -503,11 +539,12 @@ walker:priv OptIn {
             return;
         }
         reply = r as IntroReply;
-        if reply.status != "approved" or not reply.match_person_id {
+        pv = my_private(self.reply_id);
+        if reply.status != "approved" or pv is None or not (pv as ReplyPrivate).match_person_id {
             report err("invalid_state");
             return;
         }
-        p = my_person(reply.match_person_id);
+        p = my_person((pv as ReplyPrivate).match_person_id);
         if p is None {
             report err("not_found");
             return;
@@ -549,11 +586,13 @@ walker:priv Reveal {
             return;
         }
         reply = r as IntroReply;
-        if reply.status != "opted_in" {
+        pv = my_private(self.reply_id);
+        if reply.status != "opted_in" or pv is None {
             report err("invalid_state");
             return;
         }
-        p = my_person(reply.match_person_id);
+        priv = pv as ReplyPrivate;
+        p = my_person(priv.match_person_id);
         if p is None {
             report err("not_found");
             return;
@@ -593,7 +632,9 @@ walker:priv Reveal {
         }
         cc = card as Card;
         Jac.allow_root(cc, UUID(req_owner), ReadPerm);  # jac:ignore[E1053]
-        reply.revealed_card_id = jid(cc);
+        list_card(cc);
+        priv.revealed_card_id = jid(cc);
+        reply.revealed_card_handle = cc.handle;
         reply.status = "revealed";
         report {"reply": view(reply), "revealed_card_handle": cc.handle};
     }

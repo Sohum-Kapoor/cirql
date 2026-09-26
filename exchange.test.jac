@@ -4,7 +4,7 @@ Annex to exchange.sv.jac — run with `jac test exchange.sv.jac`.
 
 Same harness as gate.test.jac / walkers.test.jac: JacTestClient cannot target
 a dotted `*.sv.jac` file, so each test copies the live server modules into a
-fresh temp dir next to a dot-free `app.jac` and gives the client its own
+fresh temp dir next to a dot-free `exapp.jac` (not `app.jac`: cards.test.jac, pulled in via exchange -> cards, already cached a module named `app`) and gives the client its own
 base_path. No `jac clean` anywhere.
 
 Accounts: A = requester, B = friend, C = bystander, each a REAL registered
@@ -17,15 +17,20 @@ draft uses its template).
 import from jaclang.runtimelib.testing { JacTestClient }
 import os;
 import shutil;
+import signal;
+import socket;
+import subprocess;
 import tempfile;
+import time;
+import requests;
 
 glob EX_REPO_ROOT = os.path.dirname(os.path.abspath(__file__));
 
 def _ex_harness(tmp_dir: str) -> str {
-    for name in ["exchange.sv.jac", "schema.sv.jac", "scoring.sv.jac", "onboard.sv.jac", "walkers.sv.jac"] {
+    for name in ["exchange.sv.jac", "schema.sv.jac", "scoring.sv.jac", "onboard.sv.jac", "walkers.sv.jac", "cards.sv.jac", "llm.sv.jac", "freshness.sv.jac", "goals.sv.jac"] {
         shutil.copyfile(os.path.join(EX_REPO_ROOT, name), os.path.join(tmp_dir, name));
     }
-    harness_path = os.path.join(tmp_dir, "app.jac");
+    harness_path = os.path.join(tmp_dir, "exapp.jac");
     f = open(harness_path, "w");
     f.write(
         "import from walkers { ListPeople, DevAddPerson }\n"
@@ -39,7 +44,7 @@ def _ex_harness(tmp_dir: str) -> str {
         "[project]\n"
         "name = \"exchange-test-harness\"\n"
         "version = \"0.1.0\"\n"
-        "entry-point = \"app.jac\"\n"
+        "entry-point = \"exapp.jac\"\n"
         "\n"
         "[plugins.scale.microservices]\n"
         "enabled = false\n"
@@ -317,6 +322,182 @@ test "exchange: a request whose from_handle equals the friend's handle still rea
         assert req_id not in a_in, f"own request listed as incoming: {a_in}";
     } finally {
         if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+# ---------------------------------------------------------------- real-server restart (SOH-205 hosted bug)
+# Same subprocess idiom as walkers.test.jac's "persistence: person survives
+# real server restart": own temp dir (its own .jac store), free port, own
+# process group, killed by group.
+
+def _ex_free_port() -> int {
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM);
+    s.bind(("127.0.0.1", 0));
+    port = s.getsockname()[1];
+    s.close();
+    return int(port);
+}
+
+def _ex_tail(log_path: str, n: int = 4000) -> str {
+    try {
+        f = open(log_path, "rb");
+        data = f.read();
+        f.close();
+        return data[-n:].decode("utf-8", errors="replace");
+    } except OSError {
+        return "<no log available>";
+    }
+}
+
+def _ex_kill(proc: (subprocess.Popen[bytes] | None)) {
+    if proc is None {
+        return;
+    }
+    try {
+        os.killpg(os.getpgid(proc.pid), int(signal.SIGTERM));
+    } except OSError { }
+    try {
+        proc.wait(timeout=5);
+    } except subprocess.TimeoutExpired {
+        try {
+            os.killpg(os.getpgid(proc.pid), int(signal.SIGKILL));
+        } except OSError { }
+        try {
+            proc.wait(timeout=5);
+        } except subprocess.TimeoutExpired { }
+    }
+}
+
+def _ex_start(tmp_dir: str, port: int) -> subprocess.Popen[bytes] {
+    log_path = os.path.join(tmp_dir, f"server_{port}.log");
+    log_file = open(log_path, "wb");
+    proc = subprocess.Popen(
+        ["jac", "start", "exapp.jac", "--port", str(port), "-n"],
+        cwd=tmp_dir,
+        stdin=subprocess.DEVNULL,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        start_new_session=True
+    );
+    log_file.close();
+    deadline = time.time() + 20.0;
+    ready = False;
+    while time.time() < deadline and not ready {
+        if proc.poll() is not None {
+            break;
+        }
+        try {
+            sock = socket.create_connection(("127.0.0.1", port), timeout=0.5);
+            sock.close();
+            ready = True;
+        } except OSError {
+            time.sleep(0.3);
+        }
+    }
+    if not ready {
+        tail = _ex_tail(log_path);
+        _ex_kill(proc);
+        assert False, f"exchange harness server on port {port} did not come up; log tail:\n{tail}";
+    }
+    return proc;
+}
+
+def _ex_register(base: str, user: str) -> str {
+    reg = requests.post(f"{base}/user/register", json={
+        "identities": [{"type": "username", "value": user}],
+        "credential": {"type": "password", "password": "password123"}
+    });
+    assert reg.ok, reg.text;
+    return str(reg.json()["data"]["token"]);
+}
+
+def _ex_login(base: str, user: str) -> str {
+    login = requests.post(f"{base}/user/login", json={
+        "identity": {"type": "username", "value": user},
+        "credential": {"type": "password", "password": "password123"}
+    });
+    assert login.ok, login.text;
+    return str(login.json()["data"]["token"]);
+}
+
+def _ex_call(base: str, token: str, wname: str, body: dict) -> list[any] {
+    resp = requests.post(
+        f"{base}/walker/{wname}",
+        headers={"Authorization": f"Bearer {token}"},
+        json=body
+    );
+    assert resp.ok, f"{wname} failed: {resp.status_code} {resp.text}";
+    return list(resp.json()["data"]["reports"]);
+}
+
+test "exchange: B's reply is visible to A after a real server restart" {
+    tmp_dir = tempfile.mkdtemp();
+    proc1: (subprocess.Popen[bytes] | None) = None;
+    proc2: (subprocess.Popen[bytes] | None) = None;
+    try {
+        _ex_harness(tmp_dir);
+        port = _ex_free_port();
+        base = f"http://127.0.0.1:{port}";
+        proc1 = _ex_start(tmp_dir, port);
+
+        a = _ex_register(base, "rs_a@example.com");
+        b = _ex_register(base, "rs_b@example.com");
+        _ex_call(base, a, "DevMakeCard", {"handle": "alice-rs", "name": "Alice"});
+        _ex_call(base, b, "DevMakeCard", {"handle": "bob-rs", "name": "Bob"});
+        _ex_call(base, b, "DevAddPerson", {"name": "Priya Rao", "me_name": "Bob"});
+        _ex_call(base, b, "DevSeedMatch", {
+            "name": "Priya Rao",
+            "fact": "Priya is a partner at a climate-tech seed fund.",
+            "offer": "intros to climate-tech seed investors"
+        });
+        req_id = str(_ex_call(base, a, "PostRequest", {"need": "a climate-tech seed investor", "about_line": "battery recycling"})[0]["_jac_id"]);
+        rv = _ex_call(base, b, "ReplyToRequest", {"request_id": req_id})[0];
+        assert str(rv["status"]) == "pending", rv;
+        reply_id = str(rv["_jac_id"]);
+        b_req_id = str(_ex_call(base, b, "PostRequest", {"need": "a designer", "about_line": ""})[0]["_jac_id"]);
+
+        _ex_kill(proc1);
+        proc1 = None;
+
+        port2 = _ex_free_port();
+        base2 = f"http://127.0.0.1:{port2}";
+        proc2 = _ex_start(tmp_dir, port2);
+        a2 = _ex_login(base2, "rs_a@example.com");
+        mine = _ex_call(base2, a2, "ListMyRequests", {});
+        print(f"[ex-restart] ListMyRequests after restart -> {mine}");
+        assert len(mine) == 1, mine;
+        replies = mine[0]["replies"] as list[dict[str, any]];
+        assert len(replies) == 1, f"reply lost across restart: {mine}";
+        assert str(replies[0]["_jac_id"]) == reply_id, replies;
+        assert str(replies[0]["status"]) == "pending", replies;
+        assert str(mine[0]["request"]["status"]) == "replied", mine;
+        assert set(replies[0].keys()) == {"_jac_id", "request_id", "from_handle", "match_count", "strength", "status"}, replies;
+
+        # B's own request (B did not create the Exchange) survives the restart too.
+        a_in = [str(r["_jac_id"]) for r in _ex_call(base2, a2, "ListIncomingRequests", {})];
+        assert b_req_id in a_in, f"B's request lost across restart: {a_in}";
+
+        # A new shared write in the NEW process must not hide the old ones.
+        c2 = _ex_register(base2, "rs_c@example.com");
+        _ex_call(base2, c2, "DevMakeCard", {"handle": "carol-rs", "name": "Carol"});
+        _ex_call(base2, c2, "ReplyToRequest", {"request_id": req_id});
+        mine2 = _ex_call(base2, a2, "ListMyRequests", {});
+        assert len(mine2) == 1 and len(list(mine2[0]["replies"])) == 2, f"expected B's and C's replies: {mine2}";
+
+        # Finish the handshake across the restart: B approves, opts in, reveals; A claims.
+        b2 = _ex_login(base2, "rs_b@example.com");
+        assert _ex_call(base2, b2, "ApproveReply", {"reply_id": reply_id})[0]["status"] == "approved";
+        assert _ex_call(base2, b2, "OptIn", {"reply_id": reply_id})[0]["reply"]["status"] == "opted_in";
+        rl = _ex_call(base2, b2, "Reveal", {"reply_id": reply_id})[0];
+        assert str(rl["reply"]["status"]) == "revealed", rl;
+        assert _err(_ex_call(base2, c2, "ClaimReveal", {"reply_id": reply_id})) == "forbidden";
+        cr = _ex_call(base2, a2, "ClaimReveal", {"reply_id": reply_id})[0];
+        assert str(cr["person"]["name"]) == "Priya Rao", cr;
+        assert str(cr["card"]["handle"]) == str(rl["revealed_card_handle"]), cr;
+    } finally {
+        if proc1 is not None { _ex_kill(proc1); }
+        if proc2 is not None { _ex_kill(proc2); }
         shutil.rmtree(tmp_dir, ignore_errors=True);
     }
 }
