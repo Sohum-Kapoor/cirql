@@ -133,6 +133,27 @@ def _restore_model(orig: any) {
     }
 }
 
+"""Make exchange.draft_intro raise so ClaimReveal uses intro_template; the
+test must not depend on whatever a live model writes (a .env in the cwd
+makes byLLM reachable in some runs)."""
+def _stub_draft_fails() -> any {
+    mod = sys.modules.get("exchange");
+    assert mod is not None, "exchange module not loaded in-process";
+    orig = getattr(mod, "draft_intro");
+    def fake(*args: any) -> str {
+        raise RuntimeError("model stubbed out in tests");
+    }
+    setattr(mod, "draft_intro", fake);
+    return orig;
+}
+
+def _restore_draft(orig: any) {
+    mod = sys.modules.get("exchange");
+    if mod is not None and orig is not None {
+        setattr(mod, "draft_intro", orig);
+    }
+}
+
 test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
     tmp_dir = tempfile.mkdtemp();
     client: (JacTestClient | None) = None;
@@ -234,7 +255,13 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
         b_people_before = _run(cl, b, "ListPeople", {});
 
         # A claims.
-        claimed = _run(cl, a, "ClaimReveal", {"reply_id": reply_id});
+        # Model-free: force ClaimReveal's draft onto its deterministic template.
+        orig_draft = _stub_draft_fails();
+        try {
+            claimed = _run(cl, a, "ClaimReveal", {"reply_id": reply_id});
+        } finally {
+            _restore_draft(orig_draft);
+        }
         a_reports.extend(claimed);
         print(f"[ex] ClaimReveal -> {claimed}");
         cr = claimed[0];
