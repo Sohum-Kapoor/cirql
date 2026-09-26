@@ -401,13 +401,16 @@ def dedup_facts(kept: list[dict[str, str]], existing_texts: list[str], existing_
 Never fetches a source Google labels as LinkedIn (AGENTS.md: no automated
 fetching from platforms whose terms forbid it) - the redirect uri is kept."""
 def resolve_url(uri: str, title: str = "") -> str {
-    if "linkedin" in title.lower() {
+    if "linkedin" in title.lower() or "linkedin" in uri.lower() {
+        return uri;
+    }
+    if not (uri.startswith("http://") or uri.startswith("https://")) {
         return uri;
     }
     try {
         resp = requests.head(uri, allow_redirects=True, timeout=5);
         final = str(resp.url or "");
-        if len(final) > 0 {
+        if len(final) > 0 and (final.startswith("http://") or final.startswith("https://")) and "linkedin" not in final.lower() {
             return final;
         }
     } except Exception {
@@ -513,7 +516,7 @@ walker:priv Enrich {
         try {
             resp = call_gemini(build_prompt(ctx, cap), api_key);
         } except Exception as e {
-            out["error"] = str(e)[:200];
+            out["error"] = str(e).replace(api_key, "[redacted]")[:200];
             report out;
             disengage;
         }
@@ -529,14 +532,6 @@ walker:priv Enrich {
         kept = (ruled["kept"] as list[dict[str, str]])[:cap];
         rejected = list(ruled["rejected"] as list[dict[str, str]]);
 
-        resolves = 0;
-        for f in kept {
-            if resolves < MAX_RESOLVES {
-                f["uri"] = resolve_url(f["uri"], f["title"]);
-                resolves += 1;
-            }
-        }
-
         deduped = dedup_facts(kept, ctx["all_fact_texts"] as list[str], ctx["fact_keys"] as list[str]);
         final = deduped["kept"] as list[dict[str, str]];
         rejected += deduped["rejected"] as list[dict[str, str]];
@@ -545,6 +540,14 @@ walker:priv Enrich {
         if len(final) == 0 {
             report out;
             disengage;
+        }
+
+        resolves = 0;
+        for f in final {
+            if resolves < MAX_RESOLVES {
+                f["uri"] = resolve_url(f["uri"], f["title"]);
+                resolves += 1;
+            }
         }
 
         now = datetime.now().isoformat();
