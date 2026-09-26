@@ -36,7 +36,7 @@ and, once a server is up, a `jac browse` snapshot or screenshot.
 
 ## Standing rules (read `AGENTS.md`, `CLAUDE.md`, `docs/PRD.md` §1–§7 and §11, `contracts/walkers.md` now)
 
-- One Linear issue In Progress at a time; claim it first. Branch `jl/<KEY>-<slug>`;
+- One Linear issue In Progress at a time; claim it first. Branch `jc/<KEY>-<slug>`;
   commits start with the key; merge your own PR after `jac-reviewer` has no MUST-FIX
   and `jac check main.jac` is clean. Branches live at most three hours.
 - Mobile-first: phone width first; the graph view is a website-first surface.
@@ -45,6 +45,26 @@ and, once a server is up, a `jac browse` snapshot or screenshot.
 - Contract changes go through SK: append to `contracts/walkers.md` and comment on
   SOH-160; never edit `*.sv.jac`.
 - Never commit `.env`, `seed/seed.real.json`, `.jac/`, `android/`, `ios/`.
+
+## Linear is the shared status board — post to it, not just to Jesse
+
+SK's orchestrator reads the board to know what you are doing; it never sees your
+terminal. So, via `linear-pm` (its tools are `mcp__claude_ai_Linear__*`):
+
+- **Start of every issue:** move it to In Progress. **End:** move it to Done with a
+  three-line comment (verified: command + result / next / blockers) and the PR link.
+- **Every ~45 minutes while an issue is open**, or at any blocker, post a one-line
+  progress comment on it. At each checkpoint (C1 18:30, 9 PM gate, C2 midnight,
+  freeze 02:00, partial 9:00) post the five-line status on the checkpoint issue too.
+- Anything that needs SK (a contract shape, a walker change, a schema field, a
+  hosting decision) is a comment on the relevant `owner:A` issue or on SOH-160,
+  starting with **"Needs A:"**. Do not rely on Jesse relaying it by voice.
+- Hosting decision → comment on SOH-162. UI-kit / dependency changes to `jac.toml`
+  → comment on SOH-160 (announce). Mock-vs-live switch flips → comment on the screen's issue.
+- If the Linear tools are missing on this machine, stop and tell Jesse to connect
+  the Linear connector for Claude Code (claude.ai → Settings → Connectors → Linear,
+  or `claude mcp add`), then retry. Until then, hand Jesse the exact comment text to
+  paste and say so out loud; never silently skip the board.
 
 ## Startup checklist — in order, reporting each line to Jesse
 
