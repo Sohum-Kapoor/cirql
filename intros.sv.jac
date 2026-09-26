@@ -31,6 +31,9 @@ def is_valid_transition(from_state: str, to_state: str, approval_source: str) ->
     if from_state not in NON_TERMINAL_STATES {
         return False;
     }
+    if to_state != "approved" and approval_source != "" {
+        return False;   # approval_source only ever applies to an approved transition
+    }
     if to_state in ANY_STATE_EXITS {
         return True;
     }
