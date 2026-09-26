@@ -166,6 +166,7 @@ def empty_rows() -> list[dict] {
 
 def:pub app -> JsxElement {
     has view: str = "auth",
+        open_person_id: str = "",
         email: str = "",
         password: str = "",
         status: str = "",
@@ -333,6 +334,8 @@ def:pub app -> JsxElement {
                     onRefresh={refresh}
                     onLogout={logout}
                     onCapture={open_capture}
+                    open_person_id={open_person_id}
+                    onPersonOpened={lambda { open_person_id = ""; }}
                     onSwitchGoal={switch_goal}
                     onCreateGoal={create_goal}
                     onCloseGoal={end_goal}
@@ -407,6 +410,7 @@ def:pub app -> JsxElement {
                     onDone={capture_done}
                     onRetry={capture_retry}
                     onResult={set_cap_result}
+                    onOpenPerson={lambda pid: str { capture_done(); open_person_id = pid; }}
                 />
             } else {
                 <StepIndicator key="indicator" step={step} total={4} label={STEP_LABELS[step - 1]} />
