@@ -44,7 +44,7 @@ glob RANK_PREVIEW: int = 5;
 
 """One tappable row of the People list -> the person sheet. (A small component:
 lambda handlers inside a JSX `for` miscompile.)"""
-def:pub PersonRow(person: any, onOpen: Callable[[str], None]) -> JsxElement {
+def:pub PeopleRow(person: any, onOpen: Callable[[str], None]) -> JsxElement {
     pid: str = (person["_jac_id"] or "") as str;
     sub: str = join_with([s for s in [person["title"], person["org"]] if s], ", ");
 
@@ -331,7 +331,7 @@ def:pub HomeView(
                             } else {
                                 <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">
                                     {for (idx, p) in enumerate(known) {
-                                        <PersonRow key={((p["_jac_id"] or "") as str) or str(idx)} person={p} onOpen={open_person} />
+                                        <PeopleRow key={((p["_jac_id"] or "") as str) or str(idx)} person={p} onOpen={open_person} />
                                     }}
                                 </ul>
                             }}
