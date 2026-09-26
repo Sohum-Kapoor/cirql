@@ -26,6 +26,7 @@ as `Person.status == "proposed"` with `Knows.status == "proposed"`):
 
 import from datetime { datetime }
 import from schema { Me, Person, Fact, Intent, Goal, Knows, Reported, HasGoal, FactAbout, IntentAbout, Mentions, AssertsIntent, RelevantTo }
+import from llm { llm }
 
 # ---------------------------------------------------------------- LLM batch
 

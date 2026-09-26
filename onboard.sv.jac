@@ -7,14 +7,13 @@ Card in place and never duplicates an Interest with the same topic, a Goal with
 the same text, or an Intent with the same (kind, lowercase text).
 """
 
-import from byllm.lib { Model }
+import from llm { llm }
 import from datetime { datetime }
 import from schema {
     Me, Note, Interest, Goal, Intent, Card,
     Owns, HasInterest, HasGoal, HasIntent, AssertsIntent
 }
 
-glob llm: Model = Model(model_name="gemini/gemini-3.8-flash");
 
 # ---------------------------------------------------------------- extraction
 
