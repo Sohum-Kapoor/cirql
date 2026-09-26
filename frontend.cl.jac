@@ -11,13 +11,19 @@ source chips + inline edit/remove, SOH-209) -> home. Voice (SOH-168): record ->
 Transcribe -> editable transcript -> Capture(audio_ref). Person / promise edits
 that no walker can write yet are kept on this device (lib/local_edits) and
 overlaid on the people list and rankings at render time.
-home = goal picker (ListGoals / SetGoal / CloseGoal) + GoalRank for the active
-goal, cached per goal_id for the session (SOH-170) + people list.
-Exchange (SOH-172): home also shows GapFinder alerts for the active goal (cached
-per goal_id, run after GoalRank because it reads the RelevantTo edges), "Your
-asks" (ListMyRequests) and "Asks from friends" (ListIncomingRequests).
+home is three tabs under a bottom tab bar (SOH-213), the tab remembered for the
+session (lib/session):
+  Home   = goal picker (ListGoals / SetGoal / CloseGoal) + GoalRank for the active
+           goal, cached per goal_id for the session (SOH-170), + GapFinder alerts
+           (cached per goal_id, run after GoalRank: it reads the RelevantTo edges).
+  Asks   = "Needs your OK" (ListIncomingRequests) + "Your asks" (ListMyRequests);
+           the tab badge counts friends' asks waiting on you + unseen reveals.
+  People = people list / graph / Today.
+Capture opens on Voice by default; the last-used capture mode is remembered.
+Deep links: Capture -> Done lands on Home; back from a request / ask lands on Asks.
 home -> request (requester's detail + reveal card) | ask (friend's approval card).
-Polling (5 s) only while home / a request detail is on screen; see Poller.
+Polling only while home / a request detail is on screen (see Poller): every 5 s
+on the Asks tab, every 15 s on the other tabs (only the Asks badge needs it).
 TODO(SOH-172): Matchmaker fallback second act skipped — the 9 PM gate passed.
 """
 
@@ -38,6 +44,8 @@ import from .components.capture.CaptureForm { CaptureForm }
 import from .components.capture.Review { Review }
 import from .components.capture.guided { empty_guided, guided_text, how_met_line, remember_met, guided_names }
 import from .lib.local_edits { local_view, local_rows }
+import from react { useEffect }
+import from .lib.session { session_tab, save_tab, session_cap_kind, save_cap_kind, clear_session_ui }
 import from .components.api { onboard_me, capture, goal_rank, list_people, list_goals, set_goal, close_goal, mocks_on }
 import from .components.api {
     gap_finder, publish_card, post_request, list_my_requests, decline_request, claim_reveal,
@@ -46,7 +54,7 @@ import from .components.api {
 import from .components.mocks.exchange { mock_as_friend, mock_set_as_friend }
 import from .components.exchange.common { Poller, req_active }
 import from .components.exchange.Requests { RequestDetail }
-import from .components.exchange.Inbox { ApprovalView }
+import from .components.exchange.Inbox { ApprovalView, asks_needing_you }
 import from .lib.text { join_lines }
 
 sv import from walkers { GetMe }
@@ -186,7 +194,7 @@ def:pub app -> JsxElement {
         rank_pending: bool = False,
         rank_error: str = "",
         cap_text: str = "",
-        cap_kind: str = "guided",
+        cap_kind: str = session_cap_kind(),
         cap_guided: dict = empty_guided(),
         cap_voice: dict = empty_voice(),
         cap_how_met: str = "",
@@ -214,7 +222,9 @@ def:pub app -> JsxElement {
         req_error: str = "",
         me_name: str = "",
         me_about: str = "",
-        as_friend: bool = False;
+        as_friend: bool = False,
+        tab: str = session_tab(),
+        seen_reveals: list[str] = [];
 
     can with entry {
         if jacIsLoggedIn() {
@@ -269,6 +279,9 @@ def:pub app -> JsxElement {
     async def friend_decline(rid: str) -> None;
     def back_home -> None;
     def toggle_as_friend -> None;
+    def set_tab(next_tab: str) -> None;
+    def set_cap_kind(kind: str) -> None;
+    def mark_seen(ids: list[str]) -> None;
 
     goals: list[dict] = (onboard["goals"] or []) as list[dict];
     interests: list[dict] = (onboard["interests"] or []) as list[dict];
@@ -299,7 +312,21 @@ def:pub app -> JsxElement {
         }
     }
     open_ask_entry: dict = ((ex["friend"] or {})[open_ask_id] or {}) as dict if open_ask_id else {};
+    unseen_reveals: list[str] = [];
+    for rid in Object.keys(ex_claims) {  # jac:ignore[W2001]
+        if (ex_claims[rid] or {})["card"] and rid not in seen_reveals {
+            unseen_reveals = unseen_reveals + [rid];
+        }
+    }
+    asks_badge: int = asks_needing_you((ex["incoming"] or []) as list[dict], (ex["friend"] or {}) as dict) + len(unseen_reveals);
+    # A reveal is "seen" once the Asks tab is on screen.
+    useEffect(lambda {
+        if view == "home" and tab == "asks" and len(unseen_reveals) > 0 {
+            mark_seen(unseen_reveals);
+        }
+    }, [view, tab, len(unseen_reveals)]);
     poll_home_on: bool = view == "home";
+    poll_home_ms: int = 5000 if tab == "asks" else 15000;
     poll_req_on: bool = view == "request" and mine_wants_poll(ex_mine, ex_claims);
 
     return
@@ -340,6 +367,9 @@ def:pub app -> JsxElement {
                     onCreateGoal={create_goal}
                     onCloseGoal={end_goal}
                     onRerank={rerank}
+                    tab={tab}
+                    onTab={set_tab}
+                    asks_badge={asks_badge}
                     gaps={home_gaps}
                     gaps_pending={True if home_goal_id and gap_pending_map[home_goal_id] else False}
                     gaps_error={((gap_error_map[home_goal_id] or "") as str) if home_goal_id else ""}
@@ -391,7 +421,7 @@ def:pub app -> JsxElement {
                     voice={cap_voice}
                     pending={cap_pending}
                     error={cap_error}
-                    onModeChange={lambda v: str { cap_kind = v; cap_error = ""; }}
+                    onModeChange={set_cap_kind}
                     onTextChange={lambda v: str { cap_text = v; }}
                     onGuidedField={set_guided}
                     onVoice={lambda v: dict { cap_voice = v; }}
@@ -455,7 +485,7 @@ def:pub app -> JsxElement {
                     />
                 }
             }}
-            {poll_home_on and <Poller key="poll-home" ms={5000} onTick={poll_home} />}
+            {poll_home_on and <Poller key={"poll-home-" + str(poll_home_ms)} ms={poll_home_ms} onTick={poll_home} />}
             {poll_req_on and <Poller key="poll-request" ms={5000} onTick={poll_request} />}
         </main>;
 }

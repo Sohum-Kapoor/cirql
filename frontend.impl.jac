@@ -62,7 +62,10 @@ impl app.logout -> None {
     rank_rows = [];
     rank_error = "";
     cap_text = "";
-    cap_kind = "guided";
+    cap_kind = "voice";
+    tab = "home";
+    seen_reveals = [];
+    clear_session_ui();
     cap_guided = empty_guided();
     cap_voice = empty_voice();
     cap_how_met = "";
@@ -248,6 +251,7 @@ impl app.start_recall -> None {
 }
 
 impl app.finish -> None {
+    set_tab("home");
     view = "home";
     refresh();
     load_goals();
@@ -336,6 +340,7 @@ impl app.capture_done -> None {
     cap_how_met = "";
     cap_note = "";
     cap_result = {};
+    set_tab("home");
     view = "home";
     refresh();
     for k in list(RANK_ROWS.keys()) {
@@ -887,7 +892,9 @@ impl app.friend_decline(rid: str) -> None {
     publish_ex();
 }
 
+"""Back from a request / an ask -> the Asks tab they were opened from."""
 impl app.back_home -> None {
+    set_tab("asks");
     view = "home";
     open_req_id = "";
     open_ask_id = "";
@@ -903,4 +910,24 @@ impl app.toggle_as_friend -> None {
     mock_set_as_friend(on);
     as_friend = on;
     load_incoming();
+}
+
+# ---------------------------------------------------------------- tabs (SOH-213)
+
+"""Home · Asks · People, remembered for the session (sessionStorage)."""
+impl app.set_tab(next_tab: str) -> None {
+    tab = next_tab;
+    save_tab(next_tab);
+}
+
+"""Capture mode (voice | guided | paste), remembered for the session."""
+impl app.set_cap_kind(kind: str) -> None {
+    cap_kind = kind;
+    cap_error = "";
+    save_cap_kind(kind);
+}
+
+"""Reveals shown on the Asks tab stop counting toward its badge."""
+impl app.mark_seen(ids: list[str]) -> None {
+    seen_reveals = seen_reveals + [i for i in ids if i not in seen_reveals];
 }

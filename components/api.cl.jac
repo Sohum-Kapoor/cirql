@@ -81,10 +81,10 @@ async def:pub onboard_me(about: str) -> dict {
     return out;
 }
 
-"""Capture(text, kind, audio_ref) -> { note_id, people, facts, intents, promises, ties }.
+"""Capture(text, kind, audio_ref, how_met) -> { note_id, people, facts, intents, promises, ties }.
 `audio_ref` is Transcribe's (voice capture); "" for typed notes.
-TODO(SOH-166): `how_met` is not a Capture field yet (Needs A) — it is NOT sent; the
-composed guided text already carries it ("Met X at a networking event — …")."""
+`how_met` (SOH-166, live): the Guided form's "how you met" line; when set, every NEW
+Knows edge this capture creates carries it. Voice / Paste send ""."""
 async def:pub capture(text: str, kind: str, audio_ref: str = "", how_met: str = "") -> dict {
     out: dict = {};
     if mocks_on() {
@@ -92,7 +92,7 @@ async def:pub capture(text: str, kind: str, audio_ref: str = "", how_met: str = 
         out = mock_capture(text, kind);
         return out;
     }
-    result = root spawn Capture(text=text, kind=kind, audio_ref=audio_ref);
+    result = root spawn Capture(text=text, kind=kind, audio_ref=audio_ref, how_met=how_met);
     if not result.reports {
         raise Exception("Capture returned no report");
     }

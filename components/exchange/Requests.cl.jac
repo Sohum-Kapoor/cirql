@@ -227,7 +227,7 @@ def:pub RequestDetail(
             <header className="-ml-2 flex items-center gap-2">
                 <Button size="sm" variant="ghost" onClick={handle_back}>
                     <ChevronLeftIcon />
-                    Home
+                    Asks
                 </Button>
             </header>
             {if not rid {
