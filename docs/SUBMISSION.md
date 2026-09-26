@@ -72,7 +72,7 @@ We do not say "private", "secure", or "encrypted". Roots and grants do not encry
 
 ## What we know is not done
 
-An adversarial code review (a different model family from the one that wrote the walkers) found these, and they are still true: a reveal copies up to three facts the friend captured about the contact, and the contact's tap in the demo stands in for a consent we do not yet collect from them; a merge and its undo do not track which edges already existed; a corrected fact is not re-scored in an open Exchange; a single `jac start` process serves everyone, so concurrent model calls queue. Each is listed so a judge does not have to find it.
+An adversarial code review (a different model family from the one that wrote the walkers) found these, and they are still true: a reveal copies up to three facts the friend captured about the contact, and the contact's tap in the demo stands in for a consent we do not yet collect from them; a merge and its undo do not track which edges already existed; a corrected fact is not re-scored in an open Exchange; a single `jac start` process serves everyone, so concurrent model calls queue. There is no friend list this weekend: an open request on the Exchange is visible to every account's agent (still only a need, one line and a handle), so "asks from friends" means "asks from anyone on Cirql" until the exchange is gated by card handshakes. Each is listed so a judge does not have to find it.
 
 ## What's next (roadmap, not built)
 
