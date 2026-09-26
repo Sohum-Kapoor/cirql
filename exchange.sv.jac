@@ -18,7 +18,7 @@ Nothing sends. Nothing reads `Knows.last_contact` to lower anything.
 
 import from jaclang { JacRuntime as Jac }
 import from uuid { UUID }
-import from byllm.lib { Model }
+import from llm { llm }
 import from datetime { datetime, timedelta }
 import from schema {
     Me, Person, Knows, Fact, FactAbout, Intent, IntentAbout, Note, Asserts,
@@ -28,7 +28,6 @@ import from schema {
 import from scoring { score_against_need }
 import from onboard { handle_from_name, jid_suffix }
 
-glob llm: Model = Model(model_name="gemini/gemini-3.8-flash");
 
 # ---------------------------------------------------------------- LLM (ClaimReveal only)
 
