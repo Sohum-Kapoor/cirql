@@ -340,10 +340,11 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction) -> dict[str, any]
 walker:priv Capture {
     has text: str;
     has kind: str = "debrief";
+    has audio_ref: str = "";        # from Transcribe; stored on the Note as the receipt to the audio
     has reports: list[dict[str, any]] = [];
 
     can go with Root entry {
-        note = (root ++> Note(text=self.text, kind=self.kind, captured_at=datetime.now().isoformat()))[0];
+        note = (root ++> Note(text=self.text, kind=self.kind, captured_at=datetime.now().isoformat(), audio_ref=self.audio_ref))[0];
 
         existing_me = [root --> [?:Me]];
         if len(existing_me) > 0 {
