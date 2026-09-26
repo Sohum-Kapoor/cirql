@@ -34,6 +34,7 @@ import from serendipity { Serendipity }
 import from vision { CaptureImage }
 import from person { PersonDetail, Brief }
 import from enrich { Enrich }
+import from export { ExportGraph }
 
 # Client-side UI
 cl {
