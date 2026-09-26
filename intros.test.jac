@@ -39,6 +39,12 @@ test "is_valid_transition: the deterministic forward map, any-state exits, and s
 
     # skipping ahead in the forward map is rejected
     assert not is_valid_transition("proposed", "approved", "in_app");
+
+    # approval_source only ever applies to an approved transition; a non-empty
+    # approval_source on any other transition is rejected, even a valid one
+    assert not is_valid_transition("proposed", "reviewed", "in_app");
+    assert not is_valid_transition("proposed", "declined", "offline");
+    assert not is_valid_transition("reviewed", "awaiting_permission", "bogus");
 }
 
 test "AdvanceIntroduction: full happy path, then sent is rejected" {
@@ -89,6 +95,19 @@ test "AdvanceIntroduction: declined is a terminal state; reviewed after it is re
     assert not rep2["ok"];
     assert rep2["error"] == "invalid_transition";
     assert rep2["from"] == "declined";
+}
+
+test "AdvanceIntroduction: a stray approval_source on a non-approved transition is rejected" {
+    intro = (root ++> Introduction(state="proposed"))[0];
+    iid = jid(intro);
+
+    r = root spawn AdvanceIntroduction(intro_id=iid, to_state="reviewed", approval_source="in_app");
+    rep = r.reports[0];
+    assert not rep["ok"];
+    assert rep["error"] == "invalid_transition";
+    assert rep["from"] == "proposed";
+    assert rep["to"] == "reviewed";
+    assert intro.state == "proposed";   # never mutated
 }
 
 test "AdvanceIntroduction: unknown id reports not_found" {
