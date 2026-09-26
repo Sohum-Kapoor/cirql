@@ -30,6 +30,7 @@ import from merge { ProposeMerges, MergePeople, UndoMerge }
 import from plan { GamePlan }
 import from health { NetworkHealth }
 import from noted { NotedCard, ApplyCorrection }
+import from serendipity { Serendipity }
 
 # Client-side UI
 cl {
