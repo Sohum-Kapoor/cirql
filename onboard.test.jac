@@ -5,7 +5,7 @@ here. The LLM extraction path itself is proven live via curl (see the SOH-164
 deliverable), not by a test.
 """
 
-import from onboard { OnboardExtraction, handle_from_name, find_by_topic, find_goal_by_text, find_intent }
+import from onboard { OnboardExtraction, handle_from_name, clean_list, jid_suffix, find_by_topic, find_goal_by_text, find_intent }
 
 test "OnboardExtraction obj holds the fields the walker copies out" {
     extraction = OnboardExtraction(
@@ -25,8 +25,20 @@ test "OnboardExtraction obj holds the fields the walker copies out" {
 
 test "handle_from_name slugifies deterministically" {
     assert handle_from_name("Sam") == "sam";
-    assert handle_from_name("Sam T. Builder") == "sam-t--builder";
+    assert handle_from_name("Sam T. Builder") == "sam-t-builder";
     assert handle_from_name("me") == "me";
+    assert handle_from_name("!!!") == "me";
+    assert handle_from_name("--Sam--") == "sam";
+}
+
+test "clean_list strips, drops empties, dedupes case-insensitively in order" {
+    out = clean_list([" Robotics ", "robotics", "", "  ", "Climate Tech", "climate tech", "AI"]);
+    assert out == ["Robotics", "Climate Tech", "AI"];
+}
+
+test "jid_suffix lowercases the last 6 alnum chars" {
+    assert jid_suffix("b859ebb2d4b34d308478bf4bf17812d9") == "7812d9";
+    assert jid_suffix("ABC123") == "abc123";
 }
 
 test "find_by_topic, find_goal_by_text, find_intent dedupe helpers" {

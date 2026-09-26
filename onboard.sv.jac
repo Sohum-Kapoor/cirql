@@ -43,14 +43,50 @@ def extract_onboarding(about: str) -> OnboardExtraction by llm(temperature=0.2);
 
 def handle_from_name(name: str) -> str {
     slug = "";
+    prev_dash = False;
     for ch in name.lower() {
         if ch.isalnum() {
             slug += ch;
-        } else {
+            prev_dash = False;
+        } elif not prev_dash {
             slug += "-";
+            prev_dash = True;
         }
     }
+    slug = slug.strip("-");
+    if slug == "" {
+        return "me";
+    }
     return slug;
+}
+
+def clean_list(xs: list[str]) -> list[str] {
+    seen: list[str] = [];
+    out: list[str] = [];
+    for x in xs {
+        t = x.strip();
+        if t == "" {
+            continue;
+        }
+        key = t.lower();
+        if key in seen {
+            continue;
+        }
+        seen.append(key);
+        out.append(t);
+    }
+    return out;
+}
+
+def jid_suffix(j: str) -> str {
+    tail = j[-6:].lower();
+    out = "";
+    for ch in tail {
+        if ch.isalnum() {
+            out += ch;
+        }
+    }
+    return out;
 }
 
 def find_by_topic(items: list[Interest], topic: str) -> Interest | None {
@@ -109,23 +145,27 @@ walker:priv OnboardMe {
             if extraction.name and extraction.name.strip() {
                 name = extraction.name.strip();
             }
-            interest_topics = extraction.interests;
-            goal_texts = extraction.goals;
-            needs = extraction.needs;
-            offers = extraction.offers;
-            headline = extraction.headline;
-            card_about = extraction.card_about;
-            links = extraction.links;
+            interest_topics = clean_list(extraction.interests or []);
+            goal_texts = clean_list(extraction.goals or []);
+            needs = clean_list(extraction.needs or []);
+            offers = clean_list(extraction.offers or []);
+            links = clean_list(extraction.links or []);
+            headline = (extraction.headline or "").strip();
+            card_about = (extraction.card_about or "").strip();
             extracted_ok = True;
         } except Exception {
             extracted_ok = False;
         }
 
-        # 3. Get-or-create Me.
+        # 3. Get-or-create Me. On rerun, always refresh about; refresh name too
+        # when this call's extraction succeeded and found a real name.
         existing_me = [root --> [?:Me]];
         if existing_me {
             me = existing_me[0];
             me.about = self.about;
+            if extracted_ok and name and name.lower() != "me" {
+                me.name = name;
+            }
         } else {
             me = (root ++> Me(name=name, about=self.about))[0];
         }
@@ -179,6 +219,7 @@ walker:priv OnboardMe {
             }
             found_n = find_intent(existing_intents, "need", nt.lower());
             if found_n {
+                note +>:AssertsIntent(span=nt):+> found_n;
                 if found_n not in intents {
                     intents.append(found_n);
                 }
@@ -196,6 +237,7 @@ walker:priv OnboardMe {
             }
             found_o = find_intent(existing_intents, "offer", ot.lower());
             if found_o {
+                note +>:AssertsIntent(span=ot):+> found_o;
                 if found_o not in intents {
                     intents.append(found_o);
                 }
@@ -207,12 +249,21 @@ walker:priv OnboardMe {
             }
         }
 
-        # 5. Get-or-create the Card; update in place on rerun.
-        existing_card = [me ->:Owns:->];
+        # Extraction failed: report the graph's existing state, not empty lists.
+        if not extracted_ok {
+            interests = [me ->:HasInterest:->];
+            goals = [me ->:HasGoal:->];
+            intents = [me ->:HasIntent:->];
+        }
+
+        # 5. Get-or-create the Card; update in place on rerun. Handle is stable
+        # once assigned and unique across users (name slug + jid suffix).
+        existing_card = [me ->:Owns:-> [?:Card]];
         if existing_card {
             card = existing_card[0];
         } else {
-            card = (me +>:Owns:+> Card(handle=handle_from_name(me.name)))[0];
+            handle = handle_from_name(me.name) + "-" + jid_suffix(jid(me));
+            card = (me +>:Owns:+> Card(handle=handle))[0];
         }
         if extracted_ok {
             card.headline = headline;
