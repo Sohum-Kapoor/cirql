@@ -298,3 +298,25 @@ test "exchange: expired and declined requests are not incoming" {
         shutil.rmtree(tmp_dir, ignore_errors=True);
     }
 }
+
+test "exchange: a request whose from_handle equals the friend's handle still reaches the friend" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_ex_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "ex_a4@example.com");
+        b = _reg(cl, "ex_b4@example.com");
+        # Handles are self-chosen: A picks B's handle.
+        _run(cl, a, "DevMakeCard", {"handle": "same-handle", "name": "Alice"});
+        _run(cl, b, "DevMakeCard", {"handle": "same-handle", "name": "Bob"});
+        req_id = str(_run(cl, a, "PostRequest", {"need": "a mentor", "about_line": ""})[0]["_jac_id"]);
+        b_in = [str(r["_jac_id"]) for r in _run(cl, b, "ListIncomingRequests", {})];
+        a_in = [str(r["_jac_id"]) for r in _run(cl, a, "ListIncomingRequests", {})];
+        assert req_id in b_in, f"same-handle request hidden from friend: {b_in}";
+        assert req_id not in a_in, f"own request listed as incoming: {a_in}";
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}

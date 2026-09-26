@@ -110,6 +110,23 @@ def get_exchange() -> Exchange {
     return ex;
 }
 
+"""Every IntroRequest under EVERY Exchange in root.shared, deduped by jid.
+get_exchange() can race and leave two Exchanges; readers must see both."""
+def all_requests() -> list[IntroRequest] {
+    seen: list[str] = [];
+    out: list[IntroRequest] = [];
+    for ex in [root.shared --> [?:Exchange]] {
+        for req in [ex ->:Posted:-> [?:IntroRequest]] {
+            k = jid(req);
+            if k not in seen {
+                seen.append(k);
+                out.append(req);
+            }
+        }
+    }
+    return out;
+}
+
 """jobj that never raises; resolves ANY node and NEVER authorizes."""
 def load(some_id: str) -> object {
     try {
@@ -218,20 +235,18 @@ walker:priv ListMyRequests {
     can go with Root entry {
         me_root = jid(root);
         now = now_iso();
-        for ex in [root.shared --> [?:Exchange]] {
-            for req in [ex ->:Posted:-> [?:IntroRequest]] {
-                if owner_root(req) != me_root {
-                    continue;
-                }
-                replies: list[IntroReply] = [];
-                for r in [req <-:RepliedTo:<-] {
-                    if isinstance(r, IntroReply) and readable(r) {
-                        replies.append(r);
-                    }
-                }
-                req.status = derive_status(req, replies, now);
-                report {"request": req, "replies": [view(r) for r in replies]};
+        for req in all_requests() {
+            if owner_root(req) != me_root {
+                continue;
             }
+            replies: list[IntroReply] = [];
+            for r in [req <-:RepliedTo:<-] {
+                if isinstance(r, IntroReply) and readable(r) {
+                    replies.append(r);
+                }
+            }
+            req.status = derive_status(req, replies, now);
+            report {"request": req, "replies": [view(r) for r in replies]};
         }
     }
 }
@@ -278,6 +293,10 @@ walker:priv ClaimReveal {
         rq = load(reply.request_id);
         if not isinstance(rq, IntroRequest) {
             report err("not_found");
+            return;
+        }
+        if not readable(rq) {
+            report err("forbidden");
             return;
         }
         req = rq as IntroRequest;
@@ -365,30 +384,21 @@ walker:priv ListIncomingRequests {
         me_root = jid(root);
         now = now_iso();
         answered = [r.request_id for r in [root --> [?:IntroReply]]];
-        c = my_card();
-        my_handle = "";
-        if c is not None {
-            my_handle = (c as Card).handle;
-        }
-        for ex in [root.shared --> [?:Exchange]] {
-            for req in [ex ->:Posted:-> [?:IntroRequest]] {
-                if owner_root(req) == me_root {
-                    continue;
-                }
-                if req.status == "declined" {
-                    continue;
-                }
-                if req.expires_at and req.expires_at < now {
-                    continue;
-                }
-                if jid(req) in answered {
-                    continue;
-                }
-                if my_handle and req.from_handle == my_handle {
-                    continue;
-                }
-                report req;
+        # Ownership is by root only; handles are self-chosen and spoofable.
+        for req in all_requests() {
+            if owner_root(req) == me_root {
+                continue;
             }
+            if req.status == "declined" {
+                continue;
+            }
+            if req.expires_at and req.expires_at < now {
+                continue;
+            }
+            if jid(req) in answered {
+                continue;
+            }
+            report req;
         }
     }
 }
@@ -552,6 +562,10 @@ walker:priv Reveal {
         rq = load(reply.request_id);
         if not isinstance(rq, IntroRequest) {
             report err("not_found");
+            return;
+        }
+        if not readable(rq) {
+            report err("forbidden");
             return;
         }
         req_owner = owner_root(rq);
