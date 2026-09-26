@@ -77,6 +77,7 @@ node Introduction {
 node Card {
     """Self-authored. The only object that leaves an account."""
     has handle: str;
+    has name: str = "";              # display name; set by OnboardMe from Me.name (SOH-205 needs it on reveal)
     has headline: str = "";
     has about: str = "";
     has looking_for: list[str] = [];
@@ -174,6 +175,7 @@ node IntroReply {
     has strength: str = "weak";      # strong | medium | weak  (the friend's relationship to the match)
     has status: str = "pending";     # pending | approved | opted_in | revealed | declined
     has match_person_id: str = "";   # stays on the FRIEND's root; never serialized to the requester
+    has revealed_card_id: str = "";  # jid of the Card granted to the requester at Reveal; read server-side by ClaimReveal only
 }
 
 edge Posted: Exchange --> IntroRequest {}
