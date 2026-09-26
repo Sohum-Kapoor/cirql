@@ -148,3 +148,13 @@ Reports one dict:
   edges: [{ from: str, to: str, kind: "knows"|"reported"|"relevant_to", label: str, strength: str }] }
 ```
 Nodes: Me, every `Knows` Person (capped at 300), and the chosen Goal (the given `goal_id` if it matches one of the caller's goals, else the caller's active goal, else no goal node at all — no goal, no `relevant_to` edges). Edges: every `Knows` (`label` = `how_met`, `strength` = `Knows.status`), every `Reported` between two included people (`label` = `"reported"`, `strength` = `""`), every `RelevantTo` into the chosen goal (`label`/`strength` copied off the edge).
+- 2026-09-26 — SOH-180 (server half of SOH-181): `ImportPeople`, `ConfirmPerson`, `SkipPerson` land in `imports.sv.jac`. LinkedIn export / phone contacts / vCard rows are parsed CLIENT-side into `list[dict]` rows; these walkers only ever see `{ name, org, title, how_met, email }` per row (unknown keys ignored, `email` stored nowhere this weekend).
+  - **`ImportPeople(rows: list[dict], source: str = "csv")`** reports one dict:
+    ```
+    { note_id: str,
+      imported: [{ person: Person, is_new: bool }],
+      skipped:  [{ name: str, reason: "empty_name"|"duplicate_in_batch"|"over_limit" }] }
+    ```
+    Get-or-creates Me; creates one `Note(kind="import", text=f"Imported {n} people from {source}")`. Per row with a non-empty stripped name: deduped within the batch by lowercase name (a later duplicate row is `skipped` with `"duplicate_in_batch"`, never creates a second person); reuses an existing `[me ->:Knows:->]` person with the same lowercase name (`is_new=false`, `status`/`org`/`title` never overwritten except filling org/title when they were empty) or creates `Person(status="proposed")` with a `Knows(status="proposed", how_met=how_met or f"imported from {source}", source_note=jid(note))` edge (`is_new=true`). Every imported person (new or reused) gets one `Note +>:Mentions(span=name):+> Person` edge from this call's note. Bounded at 500 rows per call; rows past the bound are `skipped` with reason `"over_limit"` and never touch the graph.
+  - **`ConfirmPerson(person_id: str, how_met: str = "")`** → `[Person]` with `status="confirmed"` and the matching `Knows` edge `status="confirmed"` (`how_met` overwritten only when non-empty); `[{ error: "not_found" }]` when `person_id` is not a `[me ->:Knows:->]` person of the caller.
+  - **`SkipPerson(person_id: str)`** → `["skipped"]`: only when the person is `status="proposed"` — deletes the caller's `Knows` edge to them, their `Mentions` edges, and the `Person` node. `[{ error: "not_proposed" }]` on a confirmed person; `[{ error: "not_found" }]` when unknown.
