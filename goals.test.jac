@@ -18,7 +18,7 @@ though `jac test` runs against one shared, persisted root (jac-testing) and
 earlier tests' nodes are still hanging around.
 """
 
-import from goals { Candidate, EvidenceItem, RankedItem, compute_days_since_contact, gather_evidence, collect_candidates, materialize, fallback_rank }
+import from goals { Candidate, EvidenceItem, RankedItem, compute_days_since_contact, gather_evidence, collect_candidates, materialize, fallback_rank, serve_cached, evidence_item_from_jid }
 import from schema { Me, Person, Goal, Fact, Intent, Note, Knows, Reported, FactAbout, IntentAbout, Mentions, AssertsIntent, RelevantTo }
 import from datetime { datetime }
 
@@ -289,4 +289,87 @@ test "fallback_rank (SOH-169): reason text, evidence-gated strength, opener name
     assert without_item.strength == "weak", "no intent/fact evidence -> weak";
     assert without_item.evidence_indices == [];
     assert without_item.opener == "", "no evidence -> no opener";
+}
+
+test "serve_cached (SOH-169 cache): serves the materialized ranking off hand-built RelevantTo edges, no LLM" {
+    now = datetime(2026, 9, 26, 12, 0, 0);
+    me = (root ++> Me(name="cache-test-me"))[0];
+    goal = (root ++> Goal(text="cache-test-goal", created_at=now.isoformat()))[0];
+
+    strong_p = (root ++> Person(name="Strong Cached P", status="confirmed"))[0];
+    weak_p = (root ++> Person(name="Weak Cached P", status="confirmed"))[0];
+
+    # strong_p is a known contact (Knows edge) 10 days before `now`
+    ten_days_ago = datetime(2026, 9, 16, 12, 0, 0).isoformat();
+    me +>:Knows(status="confirmed", last_contact=ten_days_ago):+> strong_p;
+
+    fact = (root ++> Fact(text="Cached fact evidence", observed_at="2026-09-20"))[0];
+    fact +>:FactAbout():+> strong_p;
+    note = (root ++> Note(text="Cached note evidence", kind="debrief", captured_at="2026-09-21T09:00:00"))[0];
+    note +>:Mentions():+> strong_p;
+
+    unknown_jid = "not-a-real-jid-0000";
+
+    strong_p +>:RelevantTo(
+        reason="strong reason",
+        strength="strong",
+        label="known",
+        evidence=[jid(fact), jid(note), unknown_jid],
+        opener="op-strong"
+    ):+> goal;
+    weak_p +>:RelevantTo(
+        reason="weak reason",
+        strength="weak",
+        label="cold",
+        evidence=[],
+        opener=""
+    ):+> goal;
+
+    results = serve_cached(goal, me);
+
+    assert len(results) == 2, f"expected one entry per RelevantTo edge, got {len(results)}";
+
+    strong_person = results[0]["person"] as Person;
+    weak_person = results[1]["person"] as Person;
+    assert strong_person.name == "Strong Cached P", "strong ranks first, same ordering as a fresh run";
+    assert weak_person.name == "Weak Cached P";
+
+    assert results[0]["cached"], "cached serve must mark every entry cached: true";
+    assert results[1]["cached"];
+    assert results[0]["strength"] == "strong";
+    assert results[0]["label"] == "known";
+    assert results[0]["reason"] == "strong reason";
+    assert results[0]["opener"] == "op-strong";
+    assert results[0]["days_since_contact"] == 10, "days_since_contact recomputed from the Knows edge as of today";
+    assert results[1]["days_since_contact"] is None, "no Knows edge from me -> no displayed days";
+
+    ev = results[0]["evidence"] as list[dict[str, any]];
+    assert len(ev) == 2, "unknown jid must be dropped, only the real Fact and Note survive";
+    kinds = [e["kind"] for e in ev];
+    assert "fact" in kinds and "note" in kinds;
+    for e in ev {
+        if e["kind"] == "fact" {
+            assert e["id"] == jid(fact);
+            assert e["span"] == "Cached fact evidence";
+            assert e["observed_at"] == "2026-09-20";
+        } elif e["kind"] == "note" {
+            assert e["id"] == jid(note);
+            assert e["span"] == "Cached note evidence";
+            assert e["observed_at"] == "2026-09-21T09:00:00";
+        }
+    }
+}
+
+test "serve_cached (SOH-169 cache): no RelevantTo edges -> empty, so GoalRank falls through to a fresh rank" {
+    now = datetime.now();
+    me = (root ++> Me(name="cache-empty-test-me"))[0];
+    goal = (root ++> Goal(text="cache-empty-test-goal", created_at=now.isoformat()))[0];
+
+    results = serve_cached(goal, me);
+    assert results == [], "no edges yet -> serve_cached must return [] so the walker falls through to the full rebuild";
+}
+
+test "evidence_item_from_jid (SOH-169 cache): unknown jid resolves to None" {
+    item = evidence_item_from_jid("definitely-not-a-real-jid");
+    assert item is None;
 }
