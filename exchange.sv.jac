@@ -225,14 +225,15 @@ def request_closed(req: IntroRequest) -> bool {
     return False;
 }
 
-"""request_closed() for the request a reply answers; False if it can't be read
-(the caller's own not_found/forbidden checks handle that)."""
+"""request_closed() for the request a reply answers; fails CLOSED (True) when
+the request cannot be loaded or read — a missing or revoked request must never
+let a transition proceed."""
 def reply_request_closed(reply: IntroReply) -> bool {
     rq = load(reply.request_id);
     if isinstance(rq, IntroRequest) and readable(rq) {
         return request_closed(rq as IntroRequest);
     }
-    return False;
+    return True;
 }
 
 """The requester's stored ClaimReveal for this reply (own root only)."""
