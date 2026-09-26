@@ -13,7 +13,7 @@ mocks (no Gemini budget spent) even though `USE_MOCKS` ships False.
 import from .mocks.onboard { mock_onboardme }
 import from .mocks.capture { mock_capture, mock_list_people }
 import from .mocks.edits { mock_transcribe, mock_apply_correction }
-import from ..lib.local_edits { local_put, local_view }
+import from ..lib.local_edits { local_put, local_view, local_drop }
 import from .mocks.goalrank { mock_goalrank }
 import from .mocks.goals { mock_list_goals, mock_set_goal, mock_close_goal }
 import from .mocks.exchange {
@@ -35,6 +35,7 @@ sv import from ..exchange {
 }
 sv import from ..voice { Transcribe }
 sv import from ..noted { ApplyCorrection }
+sv import from ..edits { UpdatePerson, UpdatePromise }
 sv import from ..schema { Person }
 # SOH-185 / SOH-192 (appended): graph view + badge photo capture.
 import from .mocks.graph { mock_graph_view }
@@ -42,11 +43,10 @@ import from .mocks.photo { mock_capture_image }
 sv import from ..reads { GraphView }
 sv import from ..vision { CaptureImage }
 
-# SOH-209: `UpdatePerson` / `UpdatePromise` are Needs A (SOH-166) — not on main.
-# While False, edits are kept on this device (lib/local_edits) and the UI says so.
-# TODO(SOH-166): flip to True and add the `root spawn` branch when they land.
-glob:pub UPDATE_PERSON_LIVE: bool = False,
-     UPDATE_PROMISE_LIVE: bool = False;
+# SOH-209: `UpdatePerson` / `UpdatePromise` are live (edits.sv.jac, SOH-166). Under
+# ?mock=1 edits stay on this device (lib/local_edits) and the UI says so.
+glob:pub UPDATE_PERSON_LIVE: bool = True,
+     UPDATE_PROMISE_LIVE: bool = True;
 
 glob USE_MOCKS: bool = False,
      MOCK_DELAY_MS: int = 600,
@@ -131,20 +131,41 @@ async def:pub apply_correction(person_id: str, text: str, replace_fact_id: str =
     return out;
 }
 
-"""UpdatePerson(person_id, name, org, title, how_met) -> { person, local }.
-TODO(SOH-166): Needs A — no walker yet; kept on this device (`local: True`)."""
+"""UpdatePerson(person_id, name, org, title, how_met) -> { person, local } | { error }.
+Live: only non-empty fields overwrite; `how_met` lands on the caller's Knows edge
+(not on the Person report, so it is also remembered locally for display)."""
 async def:pub update_person(person: dict, name: str, org: str, title: str, how_met: str) -> dict {
     pid: str = (person["_jac_id"] or "") as str;
-    local_put("person", pid, {"name": name, "org": org, "title": title, "how_met": how_met});
-    return {"person": local_view("person", person), "local": not UPDATE_PERSON_LIVE};
+    if mocks_on() or not UPDATE_PERSON_LIVE {
+        local_put("person", pid, {"name": name, "org": org, "title": title, "how_met": how_met});
+        return {"person": local_view("person", person), "local": True};
+    }
+    result = root spawn UpdatePerson(person_id=pid, name=name, org=org, title=title, how_met=how_met);
+    out: dict = _first(result, "UpdatePerson") as dict;
+    if out["error"] {
+        return out;
+    }
+    local_drop("person", pid);
+    if how_met {
+        local_put("person", pid, {"how_met": how_met});
+    }
+    return {"person": out, "local": False};
 }
 
-"""UpdatePromise(promise_id, text, due) -> { promise, local }.
-TODO(SOH-166): Needs A — no walker yet; kept on this device (`local: True`)."""
+"""UpdatePromise(promise_id, text, due) -> { promise, local } | { error }."""
 async def:pub update_promise(promise: dict, text: str, due: str) -> dict {
     prid: str = (promise["_jac_id"] or "") as str;
-    local_put("promise", prid, {"text": text, "due": due});
-    return {"promise": local_view("promise", promise), "local": not UPDATE_PROMISE_LIVE};
+    if mocks_on() or not UPDATE_PROMISE_LIVE {
+        local_put("promise", prid, {"text": text, "due": due});
+        return {"promise": local_view("promise", promise), "local": True};
+    }
+    result = root spawn UpdatePromise(promise_id=prid, text=text, due=due);
+    out: dict = _first(result, "UpdatePromise") as dict;
+    if out["error"] {
+        return out;
+    }
+    local_drop("promise", prid);
+    return {"promise": out, "local": False};
 }
 
 """GoalRank(goal_id) -> [{ person, label, strength, reason, evidence, days_since_contact, opener }]"""

@@ -583,6 +583,10 @@ def:pub Review(
             fail(key, "Couldn't save that — try again.");
             return;
         }
+        if out["error"] {
+            fail(key, "Couldn't save that — try again.");
+            return;
+        }
         new_row: dict = {**row};
         new_row["person"] = out["person"];
         new_row["how_met"] = how_met;
@@ -662,6 +666,10 @@ def:pub Review(
         try {
             out = await update_promise(promise, text, due);
         } except Exception as e {
+            fail(key, "Couldn't save that — try again.");
+            return;
+        }
+        if out["error"] {
             fail(key, "Couldn't save that — try again.");
             return;
         }
