@@ -7,6 +7,8 @@ live yet go through components/api.cl.jac, the single mock/live swap point.
 
 Views: auth -> loading (GetMe) -> onboarding (4 steps) | home.
 home -> capture (form, Capture call) -> review (extraction + source chips) -> home.
+home = goal picker (ListGoals / SetGoal / CloseGoal) + GoalRank for the active
+goal, cached per goal_id for the session (SOH-170) + people list.
 """
 
 import from "@jac/runtime" { jacLogin, jacSignup, jacLogout, jacIsLoggedIn }
@@ -21,13 +23,42 @@ import from .components.onboarding.PeopleStep { PeopleStep }
 import from .components.onboarding.RecallStep { RecallStep }
 import from .components.capture.CaptureForm { CaptureForm }
 import from .components.capture.Review { Review }
-import from .components.api { onboard_me, capture, goal_rank, list_people }
+import from .components.api { onboard_me, capture, goal_rank, list_people, list_goals, set_goal, close_goal }
 import from .lib.text { join_lines }
 
-sv import from walkers { Ping, GetMe }
+sv import from walkers { GetMe }
 sv import from schema { Person }
 
 glob STEP_LABELS: list[str] = ["About you", "Your card", "Bring five people", "First recall"];
+
+# GoalRank cache, keyed by goal_id (SOH-170). Plain module dicts (not reactive):
+# async handlers read these instead of `has` state, which is a stale render-time
+# snapshot after an `await` — so two rankings in flight never clobber each other.
+# `publish_rank()` copies them into the reactive `rank_*` mirrors to re-render.
+# RANK_ROWS[goal_id] is {"ok": True, "rows": [...]} when cached (a non-empty wrapper, so an
+# empty ranking still counts as cached), None when invalidated / never ranked.
+# RANK_STALE[goal_id] = True after a new note: the server's cached RelevantTo edges are
+# out of date, so the next rank of that goal asks GoalRank for refresh=True.
+glob RANK_ROWS: dict = {},
+     RANK_PENDING: dict = {},
+     RANK_ERRORS: dict = {},
+     RANK_STALE: dict = {};
+
+"""Copy of goal `g` with `active` set to whether it is `active_id`."""
+def mark_active(g: dict, active_id: str) -> dict {
+    out: dict = {**g};
+    out["active"] = g["_jac_id"] == active_id;
+    return out;
+}
+
+def active_goal_id(goals: list[dict]) -> str {
+    for g in goals {
+        if g["active"] {
+            return (g["_jac_id"] or "") as str;
+        }
+    }
+    return "";
+}
 
 def empty_rows() -> list[dict] {
     return [{"name": "", "how": ""} for _ in range(5)];
@@ -58,7 +89,14 @@ def:pub app -> JsxElement {
         cap_pending: bool = False,
         cap_error: str = "",
         cap_note: str = "",
-        cap_result: dict = {};
+        cap_result: dict = {},
+        goals_list: list[dict] = [],
+        goals_loaded: bool = False,
+        goal_busy: bool = False,
+        goal_error: str = "",
+        rank_cache: dict = {},
+        rank_pending_map: dict = {},
+        rank_error_map: dict = {};
 
     can with entry {
         if jacIsLoggedIn() {
@@ -84,11 +122,22 @@ def:pub app -> JsxElement {
     async def submit_capture -> None;
     def capture_done -> None;
     def capture_retry -> None;
+    async def load_goals -> None;
+    def publish_rank -> None;
+    async def ensure_rank(goal_id: str, force: bool = False) -> None;
+    async def switch_goal(goal_id: str) -> None;
+    async def create_goal(text: str) -> None;
+    async def end_goal(goal_id: str) -> None;
+    def rerank -> None;
 
     goals: list[dict] = (onboard["goals"] or []) as list[dict];
     interests: list[dict] = (onboard["interests"] or []) as list[dict];
     active_goals: list[dict] = [g for g in goals if g["active"]];
     active_goal_text: str = (active_goals[0]["text"] as str) if len(active_goals) > 0 else "";
+    home_goal_id: str = active_goal_id(goals_list);
+    home_entry: dict = (rank_cache[home_goal_id] or {}) as dict if home_goal_id else {};
+    home_cached: bool = True if home_entry["ok"] else False;
+    home_rows: list[dict] = (home_entry["rows"] or []) as list[dict];
 
     return
         <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 pt-6 pb-10 pl-4 pr-4">
@@ -111,9 +160,21 @@ def:pub app -> JsxElement {
                     key="home"
                     people={people}
                     status={status}
+                    goals={goals_list}
+                    rank_rows={home_rows}
+                    rank_cached={home_cached}
+                    rank_pending={True if home_goal_id and rank_pending_map[home_goal_id] else False}
+                    rank_error={((rank_error_map[home_goal_id] or "") as str) if home_goal_id else ""}
+                    goals_loaded={goals_loaded}
+                    goal_busy={goal_busy}
+                    goal_error={goal_error}
                     onRefresh={refresh}
                     onLogout={logout}
                     onCapture={open_capture}
+                    onSwitchGoal={switch_goal}
+                    onCreateGoal={create_goal}
+                    onCloseGoal={end_goal}
+                    onRerank={rerank}
                 />
             } elif view == "capture" {
                 <CaptureForm
