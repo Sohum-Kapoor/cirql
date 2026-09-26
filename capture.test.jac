@@ -138,11 +138,13 @@ test "apply_extraction: J2 example — five kinds, all provenance-linked" {
     assert maya_entry["is_new"];
     assert len(maya_entry["ambiguous_with"] as list[str]) == 0;
     assert maya.status == "confirmed";
+    assert maya_entry["span"] == f"Met {maya_name} at JacHacks";
 
     arjun_entry = by_name[arjun_name];
     arjun = arjun_entry["person"] as Person;
     assert arjun_entry["is_new"];
     assert arjun.status == "proposed";
+    assert arjun_entry["span"] == f"knows {arjun_name} from their lab";
 
     facts = result["facts"] as list[dict[str, any]];
     assert len(facts) == 1;
@@ -231,6 +233,10 @@ test "one person touched by multiple categories: one people entry, one Mentions 
     assert len(people) == 1;
 
     p = people[0]["person"] as Person;
+    # First mention wins: Devika is resolved via the `people` category first
+    # (span "Met {name}"), so that span sticks even though facts/intents/
+    # promises about her come later with different spans.
+    assert people[0]["span"] == f"Met {name}";
     mentions: list[Person] = [note ->:Mentions:->];
     count = 0;
     for m in mentions {
@@ -354,6 +360,26 @@ test "intent kind synonyms normalize to need / offer / open_to" {
         intent = intents[0]["intent"] as Intent;
         assert intent.kind == expected, f"kind '{raw}' -> expected '{expected}' got '{intent.kind}'";
     }
+}
+
+test "people[].span falls back to the name when the LLM span isn't a substring of the note" {
+    me = _fresh_me();
+    suffix = _uid();
+    name = "Zara" + suffix;
+    note = _fresh_note(f"Talked with {name} about robotics.");
+
+    extraction = CaptureExtraction(
+        people=[XPerson(name=name, org="", title="", span="this text is not anywhere in the note")],
+        facts=[],
+        intents=[],
+        promises=[],
+        ties=[]
+    );
+
+    result = apply_extraction(note, me, extraction);
+    people = result["people"] as list[dict[str, any]];
+    assert len(people) == 1;
+    assert people[0]["span"] == name;
 }
 
 test "empty extraction still yields note_id and empty arrays — note never lost" {
