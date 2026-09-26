@@ -62,7 +62,10 @@ impl app.logout -> None {
     rank_rows = [];
     rank_error = "";
     cap_text = "";
-    cap_kind = "debrief";
+    cap_kind = "guided";
+    cap_guided = empty_guided();
+    cap_voice = empty_voice();
+    cap_how_met = "";
     cap_error = "";
     cap_note = "";
     cap_result = {};
@@ -264,11 +267,27 @@ impl app.close_capture -> None {
     view = "home";
 }
 
-"""Capture(text, kind) -> review. The note is saved server-side even when the
-extraction comes back empty; the review screen says so."""
+"""Capture -> review. Guided: the composed (or hand-edited) prose, kind "debrief";
+Paste: the free text, kind "paste"; Voice: the checked transcript, kind "debrief"
++ Transcribe's audio_ref. The note is saved server-side even when the extraction
+comes back empty; the review screen says so."""
 impl app.submit_capture -> None {
-    text: str = cap_text.strip();
-    if not text {
+    mode: str = cap_kind;
+    note: str = "";
+    walker_kind: str = "debrief";
+    audio: str = "";
+    met_line: str = "";
+    if mode == "guided" {
+        note = guided_text(cap_guided).strip();
+        met_line = how_met_line(cap_guided);
+    } elif mode == "voice" {
+        note = ((cap_voice["text"] or "") as str).strip();
+        audio = (cap_voice["audio_ref"] or "") as str;
+    } else {
+        note = cap_text.strip();
+        walker_kind = "paste";
+    }
+    if not note {
         cap_error = "Write something first.";
         return;
     }
@@ -276,16 +295,34 @@ impl app.submit_capture -> None {
     cap_pending = True;
     cap_error = "";
     try {
-        out = await capture(text, cap_kind);
+        out = await capture(note, walker_kind, audio, met_line);
     } except Exception as e {
         cap_pending = False;
         cap_error = "Couldn't capture that — your text is still here. " + str(e);
         return;
     }
-    cap_note = text;
+    if mode == "guided" {
+        remember_met((cap_guided["met"] or "") as str);
+    }
+    cap_note = note;
+    cap_how_met = met_line;
+    cap_met_names = guided_names(cap_guided) if mode == "guided" else [];
     cap_result = out;
     cap_pending = False;
     view = "review";
+}
+
+"""One guided-form field. `{**d, field: v}` would make a key literally named
+"field" in JS, so copy then set."""
+impl app.set_guided(field: str, value: any) -> None {
+    nxt: dict = {**cap_guided};
+    nxt[field] = value;
+    cap_guided = nxt;
+}
+
+"""Review edits / removals replace the Capture report in place (SOH-209)."""
+impl app.set_cap_result(next_result: dict) -> None {
+    cap_result = next_result;
 }
 
 """Done -> home, refresh ListPeople so new people show up; clear the form.
@@ -294,6 +331,9 @@ is dropped and re-ranked (the old rows are gone; the list shows its skeleton).""
 impl app.capture_done -> None {
     gid: str = active_goal_id(goals_list);
     cap_text = "";
+    cap_guided = empty_guided();
+    cap_voice = empty_voice();
+    cap_how_met = "";
     cap_note = "";
     cap_result = {};
     view = "home";

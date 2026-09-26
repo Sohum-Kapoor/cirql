@@ -12,6 +12,8 @@ mocks (no Gemini budget spent) even though `USE_MOCKS` ships False.
 
 import from .mocks.onboard { mock_onboardme }
 import from .mocks.capture { mock_capture, mock_list_people }
+import from .mocks.edits { mock_transcribe, mock_apply_correction, mock_forget }
+import from ..lib.local_edits { local_put, local_view }
 import from .mocks.goalrank { mock_goalrank }
 import from .mocks.goals { mock_list_goals, mock_set_goal, mock_close_goal }
 import from .mocks.exchange {
@@ -31,12 +33,21 @@ sv import from ..exchange {
     PostRequest, ListMyRequests, DeclineRequest, ClaimReveal, ListIncomingRequests,
     ReplyToRequest, ApproveReply, OptIn, Reveal, DeclineReply
 }
+sv import from ..voice { Transcribe }
+sv import from ..noted { ApplyCorrection }
+sv import from ..forget { Forget }
 sv import from ..schema { Person }
 # SOH-185 / SOH-192 (appended): graph view + badge photo capture.
 import from .mocks.graph { mock_graph_view }
 import from .mocks.photo { mock_capture_image }
 sv import from ..reads { GraphView }
 sv import from ..vision { CaptureImage }
+
+# SOH-209: `UpdatePerson` / `UpdatePromise` are Needs A (SOH-166) — not on main.
+# While False, edits are kept on this device (lib/local_edits) and the UI says so.
+# TODO(SOH-166): flip to True and add the `root spawn` branch when they land.
+glob:pub UPDATE_PERSON_LIVE: bool = False,
+     UPDATE_PROMISE_LIVE: bool = False;
 
 glob USE_MOCKS: bool = False,
      MOCK_DELAY_MS: int = 600,
@@ -71,20 +82,83 @@ async def:pub onboard_me(about: str) -> dict {
     return out;
 }
 
-"""Capture(text, kind) -> { note_id, people, facts, intents, promises, ties }"""
-async def:pub capture(text: str, kind: str) -> dict {
+"""Capture(text, kind, audio_ref) -> { note_id, people, facts, intents, promises, ties }.
+`audio_ref` is Transcribe's (voice capture); "" for typed notes.
+TODO(SOH-166): `how_met` is not a Capture field yet (Needs A) — it is NOT sent; the
+composed guided text already carries it ("Met X at a networking event — …")."""
+async def:pub capture(text: str, kind: str, audio_ref: str = "", how_met: str = "") -> dict {
     out: dict = {};
     if mocks_on() {
         await fake_delay(MOCK_DELAY_MS);
         out = mock_capture(text, kind);
         return out;
     }
-    result = root spawn Capture(text=text, kind=kind);
+    result = root spawn Capture(text=text, kind=kind, audio_ref=audio_ref);
     if not result.reports {
         raise Exception("Capture returned no report");
     }
     out = result.reports[0];
     return out;
+}
+
+# ---------------------------------------------------------------- voice + corrections (SOH-168 / SOH-209)
+
+"""Transcribe(audio_b64, mime) -> { transcript, audio_ref, duration_ms, error }.
+`error` is "" | "no_key" | "too_large" | "read_failed" | "stt_<code>" | …; the
+audio is kept server-side (audio_ref) whenever it was saved."""
+async def:pub transcribe(audio_b64: str, mime: str) -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_DELAY_MS);
+        out = mock_transcribe(audio_b64, mime);
+        return out;
+    }
+    result = root spawn Transcribe(audio_b64=audio_b64, mime=mime);
+    out = _first(result, "Transcribe") as dict;
+    return out;
+}
+
+"""ApplyCorrection(person_id, text, replace_fact_id, kind) -> { fact } | { intent } | { error }.
+kind "fact" + replace_fact_id: the old fact goes stale server-side (kept, never deleted)."""
+async def:pub apply_correction(person_id: str, text: str, replace_fact_id: str = "", kind: str = "fact") -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = mock_apply_correction(person_id, text, replace_fact_id, kind);
+        return out;
+    }
+    result = root spawn ApplyCorrection(person_id=person_id, text=text, replace_fact_id=replace_fact_id, kind=kind);
+    out = _first(result, "ApplyCorrection") as dict;
+    return out;
+}
+
+"""Forget(id) -> { deleted, id, retracted } | { error: "not_found" }. The Note is never touched."""
+async def:pub forget(node_id: str) -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = mock_forget(node_id);
+        return out;
+    }
+    result = root spawn Forget(id=node_id);
+    out = _first(result, "Forget") as dict;
+    return out;
+}
+
+"""UpdatePerson(person_id, name, org, title, how_met) -> { person, local }.
+TODO(SOH-166): Needs A — no walker yet; kept on this device (`local: True`)."""
+async def:pub update_person(person: dict, name: str, org: str, title: str, how_met: str) -> dict {
+    pid: str = (person["_jac_id"] or "") as str;
+    local_put("person", pid, {"name": name, "org": org, "title": title, "how_met": how_met});
+    return {"person": local_view("person", person), "local": not UPDATE_PERSON_LIVE};
+}
+
+"""UpdatePromise(promise_id, text, due) -> { promise, local }.
+TODO(SOH-166): Needs A — no walker yet; kept on this device (`local: True`)."""
+async def:pub update_promise(promise: dict, text: str, due: str) -> dict {
+    prid: str = (promise["_jac_id"] or "") as str;
+    local_put("promise", prid, {"text": text, "due": due});
+    return {"promise": local_view("promise", promise), "local": not UPDATE_PROMISE_LIVE};
 }
 
 """GoalRank(goal_id) -> [{ person, label, strength, reason, evidence, days_since_contact, opener }]"""
