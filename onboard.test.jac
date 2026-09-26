@@ -5,7 +5,8 @@ here. The LLM extraction path itself is proven live via curl (see the SOH-164
 deliverable), not by a test.
 """
 
-import from onboard { OnboardExtraction, handle_from_name, clean_list, jid_suffix, find_by_topic, find_goal_by_text, find_intent }
+import from onboard { OnboardExtraction, handle_from_name, clean_list, jid_suffix, find_by_topic, find_goal_by_text, find_intent, looks_like_goal, activate_first_goal }
+import from schema { Me, Interest, Goal, Intent, HasGoal }
 
 test "OnboardExtraction obj holds the fields the walker copies out" {
     extraction = OnboardExtraction(
@@ -57,4 +58,38 @@ test "find_by_topic, find_goal_by_text, find_intent dedupe helpers" {
     assert i is not None and i.text == "Feedback from users";
     assert find_intent(intents, "offer", "feedback from users") is None;
     assert find_intent(intents, "need", "no match") is None;
+}
+
+test "looks_like_goal accepts asks, rejects descriptions of what they do/build" {
+    assert looks_like_goal("Raise a pre-seed round from climate-tech investors");
+    assert looks_like_goal("Land a summer 2027 VC internship");
+    assert not looks_like_goal("I am a robotics engineer");
+    assert not looks_like_goal("I'm building an accessible robot");
+    assert not looks_like_goal("I build accessible robots");
+    assert not looks_like_goal("I work on climate tech");
+    assert not looks_like_goal("We build a robotics startup");
+    assert not looks_like_goal("We are a climate tech company");
+    assert not looks_like_goal("i am case-insensitive too");
+}
+
+test "activate_first_goal: exactly one active goal, first extracted wins, pre-existing goals deactivated" {
+    me = (root ++> Me(name="activate-test-me"))[0];
+    pre_existing = (me +>:HasGoal:+> Goal(text="Pre-existing goal", created_at="2026-01-01T00:00:00", active=True))[0];
+    g1 = (me +>:HasGoal:+> Goal(text="First extracted goal", created_at="2026-01-01T00:00:00", active=True))[0];
+    g2 = (me +>:HasGoal:+> Goal(text="Second extracted goal", created_at="2026-01-01T00:00:00", active=True))[0];
+
+    activate_first_goal(me, [g1, g2]);
+
+    assert g1.active;
+    assert not g2.active;
+    assert not pre_existing.active;
+}
+
+test "activate_first_goal is a no-op on an empty goal list" {
+    me = (root ++> Me(name="activate-noop-test-me"))[0];
+    g = (me +>:HasGoal:+> Goal(text="Untouched goal", created_at="2026-01-01T00:00:00", active=True))[0];
+
+    activate_first_goal(me, []);
+
+    assert g.active;
 }

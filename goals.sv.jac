@@ -27,6 +27,7 @@ as `Person.status == "proposed"` with `Knows.status == "proposed"`):
 import from datetime { datetime }
 import from schema { Me, Person, Fact, Intent, Goal, Knows, Reported, HasGoal, FactAbout, IntentAbout, Mentions, AssertsIntent, RelevantTo }
 import from llm { llm }
+import time;
 
 # ---------------------------------------------------------------- LLM batch
 
@@ -252,10 +253,12 @@ def build_candidates_text(candidates: list[Candidate]) -> str {
     return "\n".join(lines);
 }
 
-"""Deterministic fallback used when the batched `by llm` call fails.
-Never reports "medium" with empty evidence: evidence_indices names the
-exact fact/intent items that produced the signal, so `materialize`'s
-evidence-gate (a candidate with no mapped evidence is always "weak") holds."""
+"""Deterministic fallback used when the batched `by llm` call fails (after
+one retry, see GoalRank). Never reports "medium" with empty evidence:
+evidence_indices names the exact fact/intent items that produced the signal,
+so `materialize`'s evidence-gate (a candidate with no mapped evidence is
+always "weak") holds. The opener names the first evidence item's span when
+one exists, so the fallback still reads as specific rather than generic."""
 def fallback_rank(candidates: list[Candidate]) -> list[RankedItem] {
     ranked: list[RankedItem] = [];
     idx = 0;
@@ -268,12 +271,17 @@ def fallback_rank(candidates: list[Candidate]) -> list[RankedItem] {
             }
             ei += 1;
         }
+        opener = "";
+        if c.evidence_items {
+            first_span = c.evidence_items[0].span;
+            opener = f"Hi {c.person.name}, I was thinking about what you mentioned about {first_span[:80]}.";
+        }
         ranked.append(RankedItem(
             index=idx,
             strength="medium" if signal_indices else "weak",
-            reason="Extraction unavailable; ranked by available evidence.",
+            reason="Ranking unavailable right now; ordered by the evidence in your notes.",
             evidence_indices=signal_indices,
-            opener=""
+            opener=opener
         ));
         idx += 1;
     }
@@ -477,7 +485,15 @@ walker:priv GoalRank {
                 result = rank_candidates(goal.text, candidates_text);
                 ranked = result.items;
             } except Exception {
-                ranked = fallback_rank(candidates);
+                # byLLM already retried internally 3x fast; wait out a 503
+                # burst and try exactly once more before falling back.
+                time.sleep(4);
+                try {
+                    result = rank_candidates(goal.text, candidates_text);
+                    ranked = result.items;
+                } except Exception {
+                    ranked = fallback_rank(candidates);
+                }
             }
         }
 
