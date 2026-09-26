@@ -19,6 +19,7 @@ import from .ui.dropdown_menu {
 import from .ui.icons { MoreIcon, ChevronRightIcon }
 import from .settings.AppearanceSheet { AppearanceSheet }
 import from .ui.tabs { Tabs, TabsList, TabsTrigger, TabsContent }
+import from react { useEffect }
 import from .person.PersonSheet { PersonSheet }
 import from .promises.Today { Today }
 import from .graph.GraphView { GraphView }
@@ -66,7 +67,9 @@ def:pub HomeView(
     onRetryGaps: Callable[[], None] | None = None,
     onOpenRequest: Callable[[str], None] | None = None,
     onOpenAsk: Callable[[str], None] | None = None,
-    onToggleFriend: Callable[[], None] | None = None
+    onToggleFriend: Callable[[], None] | None = None,
+    open_person_id: str = "",
+    onPersonOpened: Callable[[], None] | None = None
 ) -> JsxElement {
     def handle_capture(e: MouseEvent) {
         onCapture();
@@ -85,6 +88,16 @@ def:pub HomeView(
         sheet_person_id = pid;
         sheet_open = True;
     }
+
+    # Review screen (SOH-209) hands a person id up through the shell.
+    useEffect(lambda {
+        if open_person_id {
+            open_person(open_person_id);
+            if onPersonOpened {
+                onPersonOpened();
+            }
+        }
+    }, [open_person_id]);
 
     def close_person() -> None {
         sheet_open = False;
