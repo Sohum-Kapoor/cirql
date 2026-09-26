@@ -13,6 +13,12 @@ react-error-boundary = "^5.0.0"
 react-hook-form = "^7.71.0"
 zod = "^4.3.6"
 "@hookform/resolvers" = "^5.2.2"
+# UI kit (SOH-165): jac-shadcn primitives in components/ui + Linear-style tokens in assets/main.css
+clsx = "^2.1.1"
+tailwind-merge = "^3.7.0"
+class-variance-authority = "^0.7.1"
+radix-ui = "^1.6.7"
+"@fontsource-variable/inter" = "^5.3.0"
 
 [dependencies.npm.dev]
 vite = "^6.4.1"
@@ -20,6 +26,8 @@ vite = "^6.4.1"
 typescript = "^5.3.3"
 "@types/react" = "^18.2.0"
 "@types/react-dom" = "^18.2.0"
+tailwindcss = "^4.3.3"
+"@tailwindcss/vite" = "^4.3.3"
 
 [dev-dependencies]
 watchdog = ">=3.0.0"
@@ -28,6 +36,10 @@ watchdog = ">=3.0.0"
 base_route_app = "app"
 
 [plugins.client]
+
+[plugins.client.vite]
+plugins = ["tailwindcss()"]
+lib_imports = ["import tailwindcss from '@tailwindcss/vite'"]
 
 [plugins.scale.microservices]
 # One process. Without this, jac-scale auto-detects every `sv import` target as a
