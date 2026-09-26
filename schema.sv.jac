@@ -94,7 +94,7 @@ edge Owns: Me --> Card {}
 
 edge Knows: Me --> Person {
     has how_met: str = "";
-    has last_contact: str = "";      # display only; nothing reads it to lower anything
+    has last_contact: str = "";      # ISO-8601; display only; nothing reads it to lower anything
     has status: str = "reported";    # reported | confirmed | proposed
     has source_note: str = "";       # jid of the Note this came from
 }
@@ -143,8 +143,9 @@ edge Proposes: Introduction --> Person {}   # exactly two per Introduction
 edge RelevantTo: Person --> Goal {
     """Materialized by GoalRank. Rebuilt when the goal changes; deleted when it closes."""
     has reason: str = "";
-    has strength: str = "low";       # high | med | low
-    has evidence: str = "";          # comma-separated jids of Facts/Intents/Notes
+    has strength: str = "weak";      # strong | medium | weak (one enum project-wide, SOH-160 2026-09-26)
+    has evidence: list[str] = [];    # jids of Facts/Intents/Notes/Cards; GoalRank rebuilds {id,kind,observed_at,span} at report time
+    has opener: str = "";            # drafted opener, cached so GoalRank can be pre-warmed
     has label: str = "cold";         # known | route | cold
 }
 
