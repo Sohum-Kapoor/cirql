@@ -9,13 +9,13 @@ shape in contracts/walkers.md.
 import from .mocks.onboard { mock_onboardme }
 import from .mocks.capture { mock_capture }
 import from .mocks.goalrank { mock_goalrank }
-# LIVE SWAP: OnboardMe / Capture / GoalRank are not in walkers.sv.jac yet, and an
-# `sv import` of a missing walker fails `jac check` (W1101 + E1032 on `.reports`).
-# When SOH-164/166/169 land: uncomment this import, uncomment the `root spawn`
-# lines in each function below, and set USE_MOCKS = False.
-# sv import from ..walkers { OnboardMe, Capture, GoalRank }
+# LIVE: OnboardMe lives in onboard.sv.jac, Capture in capture.sv.jac, GoalRank in
+# goals.sv.jac (not all in walkers.sv.jac as this comment used to assume).
+sv import from ..onboard { OnboardMe }
+sv import from ..capture { Capture }
+sv import from ..goals { GoalRank }
 
-glob USE_MOCKS: bool = True,
+glob USE_MOCKS: bool = False,
      MOCK_DELAY_MS: int = 600;
 
 async def fake_delay(ms: int) {
@@ -30,11 +30,12 @@ async def:pub onboard_me(about: str) -> dict {
         out = mock_onboardme(about);
         return out;
     }
-    # TODO(SOH-164) live:
-    # result = root spawn OnboardMe(about=about);
-    # out = result.reports[0];
-    # return out;
-    raise Exception("OnboardMe is not live yet (SOH-164)");
+    result = root spawn OnboardMe(about=about);
+    if not result.reports {
+        raise Exception("OnboardMe returned no report");
+    }
+    out = result.reports[0];
+    return out;
 }
 
 """Capture(text, kind) -> { note_id, people, facts, intents, promises, ties }"""
@@ -45,11 +46,12 @@ async def:pub capture(text: str, kind: str) -> dict {
         out = mock_capture(text, kind);
         return out;
     }
-    # TODO(SOH-166) live:
-    # result = root spawn Capture(text=text, kind=kind);
-    # out = result.reports[0];
-    # return out;
-    raise Exception("Capture is not live yet (SOH-166)");
+    result = root spawn Capture(text=text, kind=kind);
+    if not result.reports {
+        raise Exception("Capture returned no report");
+    }
+    out = result.reports[0];
+    return out;
 }
 
 """GoalRank(goal_id) -> [{ person, label, strength, reason, evidence, days_since_contact, opener }]"""
@@ -60,9 +62,7 @@ async def:pub goal_rank(goal_id: str) -> list[dict] {
         rows = mock_goalrank(goal_id);
         return rows;
     }
-    # TODO(SOH-169) live:
-    # result = root spawn GoalRank(goal_id=goal_id);
-    # rows = result.reports;
-    # return rows;
-    raise Exception("GoalRank is not live yet (SOH-169)");
+    result = root spawn GoalRank(goal_id=goal_id);
+    rows = result.reports;
+    return rows;
 }
