@@ -14,7 +14,8 @@ import from schema {
 import from llm { llm }
 import from datetime { datetime }
 import from freshness { default_expiry }
-import from names { name_key, match_names, trim_words }
+import from names { name_key, match_names }
+import re;
 
 
 # ---------------------------------------------------------------- LLM shape
@@ -71,17 +72,17 @@ sem XPerson.named = "true when the note gives this person's name; false when the
 sem XPerson.distinct_from = "If the note says this is a different person from someone already mentioned or known ('not the X one', 'a different Maya'), that other person's name as written; empty string otherwise.";
 
 sem XFact.about_name = "The name of the person this fact is about.";
-sem XFact.text = "A short factual statement about the person. Keep the speaker's uncertainty: if the note hedges a claim ('maybe', '??', 'not sure', 'I think', 'possibly', 'probably'), the fact text must carry the hedge ('Possibly works at Siemens in Detroit - the speaker was unsure') and must never be stated flatly.";
+sem XFact.text = "A short factual statement about the person. Refer to the person who wrote the note as 'you' (e.g. 'Gave you her card'); never 'the author', 'the speaker', 'the user', 'the writer'. Keep the speaker's uncertainty: if the note hedges a claim ('maybe', '??', 'not sure', 'I think', 'possibly', 'probably'), the fact text must carry the hedge ('Possibly works at Siemens in Detroit - you were unsure') and must never be stated flatly.";
 sem XFact.source_kind = "self when the fact is the author's own note-to-self about the relationship (e.g. 'there is a potential conflict of interest I should note', 'keep in mind ...'); reported otherwise.";
 sem XFact.span = "The exact substring of the note this fact came from, copied verbatim.";
 
 sem XIntent.about_name = "The name of the person this intent is about.";
 sem XIntent.kind = "need if they want something from others in general (not something the author will deliver - that is a Promise), offer if they can give something, open_to otherwise.";
-sem XIntent.text = "A short statement of the intent.";
+sem XIntent.text = "A short statement of the intent. Refer to the person who wrote the note as 'you'; never 'the author', 'the speaker', 'the user', 'the writer'.";
 sem XIntent.span = "The exact substring of the note this intent came from, copied verbatim.";
 
 sem XPromise.to_name = "The name of the person the author promised something to (or their description, exactly as used in `people`, when they are not named).";
-sem XPromise.text = "What was promised: the concrete deliverable ('send the ROI deck'). Anything the speaker will send, do, or deliver for the person is a Promise even when the note phrases it as what the other person wants ('wants ROI deck by Fri'); a bare 'follow up' is a Promise only when nothing more specific was promised.";
+sem XPromise.text = "Refer to the person who wrote the note as 'you'; never 'the author', 'the speaker', 'the user', 'the writer'. What the note's writer committed to: the concrete deliverable ('send the ROI deck'). A Promise requires the SPEAKER's own commitment ('I said', 'I'll', 'I promised', 'will send', 'owe', 'told her I'd', or a note-to-self like 'follow up'); a bare 'she wants X' or 'looking for X' is that person's need (an Intent), never a Promise. A bare 'follow up' is a Promise only when nothing more specific was promised.";
 sem XPromise.due = "When the promise is due, if stated; empty string if not mentioned.";
 sem XPromise.span = "The exact substring of the note this promise came from, copied verbatim.";
 
@@ -92,11 +93,11 @@ sem XTie.span = "Verbatim substring of the note that states the two people know 
 sem CaptureExtraction.people = "Every person in the note other than the author (who says 'I'); include people only mentioned as someone's acquaintance. When a person is referred to only by description, use the description as the name (e.g. 'the young man from the robotics thing who built the wheelchair sensor') and set named=false.";
 sem CaptureExtraction.facts = "Facts stated about any person in the note, including the author's notes-to-self about the relationship ('conflict of interest', 'keep in mind'), which are facts about that person with source_kind='self'. Hedged claims keep their hedge.";
 sem CaptureExtraction.intents = "Needs, offers, or openness stated about any person in the note.";
-sem CaptureExtraction.promises = "Promises the author (the note's 'I') made to any person in the note: anything the author will send, do, or deliver for them, with the concrete deliverable as the text and the due date if stated ('wants ROI deck by Fri' -> text 'send the ROI deck', due 'Fri').";
+sem CaptureExtraction.promises = "Promises the author (the note's 'I') made to any person in the note - only where the note shows the author's own commitment ('I said I'd send', 'I'll intro', 'promised', 'owe her', 'follow up'), with the concrete deliverable as the text and the due date if stated ('wants ROI deck by Fri. Follow up Thu.' -> text 'send the ROI deck', due 'Fri'). 'She wants intros to founders' with no commitment from the author is an Intent(need), not a Promise.";
 sem CaptureExtraction.ties = "Pairs of people the note says know each other.";
 
 def extract_capture(text: str) -> CaptureExtraction by llm(temperature=0.1);
-sem extract_capture = "Extract people, facts, intents, promises, and ties from a personal debrief note. When a person wants a concrete thing the author can deliver (a deck, a link, a document, an intro), record it as the author's Promise to deliver it ('wants ROI deck by Fri' -> Promise 'send the ROI deck', due 'Fri'), not as that person's need. Keep hedges; never state an uncertain claim flatly.";
+sem extract_capture = "Extract people, facts, intents, promises, and ties from a personal debrief note. A Promise needs the author's own commitment (I said / I'll / I promised / will send / owe / told her I'd / a follow-up note-to-self); when the author commits to deliver something a person wants, the Promise text is the concrete deliverable ('wants ROI deck by Fri. Follow up Thu.' -> Promise 'send the ROI deck', due 'Fri'). A person's want with no commitment from the author is that person's Intent(need). Keep hedges; never state an uncertain claim flatly.";
 sem extract_capture.text = "The debrief note text.";
 
 # ---------------------------------------------------------------- deterministic graph writes
@@ -195,6 +196,77 @@ def specific_follow_up(text: str, wants: list[str]) -> str {
         }
     }
     return "Follow up on: " + want;
+}
+
+"""SOH-214: extracted text refers to the note's writer as "you", never
+"the author"/"the speaker"/"the user"/"the writer" (any case, whole words).
+"<x>'s" -> "your"; "<x> was/is/has" -> "you were/are/have"."""
+def second_person(text: str) -> str {
+    t = text or "";
+    who = r"(?i)\bthe\s+(?:author|speaker|user|writer)";
+    t = re.sub(who + r"'s\b", "your", t);
+    t = re.sub(who + r"\s+was\b", "you were", t);
+    t = re.sub(who + r"\s+is\b", "you are", t);
+    t = re.sub(who + r"\s+has\b", "you have", t);
+    t = re.sub(who + r"\b", "you", t);
+    if t.startswith("you ") and len(text) > 0 and text[:1].isupper() {
+        t = "You" + t[3:];
+    }
+    return t;
+}
+
+glob WANT_CUES: list[str] = ["wants", "wanted", "looking for", "needs", "is hiring", "asked for"];
+glob COMMIT_CUES: list[str] = [
+    "i said", "i'll", "i will", "i promised", "promised", "owe", "told", "send", "will send", "i'd"
+];
+glob FOLLOW_UP_CUES: list[str] = ["follow up", "follow-up", "followup", "i'll follow", "check back"];
+
+def _has_any(text: str, cues: list[str]) -> bool {
+    low = (text or "").lower();
+    for cue in cues {
+        if cue in low {
+            return True;
+        }
+    }
+    return False;
+}
+
+"""SOH-214 guard: a "promise" whose span is only someone's want ("She wants
+intros to founders hiring in Chicago") with no commitment from the speaker is
+really that person's need. Kept as a Promise when the span carries a
+commitment cue, or when the note anywhere has a first-person follow-up cue
+("wants ROI deck by Fri. Follow up Thu.")."""
+def promise_is_only_a_want(span: str, note_text: str) -> bool {
+    if not _has_any(span, WANT_CUES) {
+        return False;
+    }
+    if _has_any(span, COMMIT_CUES) {
+        return False;
+    }
+    if _has_any(note_text, FOLLOW_UP_CUES) {
+        return False;
+    }
+    return True;
+}
+
+"""SOH-214: the default `Knows.how_met` is a human line, never the raw note:
+"from a debrief on 2026-09-26", "from a pasted note on …", "from an import on
+…", "from your about-me on …"."""
+def default_how_met(kind: str, captured_at: str) -> str {
+    day = (captured_at or "")[:10];
+    if len(day) != 10 {
+        day = datetime.now().isoformat()[:10];
+    }
+    k = (kind or "").strip().lower();
+    if k == "about_me" {
+        return f"from your about-me on {day}";
+    }
+    label = k if len(k) > 0 else "note";
+    if k == "paste" {
+        label = "pasted note";
+    }
+    article = "an" if label[:1] in ["a", "e", "i", "o", "u"] else "a";
+    return f"from {article} {label} on {day}";
 }
 
 glob TITLE_HONORIFICS: list[str] = ["dr", "prof", "professor", "rev", "reverend"];
@@ -303,7 +375,7 @@ def resolve_person(
     ambiguous_with: list[str] = [jid(p) for p in ambiguous];
     now = datetime.now().isoformat();
     # SOH-166: an explicit how_met (from the Capture call) wins for NEW edges.
-    edge_how_met = how_met.strip() if len(how_met.strip()) > 0 else f"{note.kind}: {trim_words(note.text, 60)}";
+    edge_how_met = how_met.strip() if len(how_met.strip()) > 0 else default_how_met(note.kind, note.captured_at);
     new_title = title;
     if len(new_title) == 0 and nk["honorific"].rstrip(".").lower() in TITLE_HONORIFICS {
         new_title = nk["honorific"];
@@ -391,7 +463,7 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = ""
         span = safe_span(xf.span, note, xf.text);
         record_mention(note, p, entry["is_new"] as bool, entry["ambiguous_with"] as list[str], span, mentioned, mention_order);
         f = (note +>:Asserts(span=span):+> Fact(
-            text=hedge_fact_text(xf.text, span), observed_at=now,
+            text=hedge_fact_text(second_person(xf.text), span), observed_at=now,
             source_kind=fact_source_kind(xf.source_kind, span)
         ))[0];
         f +>:FactAbout:+> p;
@@ -408,7 +480,7 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = ""
         record_mention(note, p, entry["is_new"] as bool, entry["ambiguous_with"] as list[str], span, mentioned, mention_order);
         norm_kind = normalize_intent_kind(xi.kind);
         it = (note +>:AssertsIntent(span=span):+> Intent(
-            kind=norm_kind, text=xi.text, source_kind="reported",
+            kind=norm_kind, text=second_person(xi.text), source_kind="reported",
             expires_at=default_expiry(norm_kind, now_dt)
         ))[0];
         it +>:IntentAbout:+> p;
@@ -423,11 +495,21 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = ""
         p = entry["person"] as Person;
         span = safe_span(xpr.span, note, xpr.text);
         record_mention(note, p, entry["is_new"] as bool, entry["ambiguous_with"] as list[str], span, mentioned, mention_order);
+        if promise_is_only_a_want(span, note.text) {
+            # SOH-214: no commitment from the speaker -> the person's need.
+            want_it = (note +>:AssertsIntent(span=span):+> Intent(
+                kind="need", text=second_person(xpr.text), source_kind="reported",
+                expires_at=default_expiry("need", now_dt)
+            ))[0];
+            want_it +>:IntentAbout:+> p;
+            intents_report.append({"intent": want_it, "about": jid(p), "span": span});
+            continue;
+        }
         wants: list[str] = [
             xi.text for xi in x.intents
             if normalize_intent_kind(xi.kind) == "need" and xi.about_name.strip().lower() == xpr.to_name.strip().lower()
         ];
-        pr = (note +>:AssertsPromise(span=span):+> Promise(text=specific_follow_up(xpr.text, wants), due=xpr.due))[0];
+        pr = (note +>:AssertsPromise(span=span):+> Promise(text=second_person(specific_follow_up(xpr.text, wants)), due=xpr.due))[0];
         pr +>:PromiseTo:+> p;
         promises_report.append({"promise": pr, "to": jid(p), "span": span});
     }
