@@ -328,3 +328,108 @@ async def:pub decline_reply(reply_id: str) -> str {
     }
     return ((out["error"] or "failed") as str) if out else "failed";
 }
+
+# ---------------------------------------------------------------- Person sheet + Today (SOH-207 / SOH-187)
+# PersonDetail / Brief land from the parallel SOH-207 server branch (person.sv.jac).
+# Until that merges, `sv import from ..person` would not resolve, so those two go
+# through the runtime's string-named `jacSpawn` (same POST /walker/<Name> call);
+# flip them to `sv import` + `root spawn` once person.sv.jac is on main.
+import from "@jac/runtime" { jacSpawn }
+import from .mocks.person {
+    mock_person_detail, mock_brief, mock_list_promises, mock_complete_promise,
+    mock_draft_follow_up, mock_forget
+}
+sv import from ..reads { ListPromises, CompletePromise }
+sv import from ..drafts { DraftFollowUp }
+sv import from ..forget { Forget }
+
+"""The first report of a list, or `{ error: "no_report" }`."""
+def _first_or_error(rows: any) -> dict {
+    found: list[dict] = (rows or []) as list[dict];
+    if len(found) > 0 {
+        return found[0];
+    }
+    return {"error": "no_report"};
+}
+
+"""PersonDetail(person_id) -> { person, how_met, knows_status, last_contact, relevance,
+facts, intents, promises, notes, reported_by, card_handle } | { error: "not_found" }."""
+async def:pub person_detail(person_id: str) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_person_detail(person_id));
+        return out;
+    }
+    data = await jacSpawn("PersonDetail", "", {"person_id": person_id});
+    out = _first_or_error(data["reports"] if data else []);
+    return out;
+}
+
+"""Brief(person_id, voice) -> { person_id, text, audio_b64, mime, based_on, fallback, voice_error }."""
+async def:pub brief(person_id: str, voice: bool = True) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_DELAY_MS);
+        out = _first_or_error(mock_brief(person_id, voice));
+        return out;
+    }
+    data = await jacSpawn("Brief", "", {"person_id": person_id, "voice": voice});
+    out = _first_or_error(data["reports"] if data else []);
+    return out;
+}
+
+"""ListPromises() -> [{ promise, to: Person | null, source_note_id, span }], open first."""
+async def:pub list_promises() -> list[dict] {
+    rows: list[dict] = [];
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        rows = mock_list_promises();
+        return rows;
+    }
+    result = root spawn ListPromises();
+    rows = result.reports as list[dict];
+    return rows;
+}
+
+"""CompletePromise(promise_id, done) -> Promise | { error: "not_found" }."""
+async def:pub complete_promise(promise_id: str, done: bool = True) -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_complete_promise(promise_id, done));
+        return out;
+    }
+    result = root spawn CompletePromise(promise_id=promise_id, done=done);
+    out = _first_or_error(result.reports);
+    return out;
+}
+
+"""DraftFollowUp(person_id, intent) -> { person_id, draft, based_on, fallback } | { error }.
+A draft only — nothing sends."""
+async def:pub draft_follow_up(person_id: str, intent: str = "") -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_DELAY_MS);
+        out = _first_or_error(mock_draft_follow_up(person_id, intent));
+        return out;
+    }
+    result = root spawn DraftFollowUp(person_id=person_id, intent=intent);
+    out = _first_or_error(result.reports);
+    return out;
+}
+
+"""Forget(id) -> { deleted, id, retracted } | { error: "not_found" }. The Note is never deleted."""
+async def:pub forget(node_id: str) -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_forget(node_id));
+        return out;
+    }
+    result = root spawn Forget(id=node_id);
+    out = _first_or_error(result.reports);
+    return out;
+}
