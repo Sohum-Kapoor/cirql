@@ -63,9 +63,10 @@ def:pub PersonSection(title: str, count: int, default_open: bool = False, childr
     return
         <Collapsible defaultOpen={default_open} className="overflow-hidden rounded-lg border bg-card shadow-edge">
             <CollapsibleTrigger
+                aria-label={title + " — expand or collapse"}
                 className={cn(
                     buttonVariants().call(None, {"variant": "ghost", "size": "row"}),
-                    "flex-row items-center justify-between rounded-none [&[data-state=open]>span>svg]:rotate-90"
+                    "flex-row items-center justify-between rounded-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 [&[data-state=open]>span>svg]:rotate-90"
                 )}
             >
                 <span className="flex items-center gap-1.5 text-body-sm font-medium">
