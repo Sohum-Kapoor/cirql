@@ -128,3 +128,6 @@ add it to this file under "Gotchas" — one line, with the fix.
 - `jobj(id)` resolves ANY node regardless of grants; every cross-user read must call `Jac.check_read_access(getattr(n, "__jac__"))  # jac:ignore[E1053]` or it leaks (proven in gate.test.jac).
 - `jid()` is dash-less hex; `getattr(n, "__jac__").root` is a dashed UUID. `.replace("-", "")` before comparing; pass `UUID(root_id)` to `Jac.allow_root`. Bare `allow_root(...)` passes `jac check` but NameErrors at runtime: `import from jaclang { JacRuntime as Jac }`.
 - An `Exchange` under `root.shared` needs `grant(ex, level=ConnectPerm)` or other users can't attach requests; "Permission denied: field_write on Root[...]" warnings while attaching are harmless.
+- Login must use the `username` identity (`{"identity":{"type":"username","value":...}}`); an email identity at login 400s with "identity.type must be 'username'" even though registration accepted both.
+- `is None` narrowing does not propagate inside a walker ability body or into an `else` after a mutating loop: guard, then cast `x as Type` at the use site (E1099 otherwise). `dict.get(key, default)` on an inline dict fails E1054; use if/elif.
+- Xcode's `/usr/bin/git` shim exits 69 until `sudo xcodebuild -license accept`; `/Library/Developer/CommandLineTools/usr/bin/git` works meanwhile (prepend it to PATH so `gh` finds it).
