@@ -340,7 +340,7 @@ walker:priv Serendipity {
             disengage;
         }
         me = existing[0];
-        items = serendipity_for(me, self.text, self.url, self.limit, datetime.now());
+        items = serendipity_for(me, self.text, self.url, min(max(self.limit, 0), 50), datetime.now());  # SOH-211 bounded
         for it in items {
             report it;
         }

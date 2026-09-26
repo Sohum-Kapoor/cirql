@@ -143,6 +143,13 @@ def assemble(
     return strong + medium + weak;
 }
 
+"""SOH-211: clamp a caller-supplied count into [0, hi]."""
+def bounded(n: int, hi: int) -> int {
+    return min(max(n, 0), hi);
+}
+
+glob REVERSE_MAX_LIMIT: int = 25;
+
 # ---------------------------------------------------------------- walker
 
 walker:priv WhoNeedsWhatIHave {
@@ -165,7 +172,9 @@ walker:priv WhoNeedsWhatIHave {
 
         requests = all_requests();
         my_request_ids = [jid(r) for r in requests if owner_root(r) == me_root];
-        candidates = select_candidates(requests, my_request_ids, now, self.limit);
+        # SOH-211: one model call per candidate -> bounded budget.
+        lim = bounded(self.limit, REVERSE_MAX_LIMIT);
+        candidates = select_candidates(requests, my_request_ids, now, lim);
 
         scored: dict[str, list[dict[str, any]]] = {};
         for req in candidates {
@@ -174,7 +183,7 @@ walker:priv WhoNeedsWhatIHave {
 
         replied_request_ids = [r.request_id for r in shared_replies() if owner_root(r) == me_root];
 
-        results = assemble(requests, scored, my_request_ids, replied_request_ids, now, self.limit);
+        results = assemble(requests, scored, my_request_ids, replied_request_ids, now, lim);
         for r in results {
             report r;
         }

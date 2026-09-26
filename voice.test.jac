@@ -14,7 +14,7 @@ clean up after themselves (same posture as other suites' persisted-root
 graph nodes, see `jac-testing`), the files are small and harmless.
 """
 
-import from voice { save_audio, parse_stt, ext_for_mime, Transcribe }
+import from voice { save_audio, parse_stt, ext_for_mime, Transcribe, MAX_AUDIO_B64_CHARS }
 import base64;
 import os;
 
@@ -71,10 +71,22 @@ test "save_audio at exactly the 15 MB cap is not rejected" {
     assert result["audio_ref"].endswith(".wav");
 }
 
-test "save_audio reports bad_audio on unparsable base64" {
+test "save_audio reports bad_base64 on non-strict base64 (SOH-211)" {
     result = save_audio("voicetestroot4", "not-valid-base64!!!", "audio/mp4");
-    assert result["error"] == "bad_audio";
+    assert result["error"] == "bad_base64";
     assert result["audio_ref"] == "";
+    # validate=True: characters outside the alphabet are rejected, not skipped
+    assert save_audio("voicetestroot4", "QUJD*REVG", "audio/mp4")["error"] == "bad_base64";
+}
+
+test "save_audio rejects an over-long base64 string before decoding (SOH-211)" {
+    before = set(os.listdir("uploads")) if os.path.exists("uploads") else set();
+    result = save_audio("voicetestroot5", "!" * (MAX_AUDIO_B64_CHARS + 1), "audio/mp4");
+    after = set(os.listdir("uploads")) if os.path.exists("uploads") else set();
+    # "!" is not base64: too_large (not bad_base64) proves the length check ran first.
+    assert result["error"] == "too_large", result;
+    assert result["audio_ref"] == "";
+    assert after == before;
 }
 
 # ---------------------------------------------------------------- parse_stt

@@ -198,6 +198,38 @@ test "handshake a/b: offer, incoming/outgoing views, isolation, accept end to en
     }
 }
 
+test "handshake SOH-211: offer to a handshake_only card published in the same process is found" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_hs_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "hs_a8@example.com");
+        b = _reg(cl, "hs_b8@example.com");
+        _publish(cl, a, {"headline": "Batteries", "visibility": "link", "name": "Ann"});
+        b_card = _publish(cl, b, {"headline": "Climate fund", "about": "I run a climate fund.", "visibility": "handshake_only", "name": "Ben"});
+        b_handle = str(b_card["handle"]);
+
+        offered = _run(cl, a, "OfferHandshake", {"to_handle": b_handle});
+        print(f"[hs 211] A OfferHandshake(B handshake_only) -> {offered}");
+        assert _err(offered) == "", offered;
+        assert str(offered[0]["status"]) == "offered" and str(offered[0]["to_handle"]) == b_handle, offered;
+        offer_id = str(offered[0]["offer_id"]);
+
+        # Still not public: finding it for a handshake is not granting it.
+        assert not _get_card_anon(cl, b_handle)["found"];
+
+        accepted = _run(cl, b, "AcceptHandshake", {"offer_id": offer_id})[0];
+        assert str(accepted["person"]["name"]) == "Ann", accepted;
+        a_mine = [x for x in _run(cl, a, "ListHandshakes", {}) if str(x["offer_id"]) == offer_id];
+        assert len(a_mine) == 1 and str(a_mine[0]["status"]) == "accepted", a_mine;
+        assert [str(p["name"]) for p in _run(cl, a, "ListPeople", {})] == ["Ben"];
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
 test "handshake d: decline hides the pair; the offerer keeps seeing offered" {
     tmp_dir = tempfile.mkdtemp();
     client: (JacTestClient | None) = None;

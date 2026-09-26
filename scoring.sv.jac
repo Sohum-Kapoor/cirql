@@ -161,15 +161,56 @@ def normalize_strength(s: str) -> str {
     return "weak";
 }
 
-# Deterministic fallback (no LLM): medium if any offer/open_to intent
-# exists in this candidate's evidence, else weak.
-def fallback_strength(evidence: list[dict[str, str]]) -> str {
-    for e in evidence {
-        if e["kind"] == "offer" or e["kind"] == "open_to" {
-            return "medium";
+# SOH-211: the fallback (no LLM) never claims more than it can show. Only a
+# deterministic token overlap earns `weak`; no overlap excludes the
+# candidate; the fallback never assigns `medium` or `strong`.
+glob FALLBACK_STOPWORDS: list[str] = [
+    "about", "after", "also", "been", "being", "from", "have", "into", "just",
+    "like", "looking", "more", "most", "need", "needs", "only", "other", "some",
+    "someone", "that", "their", "them", "then", "there", "these", "they",
+    "this", "those", "very", "want", "wants", "were", "what", "when", "where",
+    "which", "while", "with", "would", "your", "intro", "intros"
+];
+
+"""Lowercased alphanumeric tokens of length >= 4 that are not stopwords."""
+def fallback_tokens(text: str) -> list[str] {
+    out: list[str] = [];
+    cur = "";
+    for ch in (text.lower() + " ") {
+        if ch.isalnum() {
+            cur = cur + ch;
+        } else {
+            if len(cur) >= 4 and cur not in FALLBACK_STOPWORDS and cur not in out {
+                out.append(cur);
+            }
+            cur = "";
         }
     }
-    return "weak";
+    return out;
+}
+
+"""The evidence items sharing at least one fallback token with the need."""
+def fallback_overlap(need: str, evidence: list[dict[str, str]]) -> list[dict[str, str]] {
+    need_tokens = fallback_tokens(need);
+    hits: list[dict[str, str]] = [];
+    for e in evidence {
+        for t in fallback_tokens(e["text"]) {
+            if t in need_tokens {
+                hits.append(e);
+                break;
+            }
+        }
+    }
+    return hits;
+}
+
+"""`weak` when any evidence item shares a token with the need, else "" (exclude).
+Never `medium`/`strong`, whatever the evidence kind."""
+def fallback_strength(need: str, evidence: list[dict[str, str]]) -> str {
+    if fallback_overlap(need, evidence) {
+        return "weak";
+    }
+    return "";
 }
 
 # Stable order: strong, then medium, then weak.
@@ -252,19 +293,22 @@ def post_process(candidates: list[dict[str, any]], matches: NeedMatches) -> list
     return order_by_strength(items);
 }
 
-def fallback_results(candidates: list[dict[str, any]]) -> list[dict[str, any]] {
+def fallback_results(candidates: list[dict[str, any]], need: str) -> list[dict[str, any]] {
     items: list[dict[str, any]] = [];
     for c in candidates {
         evidence = c["evidence"] as list[dict[str, str]];
-        evidence_ids: list[str] = [e["jid"] for e in evidence];
+        hits = fallback_overlap(need, evidence);
+        if not hits {
+            continue;   # SOH-211: no shared token -> excluded, never guessed
+        }
         items.append({
             "person_id": jid(c["person"]),
-            "strength": fallback_strength(evidence),
-            "why": "Scored from available evidence.",
-            "evidence_ids": evidence_ids
+            "strength": "weak",
+            "why": "Shares a keyword with the need (scored without the model).",
+            "evidence_ids": [e["jid"] for e in hits]
         });
     }
-    return order_by_strength(items);
+    return items;
 }
 
 # The one need/offer scorer. Kept separate from the walker so the Exchange
@@ -280,7 +324,7 @@ def score_against_need(me: Me, need: str, exclude_handles: list[str]) -> list[di
         matches = score_need(need, text);
         return post_process(candidates, matches);
     } except Exception {
-        return fallback_results(candidates);
+        return fallback_results(candidates, need);
     }
 }
 

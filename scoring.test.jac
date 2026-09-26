@@ -127,11 +127,16 @@ test "normalize_strength maps the enum through and anything else to weak" {
     assert normalize_strength("") == "weak";
 }
 
-test "fallback_strength: medium when an offer/open_to item exists, weak otherwise (fact-only case)" {
-    assert fallback_strength([{"kind": "offer", "text": "x", "jid": "j1"}]) == "medium";
-    assert fallback_strength([{"kind": "open_to", "text": "x", "jid": "j1"}]) == "medium";
-    assert fallback_strength([{"kind": "fact", "text": "x", "jid": "j1"}]) == "weak";
-    assert fallback_strength([]) == "weak";
+test "fallback_strength (SOH-211): weak only on a shared >=4-char non-stopword token, else excluded; never medium" {
+    assert fallback_strength("a climate investor", [{"kind": "offer", "text": "intros to climate funds", "jid": "j1"}]) == "weak";
+    assert fallback_strength("a climate investor", [{"kind": "open_to", "text": "coffee chats", "jid": "j1"}]) == "";
+    assert fallback_strength("a climate investor", [{"kind": "fact", "text": "Works on Climate policy.", "jid": "j1"}]) == "weak";
+    # short tokens and stopwords never count
+    assert fallback_strength("an intro to a VC with ML", [{"kind": "offer", "text": "intro to a VC with ML", "jid": "j1"}]) == "";
+    assert fallback_strength("anything", []) == "";
+    for s in ["climate", "coffee", "anything"] {
+        assert fallback_strength(s, [{"kind": "offer", "text": "climate coffee", "jid": "j1"}]) != "medium";
+    }
 }
 
 test "order_by_strength is stable: strong, then medium, then weak, preserving input order within a bucket" {
@@ -290,20 +295,28 @@ test "build_prompt never includes a person's name, uses role/org, and numbers ev
     assert lines[4] == "  [0] fact: fact two";
 }
 
-test "fallback_results scores every candidate deterministically and orders the output" {
+test "fallback_results (SOH-211): keeps only overlapping candidates, weak, citing only the overlapping evidence" {
     person_a = Person(name="A", status="confirmed");
     person_b = Person(name="B", status="confirmed");
+    person_c = Person(name="C", status="confirmed");
     candidates = [
-        {"person": person_a, "evidence": [{"kind": "fact", "text": "t1", "jid": "jid-1"}]},
-        {"person": person_b, "evidence": [{"kind": "offer", "text": "t2", "jid": "jid-2"}]}
+        {"person": person_a, "evidence": [{"kind": "fact", "text": "Runs a robotics lab", "jid": "jid-1"}]},
+        {"person": person_b, "evidence": [
+            {"kind": "offer", "text": "intros to seed investors", "jid": "jid-2"},
+            {"kind": "fact", "text": "likes hiking", "jid": "jid-3"}
+        ]},
+        {"person": person_c, "evidence": [{"kind": "offer", "text": "happy to help", "jid": "jid-4"}]}
     ];
-    results = fallback_results(candidates);
-    assert len(results) == 2;
-    assert results[0]["strength"] == "medium";
-    assert results[0]["person_id"] == jid(person_b);
-    assert results[1]["strength"] == "weak";
-    assert results[1]["person_id"] == jid(person_a);
-    assert results[1]["why"] == "Scored from available evidence.";
+    results = fallback_results(candidates, "a seed investor for robotics");
+    assert len(results) == 2, results;
+    assert results[0]["person_id"] == jid(person_a);
+    assert results[0]["evidence_ids"] == ["jid-1"];
+    assert results[1]["person_id"] == jid(person_b);
+    assert results[1]["evidence_ids"] == ["jid-2"];
+    for r in results {
+        assert r["strength"] == "weak", r;
+    }
+    assert fallback_results(candidates, "a pastry chef") == [];
 }
 
 test "score_against_need reports [] when the caller has no candidates" {

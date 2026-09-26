@@ -21,7 +21,7 @@ Every test that writes under `uploads/` removes the file it created.
 
 import from vision {
     BadgeRead, ext_for, badge_to_note_text, facts_from_read, read_report,
-    resolve_badge_person, apply_badge_read, CaptureImage
+    resolve_badge_person, apply_badge_read, CaptureImage, MAX_IMAGE_B64_CHARS
 }
 import from schema { Me, Person, Note, Knows, Mentions }
 import uuid;
@@ -295,6 +295,17 @@ test "CaptureImage: too-large image reports error too_large, no file written" {
     assert out["error"] == "too_large";
     assert out["photo_ref"] == "";
     assert after == before, "no file should be written for a rejected upload";
+}
+
+test "CaptureImage SOH-211: non-strict base64 -> bad_base64; over-long string -> too_large before decoding" {
+    bad = root spawn CaptureImage(image_b64="QUJD*REVG", mime="image/jpeg");
+    assert len(bad.reports) == 1;
+    assert bad.reports[0]["error"] == "bad_base64", bad.reports[0];
+    assert bad.reports[0]["note_id"] == "";
+
+    # "!" is not base64, so too_large proves the length check ran first.
+    too_long = root spawn CaptureImage(image_b64="!" * (MAX_IMAGE_B64_CHARS + 1), mime="image/jpeg");
+    assert too_long.reports[0]["error"] == "too_large", too_long.reports[0];
 }
 
 # ---------------------------------------------------------------- CaptureImage walker: fallback (no model reached)

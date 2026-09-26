@@ -16,7 +16,7 @@ two-account harness) and is out of scope for this annex.
 import from forget { Forget }
 import from schema {
     Me, Person, Note, Fact, Intent, Promise, Goal, Introduction,
-    Knows, Reported, Asserts, AssertsPromise, FactAbout, PromiseTo,
+    Knows, Reported, Asserts, AssertsPromise, AssertsIntent, FactAbout, IntentAbout, PromiseTo,
     HasGoal, RelevantTo, Proposes
 }
 import from datetime { datetime }
@@ -103,6 +103,10 @@ test "Forget(person): deletes the solely-about fact and the promise, keeps the s
 
     # The Introduction is canceled, never deleted.
     assert intro.state == "canceled";
+
+    # SOH-211: A's RelevantTo edge went with A (node delete cascades).
+    assert jid(a) not in [jid(x) for x in [goal <-:RelevantTo:<-]], "A's RelevantTo edge must be gone";
+    assert len([edge goal <-:RelevantTo:<-]) == 0;
 }
 
 test "Forget(fact): removes the fact and prunes it from RelevantTo.evidence, leaving other evidence ids alone" {
@@ -146,6 +150,34 @@ test "Forget(fact): removes the fact and prunes it from RelevantTo.evidence, lea
     # The Note survives.
     reloaded_note = jobj(jid(note));
     assert isinstance(reloaded_note, Note);
+}
+
+test "SOH-211 Forget(fact/intent): a RelevantTo edge whose evidence becomes empty is deleted; one with evidence left survives" {
+    suffix = _uid();
+    now = datetime.now().isoformat();
+
+    me = (root ++> Me(name=f"Forget-test Me3 {suffix}"))[0];
+    p = (me +>:Knows(how_met="test", status="confirmed"):+> Person(name=f"Forget-test P3 {suffix}", status="confirmed"))[0];
+    q = (me +>:Knows(how_met="test", status="confirmed"):+> Person(name=f"Forget-test Q3 {suffix}", status="confirmed"))[0];
+    note = (root ++> Note(text=f"Forget-test note3 {suffix}", kind="debrief", captured_at=now))[0];
+    fact = (note +>:Asserts(span="only evidence"):+> Fact(text=f"Forget-test only evidence {suffix}", observed_at=now))[0];
+    fact +>:FactAbout:+> p;
+    it = (note +>:AssertsIntent(span="offer"):+> Intent(text=f"Forget-test offer {suffix}", kind="offer"))[0];
+    it +>:IntentAbout:+> q;
+
+    goal = (me +>:HasGoal:+> Goal(text=f"Forget-test goal3 {suffix}", created_at=now))[0];
+    p +>:RelevantTo(reason="test", strength="strong", evidence=[jid(fact)], label="known"):+> goal;
+    q +>:RelevantTo(reason="test", strength="medium", evidence=[jid(it)], label="known"):+> goal;
+
+    out = (root spawn Forget(id=jid(fact))).reports[0] as dict[str, any];
+    assert (out["retracted"] as dict[str, any])["relevant_to"] == 1;
+    assert len([edge p ->:RelevantTo:-> goal]) == 0, "unsupported RelevantTo must be deleted";
+    assert len([edge q ->:RelevantTo:-> goal]) == 1, "an unrelated ranking survives";
+
+    out2 = (root spawn Forget(id=jid(it))).reports[0] as dict[str, any];
+    assert out2["deleted"] == "intent";
+    assert len([edge q ->:RelevantTo:-> goal]) == 0;
+    assert len([goal <-:RelevantTo:<-]) == 0;
 }
 
 test "Forget on an unknown id reports not_found" {

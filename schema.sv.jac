@@ -188,6 +188,14 @@ node ReplyPrivate {
     has why: str = "";  # SOH-205 polish: friend-private "why it fits" text; NEVER in ReplyView, never crosses to the requester
 }
 
+node ClaimedIntro {
+    """SOH-211: the requester's record of one ClaimReveal, under the REQUESTER's root only.
+    A second ClaimReveal on the same reply reports this stored draft instead of drafting again."""
+    has reply_id: str;
+    has person_id: str = "";
+    has intro_draft: str = "";
+}
+
 edge Posted: Exchange --> IntroRequest {}
 
 edge RepliedTo: IntroReply --> IntroRequest {}
@@ -198,6 +206,15 @@ node CardDirectory {
 }
 
 edge Lists: CardDirectory --> Card {}
+
+node CardListing {
+    """SOH-211: a public pointer, owned by the Card's owner and granted ReadPerm to everyone,
+    hung off the CardDirectory. Carries only the handle and the Card's id, never Card fields.
+    Needed because a traversal silently skips targets the caller cannot read, so a
+    handshake_only (revoked) Card is invisible through `[dir -->]` to everyone but its owner."""
+    has handle: str;
+    has card_id: str;
+}
 
 node HandshakeOffer {
     """One per scan, under root.shared. Carries two handles and a status; never a name from anyone's graph."""

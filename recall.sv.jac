@@ -270,7 +270,8 @@ walker:priv Recall {
     has reports: list[dict[str, any]] = [];
 
     can run with Root entry {
-        pool = gather_recall_items(self.max_items);
+        # SOH-211: max_items sizes the one model prompt -> bounded.
+        pool = gather_recall_items(min(max(self.max_items, 0), 100));
         selected = select_recall_evidence(pool, self.question);
 
         if not selected {

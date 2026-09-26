@@ -333,7 +333,7 @@ walker:priv Tend {
             disengage;
         }
         me = existing[0];
-        items = tend_for(me, datetime.now(), self.limit);
+        items = tend_for(me, datetime.now(), min(max(self.limit, 0), 50));  # SOH-211 bounded
         for it in items {
             report it;
         }
