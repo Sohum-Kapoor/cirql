@@ -1,4 +1,4 @@
-"""Logged-in home: the people you know. Stateless. OWNER: Person B."""
+"""Logged-in home: Capture action + the people you know. Stateless. OWNER: Person B."""
 
 import from ".ui.button" { Button }
 import from "..lib.text" { join_with }
@@ -8,8 +8,13 @@ def:pub HomeView(
     people: list[Person],
     status: str,
     onRefresh: Callable[[], None],
-    onLogout: Callable[[], None]
+    onLogout: Callable[[], None],
+    onCapture: Callable[[], None]
 ) -> JsxElement {
+    def handle_capture(e: MouseEvent) {
+        onCapture();
+    }
+
     def handle_refresh(e: MouseEvent) {
         onRefresh();
     }
@@ -27,6 +32,7 @@ def:pub HomeView(
                     <Button size="sm" variant="outline" onClick={handle_logout}>Log out</Button>
                 </div>
             </header>
+            <Button className="w-full" size="lg" onClick={handle_capture}>Capture a conversation</Button>
             <section className="flex flex-col gap-2">
                 <div className="flex items-baseline justify-between">
                     <h2 className="text-sm font-medium">People you know</h2>
@@ -34,7 +40,15 @@ def:pub HomeView(
                 </div>
                 {if len(people) == 0 {
                     <p className="rounded-md border border-dashed pt-4 pb-4 pl-3 pr-3 text-sm text-muted-foreground">
-                        No one yet — capture a conversation to start.
+                        {"No one yet — "}
+                        <button
+                            type="button"
+                            className="font-medium text-primary underline-offset-4 hover:underline"
+                            onClick={handle_capture}
+                        >
+                            capture a conversation
+                        </button>
+                        {" to start."}
                     </p>
                 } else {
                     <ul className="flex flex-col divide-y divide-border rounded-md border">
