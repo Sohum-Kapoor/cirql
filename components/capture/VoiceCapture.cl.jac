@@ -185,6 +185,14 @@ def:pub VoiceCapture(
                     onVoice({"text": "", "audio_ref": "", "error": "empty", "mime": mime});
                     return;
                 }
+                if (blob.size as int) > 11000000 {
+                    # ~11 MB raw ≈ Transcribe's 15 MB base64 cap: don't upload what the server will refuse.
+                    release_mic();
+                    onBusy(False);
+                    phase = "idle";
+                    onVoice({"text": "", "audio_ref": "", "error": "too_large", "mime": mime});
+                    return;
+                }
                 b64 = await blob_to_b64(blob);
             }
             release_mic();
