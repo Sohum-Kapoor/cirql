@@ -373,6 +373,7 @@ def:pub app -> JsxElement {
                     onKindChange={lambda v: str { cap_kind = v; }}
                     onSubmit={submit_capture}
                     onBack={close_capture}
+                    onPhotoResult={lambda r: dict, note: str { cap_result = r; cap_note = note; cap_error = ""; view = "review"; }}
                 />
             } elif view == "review" {
                 <Review
