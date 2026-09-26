@@ -25,7 +25,8 @@ as `Person.status == "proposed"` with `Knows.status == "proposed"`):
 """
 
 import from datetime { datetime }
-import from schema { Me, Person, Fact, Intent, Goal, Knows, Reported, HasGoal, FactAbout, IntentAbout, Mentions, AssertsIntent, RelevantTo }
+import from jaclang { JacRuntime as Jac }
+import from schema { Me, Person, Note, Fact, Intent, Goal, Knows, Reported, HasGoal, FactAbout, IntentAbout, Mentions, AssertsIntent, RelevantTo }
 import from llm { llm }
 import time;
 
@@ -144,6 +145,51 @@ def gather_evidence(p: Person, now: datetime) -> list[EvidenceItem] {
     }
 
     return items;
+}
+
+"""Resolve one evidence jid (from a `RelevantTo.evidence` list) back to the
+report shape `{id, kind, observed_at, span}`. Mirrors `gather_evidence`'s
+per-item construction so a cached serve and a fresh rebuild produce identical
+evidence shapes for the same underlying Fact/Intent/Note. `jobj` never
+authorizes (see `jac-sv-persistence`), so every resolution is gated by
+`check_read_access` AND an exact match on the caller's own root — a jid that
+doesn't resolve, isn't readable, isn't owned by this root, or isn't a
+Fact/Intent/Note is simply dropped (returns None) rather than raising."""
+def evidence_item_from_jid(some_id: str) -> dict[str, any] | None {
+    try {
+        n = jobj(some_id);
+    } except Exception {
+        return None;
+    }
+    if n is None {
+        return None;
+    }
+    if not Jac.check_read_access(getattr(n, "__jac__")) {  # jac:ignore[E1053]
+        return None;
+    }
+    owner = str(getattr(n, "__jac__").root).replace("-", "");
+    if owner != jid(root) {
+        return None;
+    }
+
+    if isinstance(n, Fact) {
+        f = n as Fact;
+        return {"id": jid(f), "kind": "fact", "observed_at": f.observed_at, "span": f.text};
+    }
+    if isinstance(n, Intent) {
+        i = n as Intent;
+        observed_at = "";
+        notes_for_intent = [i <-:AssertsIntent:<-];
+        if notes_for_intent {
+            observed_at = notes_for_intent[0].captured_at;
+        }
+        return {"id": jid(i), "kind": "intent", "observed_at": observed_at, "span": i.text};
+    }
+    if isinstance(n, Note) {
+        note = n as Note;
+        return {"id": jid(note), "kind": "note", "observed_at": note.captured_at, "span": note.text[:120]};
+    }
+    return None;
 }
 
 """Candidate collection — deterministic, no LLM. See the module docstring
@@ -315,6 +361,56 @@ def _sort_key(item: dict[str, any]) -> tuple[int, int, int] {
     return (strength_rank, label_rank, days_rank);
 }
 
+"""Serve the goal's ranking straight off its existing `RelevantTo` edges, no
+LLM call. One entry per edge, evidence rebuilt from each edge's `evidence`
+jid list via `evidence_item_from_jid` (unknown/foreign jids silently
+dropped), `days_since_contact` recomputed from the caller's own `Knows` edge
+to that person as of now (route candidates have no `Knows` edge from `me`,
+so they get `None`, same as a fresh run), ordered with the same `_sort_key`
+a fresh `materialize` call uses. Returns `[]` when the goal has no incoming
+`RelevantTo` edges yet, so `GoalRank` can fall through to the full rebuild."""
+def serve_cached(goal: Goal, me: Me) -> list[dict[str, any]] {
+    people = [goal <-:RelevantTo:<-];
+    if not people {
+        return [];
+    }
+
+    now = datetime.now();
+    report_items: list[dict[str, any]] = [];
+
+    for p in people {
+        matched = [edge p ->:RelevantTo:-> goal];
+        if not matched {
+            continue;
+        }
+        e = matched[0];
+
+        ev_out: list[dict[str, any]] = [];
+        for eid in e.evidence {
+            item = evidence_item_from_jid(eid);
+            if item is not None {
+                ev_out.append(item);
+            }
+        }
+
+        knows_matches = [edge me ->:Knows:-> p];
+        days = compute_days_since_contact(knows_matches[0].last_contact, now) if knows_matches else None;
+
+        report_items.append({
+            "person": p,
+            "label": e.label,
+            "strength": e.strength,
+            "reason": e.reason,
+            "evidence": ev_out,
+            "days_since_contact": days,
+            "opener": e.opener,
+            "cached": True
+        });
+    }
+
+    return sorted(report_items, key=_sort_key);
+}
+
 """Deterministic materialization: delete this goal's existing RelevantTo
 edges, create fresh ones, and return the report shape ordered best-first —
 exactly one entry per candidate, regardless of what `ranked` contains.
@@ -383,7 +479,8 @@ def materialize(goal: Goal, ranked: list[RankedItem], candidates: list[Candidate
             "reason": reason,
             "evidence": ev_out,
             "days_since_contact": c.days_since_contact,
-            "opener": opener
+            "opener": opener,
+            "cached": False
         });
     }
 
@@ -458,8 +555,16 @@ walker:priv CloseGoal {
 walker:priv GoalRank {
     """Rebuild the goal's RelevantTo edges and report, ordered best-first,
     one entry per candidate. One batched `by llm` call for the whole run;
-    falls back to deterministic ranking on failure. Goal not found -> []."""
+    falls back to deterministic ranking on failure. Goal not found -> [].
+
+    `refresh=False` (default): if the goal already has at least one incoming
+    `RelevantTo` edge, serve the ranking straight off those edges via
+    `serve_cached` — no LLM call, entries carry `cached: true`. `refresh=True`,
+    or no edges exist yet, takes the full rebuild path below; those entries
+    carry `cached: false`. `CloseGoal` deletes the edges, so a reopened goal
+    always re-ranks fresh next time."""
     has goal_id: str;
+    has refresh: bool = False;
     has reports: list[dict[str, any]] = [];
 
     can run with Root entry {
@@ -474,6 +579,16 @@ walker:priv GoalRank {
             disengage;
         }
         goal = matches[0];
+
+        if not self.refresh {
+            cached = serve_cached(goal, me);
+            if cached {
+                for item in cached {
+                    report item;
+                }
+                disengage;
+            }
+        }
 
         now = datetime.now();
         candidates = collect_candidates(me, now);
