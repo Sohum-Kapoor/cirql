@@ -271,6 +271,7 @@ walker:priv OnboardMe {
             card.can_offer = offers;
             card.links = links;
         }
+        card.name = me.name;
         card.updated_at = now;
 
         # 6. One report.

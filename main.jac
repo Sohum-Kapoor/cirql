@@ -13,6 +13,7 @@ import from gaps { GapFinder, GapDevSeed }
 import from goals { GoalRank, SetGoal, CloseGoal }
 import from scoring { ScoreAgainstNeed }
 import from intros { AdvanceIntroduction, DevProposeIntroduction }
+import from exchange { PostRequest, ListIncomingRequests, ReplyToRequest, ListMyRequests, ApproveReply, OptIn, Reveal, ClaimReveal, DeclineRequest, DeclineReply, DevMakeCard, DevSeedMatch }
 
 # Client-side UI
 cl {
