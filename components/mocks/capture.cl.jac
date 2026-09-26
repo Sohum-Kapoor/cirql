@@ -51,6 +51,11 @@ def _find_first_name(first: str) -> dict | None {
     return None;
 }
 
+"""Exchange mock (SOH-172): ClaimReveal adds the revealed person to your people."""
+def:pub mock_remember_person(person: dict) -> None {
+    _remember(person);
+}
+
 def:pub mock_list_people() -> list[dict] {
     return MOCK_STORE["people"] as list[dict];
 }

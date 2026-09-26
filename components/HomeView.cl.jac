@@ -1,5 +1,7 @@
-"""Logged-in home: goal picker, who can help with the active goal (GoalRank),
-then the people you know (collapsed). Capture stays pinned at the bottom.
+"""Logged-in home: asks from friends (Exchange inbox), goal picker, who can
+help with the active goal (GoalRank), gap alerts (GapFinder) with *Ask my
+network*, your asks (ListMyRequests), then the people you know (collapsed).
+Capture stays pinned at the bottom.
 Stateless apart from the picker's own UI state. OWNER: Person B.
 
 Switching goals only swaps the ranked list: the shell keeps GoalRank results per
@@ -10,6 +12,9 @@ on the list alone — the header, picker and people list stay put.
 import from .ui.button { Button }
 import from .goals.GoalPicker { GoalPicker }
 import from .goals.RankList { RankList, is_partial }
+import from .exchange.GapAlert { GapAlerts }
+import from .exchange.Requests { RequestsSection }
+import from .exchange.Inbox { AsksSection }
 import from ..lib.text { join_with }
 sv import from ..schema { Person }
 
@@ -47,7 +52,25 @@ def:pub HomeView(
     onSwitchGoal: Callable[[str], None],
     onCreateGoal: Callable[[str], None],
     onCloseGoal: Callable[[str], None],
-    onRerank: Callable[[], None]
+    onRerank: Callable[[], None],
+    gaps: list[dict] = [],
+    gaps_pending: bool = False,
+    gaps_error: str = "",
+    asked: dict = {},
+    default_about: str = "",
+    ask_busy: bool = False,
+    ask_error: str = "",
+    mine: list[dict] = [],
+    claims: dict = {},
+    incoming: list[dict] = [],
+    friend: dict = {},
+    mock_mode: bool = False,
+    as_friend: bool = False,
+    onAsk: Callable[[str, str], None] | None = None,
+    onRetryGaps: Callable[[], None] | None = None,
+    onOpenRequest: Callable[[str], None] | None = None,
+    onOpenAsk: Callable[[str], None] | None = None,
+    onToggleFriend: Callable[[], None] | None = None
 ) -> JsxElement {
     def handle_capture(e: MouseEvent) {
         onCapture();
@@ -65,6 +88,36 @@ def:pub HomeView(
         onRerank();
     }
 
+    def handle_toggle_friend(e: MouseEvent) {
+        if onToggleFriend {
+            onToggleFriend();
+        }
+    }
+
+    def do_ask(need: str, about_line: str) -> None {
+        if onAsk {
+            onAsk(need, about_line);
+        }
+    }
+
+    def do_retry_gaps() -> None {
+        if onRetryGaps {
+            onRetryGaps();
+        }
+    }
+
+    def do_open_request(rid: str) -> None {
+        if onOpenRequest {
+            onOpenRequest(rid);
+        }
+    }
+
+    def do_open_ask(rid: str) -> None {
+        if onOpenAsk {
+            onOpenAsk(rid);
+        }
+    }
+
     has_active: bool = len([g for g in goals if g["active"]]) > 0;
     partial: bool = is_partial(rank_rows);
 
@@ -77,6 +130,14 @@ def:pub HomeView(
                     <Button size="sm" variant="outline" onClick={handle_logout}>Log out</Button>
                 </div>
             </header>
+            {mock_mode and
+                <div className="flex items-center justify-between gap-2 rounded-md border border-dashed pt-2 pb-2 pl-3 pr-3 text-xs text-muted-foreground">
+                    <span>{"Dev mock · your own asks " + ("also show as a friend's" if as_friend else "stay yours only")}</span>
+                    <Button size="xs" variant="outline" onClick={handle_toggle_friend}>
+                        {"Stop acting as friend" if as_friend else "Act as friend"}
+                    </Button>
+                </div>}
+            <AsksSection incoming={incoming} friend={friend} onOpen={do_open_ask} />
             {if not goals_loaded {
                 <p className="rounded-md border pt-3 pb-3 pl-3 pr-3 text-sm text-muted-foreground">Loading your goals…</p>
             } else {
@@ -130,6 +191,19 @@ def:pub HomeView(
                         </p>
                     }}
                 </section>}
+            {has_active and not (rank_pending and len(rank_rows) == 0) and
+                <GapAlerts
+                    gaps={gaps}
+                    pending={gaps_pending}
+                    error={gaps_error}
+                    asked={asked}
+                    default_about={default_about}
+                    busy={ask_busy}
+                    ask_error={ask_error}
+                    onAsk={do_ask}
+                    onRetry={do_retry_gaps}
+                />}
+            <RequestsSection mine={mine} claims={claims} onOpen={do_open_request} />
             <details className="group rounded-md border">
                 <summary className="flex cursor-pointer list-none items-baseline justify-between pt-2.5 pb-2.5 pl-3 pr-3">
                     <span className="text-sm font-medium">
