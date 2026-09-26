@@ -81,3 +81,30 @@ def:pub QuoteIcon(className: str = "") -> JsxElement {
 def:pub PlusIcon(className: str = "") -> JsxElement {
     return _svg(className, [<path key="a" d="M12 5v14" />, <path key="b" d="M5 12h14" />]);
 }
+
+def:pub PencilIcon(className: str = "") -> JsxElement {
+    return
+        _svg(
+            className,
+            [
+                <path key="a" d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />,
+                <path key="b" d="m15 5 3 3" />
+            ]
+        );
+}
+
+def:pub TrashIcon(className: str = "") -> JsxElement {
+    return
+        _svg(
+            className,
+            [
+                <path key="a" d="M3 6h18" />,
+                <path key="b" d="M8 6V4h8v2" />,
+                <path key="c" d="M19 6l-1 14H6L5 6" />
+            ]
+        );
+}
+
+def:pub StopIcon(className: str = "") -> JsxElement {
+    return _svg(className, [<rect key="a" x="6" y="6" width="12" height="12" rx="2" />]);
+}

@@ -56,6 +56,21 @@ def:pub mock_remember_person(person: dict) -> None {
     _remember(person);
 }
 
+"""Forget mock (SOH-209): a forgotten person leaves the mock people list."""
+def:pub mock_forget_person(person_id: str) -> bool {
+    kept: list[dict] = [];
+    found: bool = False;
+    for p in MOCK_STORE["people"] as list[dict] {
+        if p["_jac_id"] == person_id {
+            found = True;
+        } else {
+            kept = kept + [p];
+        }
+    }
+    MOCK_STORE["people"] = kept;
+    return found;
+}
+
 def:pub mock_list_people() -> list[dict] {
     return MOCK_STORE["people"] as list[dict];
 }

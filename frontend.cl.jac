@@ -6,7 +6,11 @@ components/ (onboarding steps in components/onboarding/). Walkers that are not
 live yet go through components/api.cl.jac, the single mock/live swap point.
 
 Views: auth -> loading (GetMe) -> onboarding (4 steps) | home.
-home -> capture (form, Capture call) -> review (extraction + source chips) -> home.
+home -> capture (Guided | Paste | Voice, Capture call) -> review (extraction +
+source chips + inline edit/remove, SOH-209) -> home. Voice (SOH-168): record ->
+Transcribe -> editable transcript -> Capture(audio_ref). Person / promise edits
+that no walker can write yet are kept on this device (lib/local_edits) and
+overlaid on the people list and rankings at render time.
 home = goal picker (ListGoals / SetGoal / CloseGoal) + GoalRank for the active
 goal, cached per goal_id for the session (SOH-170) + people list.
 Exchange (SOH-172): home also shows GapFinder alerts for the active goal (cached
@@ -32,6 +36,8 @@ import from .components.onboarding.PeopleStep { PeopleStep }
 import from .components.onboarding.RecallStep { RecallStep }
 import from .components.capture.CaptureForm { CaptureForm }
 import from .components.capture.Review { Review }
+import from .components.capture.guided { empty_guided, guided_text, how_met_line, remember_met, guided_names }
+import from .lib.local_edits { local_view, local_rows }
 import from .components.api { onboard_me, capture, goal_rank, list_people, list_goals, set_goal, close_goal, mocks_on }
 import from .components.api {
     gap_finder, publish_card, post_request, list_my_requests, decline_request, claim_reveal,
@@ -150,6 +156,10 @@ def active_goal_id(goals: list[dict]) -> str {
     return "";
 }
 
+def empty_voice() -> dict {
+    return {"text": "", "audio_ref": "", "error": "", "mime": ""};
+}
+
 def empty_rows() -> list[dict] {
     return [{"name": "", "how": ""} for _ in range(5)];
 }
@@ -175,7 +185,11 @@ def:pub app -> JsxElement {
         rank_pending: bool = False,
         rank_error: str = "",
         cap_text: str = "",
-        cap_kind: str = "debrief",
+        cap_kind: str = "guided",
+        cap_guided: dict = empty_guided(),
+        cap_voice: dict = empty_voice(),
+        cap_how_met: str = "",
+        cap_met_names: list[str] = [],
         cap_pending: bool = False,
         cap_error: str = "",
         cap_note: str = "",
@@ -225,6 +239,8 @@ def:pub app -> JsxElement {
     async def submit_capture -> None;
     def capture_done -> None;
     def capture_retry -> None;
+    def set_guided(field: str, value: any) -> None;
+    def set_cap_result(next_result: dict) -> None;
     async def load_goals -> None;
     def publish_rank -> None;
     async def ensure_rank(goal_id: str, force: bool = False) -> None;
@@ -260,7 +276,8 @@ def:pub app -> JsxElement {
     home_goal_id: str = active_goal_id(goals_list);
     home_entry: dict = (rank_cache[home_goal_id] or {}) as dict if home_goal_id else {};
     home_cached: bool = True if home_entry["ok"] else False;
-    home_rows: list[dict] = (home_entry["rows"] or []) as list[dict];
+    home_rows: list[dict] = local_rows((home_entry["rows"] or []) as list[dict]);
+    people_shown: list[Person] = [local_view("person", p) for p in people];
     gap_entry: dict = (gap_cache[home_goal_id] or {}) as dict if home_goal_id else {};
     home_gaps: list[dict] = (gap_entry["rows"] or []) as list[dict];
     ex_mine: list[dict] = (ex["mine"] or []) as list[dict];
@@ -303,7 +320,7 @@ def:pub app -> JsxElement {
             } elif view == "home" {
                 <HomeView
                     key="home"
-                    people={people}
+                    people={people_shown}
                     status={status}
                     goals={goals_list}
                     rank_rows={home_rows}
@@ -365,12 +382,16 @@ def:pub app -> JsxElement {
             } elif view == "capture" {
                 <CaptureForm
                     key="capture"
+                    mode={cap_kind}
                     text={cap_text}
-                    kind={cap_kind}
+                    guided={cap_guided}
+                    voice={cap_voice}
                     pending={cap_pending}
                     error={cap_error}
+                    onModeChange={lambda v: str { cap_kind = v; cap_error = ""; }}
                     onTextChange={lambda v: str { cap_text = v; }}
-                    onKindChange={lambda v: str { cap_kind = v; }}
+                    onGuidedField={set_guided}
+                    onVoice={lambda v: dict { cap_voice = v; }}
                     onSubmit={submit_capture}
                     onBack={close_capture}
                     onPhotoResult={lambda r: dict, note: str { cap_result = r; cap_note = note; cap_error = ""; view = "review"; }}
@@ -380,9 +401,12 @@ def:pub app -> JsxElement {
                     key="review"
                     result={cap_result}
                     note_text={cap_note}
-                    known={people}
+                    known={people_shown}
+                    how_met_hint={cap_how_met}
+                    met_names={cap_met_names}
                     onDone={capture_done}
                     onRetry={capture_retry}
+                    onResult={set_cap_result}
                 />
             } else {
                 <StepIndicator key="indicator" step={step} total={4} label={STEP_LABELS[step - 1]} />
