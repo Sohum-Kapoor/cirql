@@ -23,13 +23,42 @@ def now_iso() -> str {
 (container) so every user's PublishCard can attach a Lists edge to it —
 same idiom as exchange.sv.jac's get_exchange()."""
 def get_card_directory() -> CardDirectory {
-    found = [root.shared --> [?:CardDirectory]];
+    found = [x for x in [root.shared -->] if isinstance(x, CardDirectory)];
     if found {
         return found[0];
     }
     dir = (root.shared ++> CardDirectory(name="main"))[0];
     grant(dir, level=ConnectPerm);
     return dir;
+}
+
+"""Every Card listed under every CardDirectory in root.shared. UNTYPED
+traversal then a type filter, on purpose (SOH-205): a typed traversal
+(`[dir ->:Lists:->]`, `[root.shared --> [?:T]]`) is answered from the
+topology index stored on the root that OWNS the origin node, and a user who
+only has CONNECT on that node cannot persist that index -- after a restart
+or on another worker the typed walk silently misses every edge a non-owner
+added. `[n -->]` walks the persisted edge list itself; the type filter is
+a plain isinstance comprehension because `[n -->][?:T]` is compiled into
+the SAME indexed path query and misses them too."""
+def listed_cards() -> list[Card] {
+    out: list[Card] = [];
+    for dir in [x for x in [root.shared -->] if isinstance(x, CardDirectory)] {
+        for c in [x for x in [dir -->] if isinstance(x, Card)] {
+            out.append(c);
+        }
+    }
+    return out;
+}
+
+"""Attach `card` to the shared CardDirectory (idempotent). Listing is not
+granting: get_card still refuses anything but visibility == "link", and the
+fields stay closed unless the owner granted them."""
+def list_card(card: Card) {
+    dir = get_card_directory();
+    if not [edge dir ->:Lists:-> card] {
+        dir +>:Lists:+> card;
+    }
 }
 
 walker:priv PublishCard {
@@ -133,12 +162,7 @@ def:pub get_card(handle: str) -> dict[str, object] {
         "contact_pref": "",
         "updated_at": ""
     };
-    dirs = [root.shared --> [?:CardDirectory]];
-    if not dirs {
-        return empty;
-    }
-    dir = dirs[0];
-    for card in [dir ->:Lists:-> [?:Card]] {
+    for card in listed_cards() {
         if card.handle == handle and card.visibility == "link" {
             return {
                 "found": True,

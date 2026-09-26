@@ -169,13 +169,22 @@ node IntroRequest {
 }
 
 node IntroReply {
+    """Lives under root.shared (so the requester finds it by traversal), OWNED by
+    the friend, allow_root'ed read-only to the requester. Nothing identity-bearing
+    here: anyone can enumerate root.shared and jobj never authorizes."""
     has request_id: str;
     has from_handle: str;
     has match_count: int = 0;
     has strength: str = "weak";      # strong | medium | weak  (the friend's relationship to the match)
     has status: str = "pending";     # pending | approved | opted_in | revealed | declined
-    has match_person_id: str = "";   # stays on the FRIEND's root; never serialized to the requester
-    has revealed_card_id: str = "";  # jid of the Card granted to the requester at Reveal; read server-side by ClaimReveal only
+    has revealed_card_handle: str = "";  # set at Reveal only; ClaimReveal finds the Card by it in the CardDirectory
+}
+
+node ReplyPrivate {
+    """The friend's private half of an IntroReply, under the FRIEND's root only."""
+    has reply_id: str;
+    has match_person_id: str = "";
+    has revealed_card_id: str = "";
 }
 
 edge Posted: Exchange --> IntroRequest {}
