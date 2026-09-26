@@ -19,7 +19,8 @@ The data is a graph and the agents are walkers, so Jac is the natural language r
 - **Nodes and typed edges are the schema.** `Person`, `Fact`, `Intent`, `Promise`, `Goal`, `Card`; edges like `Knows`, `Reported`, `Asserts{span}`, `RelevantTo{reason, strength, evidence}`. Provenance is an edge, not a string field.
 - **Every agent is a walker.** `Capture`, `GoalRank`, `GapFinder`, `ScoreAgainstNeed`, the Exchange (`PostRequest` → `ReplyToRequest` → `ApproveReply` → `OptIn` → `Reveal` → `ClaimReveal`), the QR `Handshake`, `PathFinder`, `Recall`, `Tend`, `GamePlan`, `NetworkHealth`, `Serendipity`, `Forget`, duplicate merge with undo. Each walker is also an HTTP endpoint; the phone spawns it on the caller's own graph root, so "which user's data" is never a parameter an agent could get wrong.
 - **`by llm` replaces prompt glue.** Extraction and ranking are declared as typed objects with a one-line meaning per field; byLLM turns that into the prompt and validates the model's output against the type, so the model proposes structured claims and drafts prose while deterministic Jac enforces ownership, evidence links, expiry, state transitions, grants, and dedup. One model call per walker. When the model is unavailable, every walker degrades to a deterministic fallback and the note is never lost.
-- **Per-user roots make cross-user agents safe to demo.** Each account's graph hangs off its own root; walkers run on the caller's root. The only object that crosses accounts is a Card its owner wrote, granted read-only to one specific root with `Jac.allow_root`. The Exchange lives on `root.shared` and carries a need, one line, and a handle, never a name from anyone's graph.
+- **The graph answers questions a vector store cannot.** "Which friend knows a warehouse manager who wants a routing pilot?" is a two-hop walk over `Knows` and `Reported` edges with a `RelevantTo` filter; there is no embedding of that. `PathFinder`, `WhoNeedsWhatIHave`, and the Exchange are all multi-hop traversals, not similarity searches.
+- **Per-user roots make cross-user agents safe to demo.** Each account's graph hangs off its own root; walkers run on the caller's root. The only object that crosses accounts is a Card its owner wrote, granted read-only to one specific root with `Jac.allow_root`. The Exchange lives on `root.shared` and carries a need, one line, and a handle, never a name from anyone's graph. Trust in the Exchange sits with the human friend: their agent reports a count and a strength, and the friend reviews it before anything is revealed; a lying agent can only mislead its own owner.
 - **98% of the code is Jac** (`scripts/jac_pct.sh`; about 21,000 lines of Jac across server walkers, client UI, tests and tooling): server walkers, client UI in `cl` blocks, tests, the seed loader, and the demo checker. The only JavaScript is d3 and build config.
 - **Token economy.** One model call per debrief, per ranking, per gap check, and per reply; rankings are materialized as `RelevantTo` edges and served from the graph on later calls; when the model is unavailable the whole two-account demo path still completes on deterministic fallbacks in about 1.3 seconds.
 
@@ -58,14 +59,20 @@ We do not say "private", "secure", or "encrypted". Roots and grants do not encry
 - Every fact, intent, promise, and reported tie carries its source note and span. Tap anything → the words it came from (`Receipt`).
 - Nothing sends. Drafts only; approvals are recorded and labeled with their source.
 - No automated fetching from LinkedIn or any platform whose terms forbid it. Your own data export, your contacts, a pasted note, or a consented card exchange.
+- Web enrichment only with a source: `Enrich` uses Gemini with Google Search grounding and attaches a fact only when a grounding chunk gives it a URL and the model says the identity matched your captured context; a made-up name returns nothing. LinkedIn pages are never fetched, even when search points there.
 - Users can correct the system: `Forget` deletes a person or fact and retracts only what depended on it.
+- Your data comes back out: `ExportGraph` returns everything on your root as one JSON file (people, facts, intents, promises, notes, ties, with every span and source).
 
 ## Verified, not intended
 
 - 26 server modules, 26 test suites, 431 test runs (each suite also runs the suites it imports), all green on main (`jac test <module>.sv.jac` for each), including negative tests: account A never sees B's nodes; a bystander cannot read, approve, or claim in the Exchange; an ungranted card read is denied; a handshake-only card is refused by the public read.
 - The cross-user grant primitives were proven with three real accounts and across a server restart before the Exchange was built on them.
-- `scripts/demo_check.jac` runs the whole two-account demo path against the hosted server in about a minute: 18 PASS, 0 FAIL.
+- `scripts/demo_check.jac` runs the whole two-account demo path against the hosted server in about a minute: 22 PASS, 0 FAIL. Five written personas (`docs/personas.md`) were played by agents against a local server; every bug they found is on the board, and the ones that mattered were fixed the same evening.
 - Two bugs that only appear on a persistent multi-request server were caught and fixed the same afternoon: typed traversals drop edges attached by other users after a restart, and a denied cross-root edge write is a silent no-op. Both are now rules in the working agreement.
+
+## What we know is not done
+
+An adversarial code review (a different model family from the one that wrote the walkers) found these, and they are still true: a reveal copies up to three facts the friend captured about the contact, and the contact's tap in the demo stands in for a consent we do not yet collect from them; a merge and its undo do not track which edges already existed; a corrected fact is not re-scored in an open Exchange; a single `jac start` process serves everyone, so concurrent model calls queue. Each is listed so a judge does not have to find it.
 
 ## What's next (roadmap, not built)
 
