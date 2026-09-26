@@ -135,3 +135,4 @@ add it to this file under "Gotchas" — one line, with the fix.
 - Reverse traversal across accounts works: `[req <-:RepliedTo:<-]` on the requester's root returns the friend's IntroReply once it was `allow_root`-granted; still filter with `check_read_access`. `grant(req, level=ConnectPerm)` is what lets a friend attach the edge.
 - `def:pub` functions are served at `POST /function/<name>`. Inside one, `root` is `root.shared` only for an anonymous caller; a token-holder's `root` is their own graph, so a universal lookup (the `CardDirectory`) must address `root.shared` explicitly.
 - `revoke(node)` undoes a public `grant` (ambient, no import). Still enforce visibility in the reader as defense in depth.
+- Tests in one `*.test.jac` share a persisted root across runs: filter results by a per-run id (e.g. `source_note_id == jid(note)`), never by a text you reuse.
