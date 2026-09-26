@@ -6,11 +6,10 @@ user's own graph, never about a person: this file's report never names a
 person, only a kind of person.
 """
 
-import from byllm.lib { Model }
+import from llm { llm }
 import from datetime { datetime }
 import from schema { Me, Person, Goal, HasGoal, Knows, Reported, RelevantTo, FactAbout, IntentAbout }
 
-glob llm: Model = Model(model_name="gemini/gemini-3.8-flash");
 
 obj NeededKind {
     has kind: str;

@@ -10,13 +10,12 @@ expired intents); ONE `by llm` call scores the survivors; on any failure a
 deterministic fallback takes over. Nothing here reads `Knows.last_contact`.
 """
 
-import from byllm.lib { Model }
+import from llm { llm }
 import from datetime { datetime }
 import from schema {
     Me, Person, Knows, Fact, FactAbout, Intent, IntentAbout, Card, FromCard
 }
 
-glob llm: Model = Model(model_name="gemini/gemini-3.8-flash");
 
 # ---------------------------------------------------------------- LLM shape
 

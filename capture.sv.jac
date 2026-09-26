@@ -11,10 +11,9 @@ import from schema {
     Knows, Reported, Asserts, AssertsIntent, AssertsPromise, Mentions,
     FactAbout, IntentAbout, PromiseTo
 }
-import from byllm.lib { Model }
+import from llm { llm }
 import from datetime { datetime }
 
-glob llm: Model = Model(model_name="gemini/gemini-3.8-flash");
 
 # ---------------------------------------------------------------- LLM shape
 
