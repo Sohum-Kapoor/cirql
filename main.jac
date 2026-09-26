@@ -25,6 +25,7 @@ import from forget { Forget }
 import from handshake { OfferHandshake, ListHandshakes, AcceptHandshake, DeclineHandshake }
 import from tend { Tend }
 import from voice { Transcribe }
+import from paths { PathFinder }
 
 # Client-side UI
 cl {
