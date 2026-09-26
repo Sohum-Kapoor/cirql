@@ -1,9 +1,10 @@
 """The one swap point between mocks and live walkers. OWNER: Person B.
 
 Screens call these functions, never the mocks or `root spawn` directly. When a
-walker lands on main, flip its branch to the live `root spawn` form below (and
-delete its mock). Each function returns the walker's first report — exactly the
-shape in contracts/walkers.md.
+walker lands on main, flip its branch to the live `root spawn` form below. Mocks
+stay as a demo fallback (`USE_MOCKS`). `onboard_me` / `capture` return the walker's
+single report; `goal_rank` returns the whole report list — exactly the shapes in
+contracts/walkers.md.
 """
 
 import from .mocks.onboard { mock_onboardme }
