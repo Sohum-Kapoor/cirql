@@ -151,7 +151,7 @@ test "gate c: grant public; B and C both read" {
     }
 }
 
-test "gate d: ungranted Card id read by B is denied; jobj alone does not authorize" {
+test "gate d: ungranted Card id read by B is denied" {
     tmp_dir = tempfile.mkdtemp();
     client: (JacTestClient | None) = None;
     try {
@@ -161,12 +161,12 @@ test "gate d: ungranted Card id read by B is denied; jobj alone does not authori
         (b, _) = _register(cl, "gate_b4@example.com");
 
         card_id = str(_call(cl, a, "GateMakeCard", {"handle": "a-ungranted"})[0]);
+        # jobj(id) resolves ANY node regardless of grants (verified in SOH-204:
+        # an unchecked field read by B returned A's ungranted handle). The
+        # "denied" below comes only from GateReadCard's Jac.check_read_access.
         enforced = _call(cl, b, "GateReadCard", {"card_id": card_id});
-        raw = _call(cl, b, "GateReadCard", {"card_id": card_id, "enforce": False});
-        print(f"[gate d] B enforced -> {enforced}  B raw jobj field read -> {raw}");
+        print(f"[gate d] B -> {enforced}");
         assert enforced == ["denied"], f"ungranted card not denied: {enforced}";
-        # Documented finding, not a requirement: record what a raw jobj read does.
-        assert len(raw) == 1;
     } finally {
         if client is not None { client.close(); }
         shutil.rmtree(tmp_dir, ignore_errors=True);

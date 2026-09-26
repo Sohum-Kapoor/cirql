@@ -104,12 +104,10 @@ walker:priv GateMakeCard {
 }
 
 """Read a Card by id from the caller's context. Reports its handle, "denied"
-if the caller lacks read access, or "not found". enforce=False skips the
-access check and reads the field raw — present only so the gate test can
-prove that jobj alone does not authorize."""
+if the caller lacks read access, or "not found". The access check is always
+applied: jobj() resolves any node regardless of grants and never authorizes."""
 walker:priv GateReadCard {
     has card_id: str;
-    has enforce: bool = True;
     has reports: list[str] = [];
 
     can go with Root entry {
@@ -124,7 +122,7 @@ walker:priv GateReadCard {
             return;
         }
         can_read = Jac.check_read_access(getattr(n, "__jac__"));  # jac:ignore[E1053]
-        if self.enforce and not can_read {
+        if not can_read {
             report "denied";
             return;
         }
