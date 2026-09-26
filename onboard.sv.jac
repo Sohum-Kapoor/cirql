@@ -13,6 +13,7 @@ import from schema {
     Me, Note, Interest, Goal, Intent, Card,
     Owns, HasInterest, HasGoal, HasIntent, AssertsIntent
 }
+import from freshness { default_expiry }
 
 
 # ---------------------------------------------------------------- extraction
@@ -149,7 +150,8 @@ walker:priv OnboardMe {
     has reports: list[dict] = [];
 
     can go with Root entry {
-        now = datetime.now().isoformat();
+        now_dt = datetime.now();
+        now = now_dt.isoformat();
 
         # 1. Store the note first so it is never lost, even if extraction fails.
         note = (root ++> Note(text=self.about, kind="about_me", captured_at=now))[0];
@@ -250,7 +252,7 @@ walker:priv OnboardMe {
                     intents.append(found_n);
                 }
             } else {
-                new_intent = (me +>:HasIntent:+> Intent(kind="need", text=nt, source_kind="self"))[0];
+                new_intent = (me +>:HasIntent:+> Intent(kind="need", text=nt, source_kind="self", expires_at=default_expiry("need", now_dt)))[0];
                 note +>:AssertsIntent(span=nt):+> new_intent;
                 existing_intents.append(new_intent);
                 intents.append(new_intent);
@@ -268,7 +270,7 @@ walker:priv OnboardMe {
                     intents.append(found_o);
                 }
             } else {
-                new_intent = (me +>:HasIntent:+> Intent(kind="offer", text=ot, source_kind="self"))[0];
+                new_intent = (me +>:HasIntent:+> Intent(kind="offer", text=ot, source_kind="self", expires_at=default_expiry("offer", now_dt)))[0];
                 note +>:AssertsIntent(span=ot):+> new_intent;
                 existing_intents.append(new_intent);
                 intents.append(new_intent);

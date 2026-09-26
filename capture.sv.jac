@@ -13,6 +13,7 @@ import from schema {
 }
 import from llm { llm }
 import from datetime { datetime }
+import from freshness { default_expiry }
 
 
 # ---------------------------------------------------------------- LLM shape
@@ -201,7 +202,8 @@ def resolve_person(
 Returns the Capture contract dict (contracts/walkers.md)."""
 def apply_extraction(note: Note, me: Me, x: CaptureExtraction) -> dict[str, any] {
     resolved: dict[str, any] = {};
-    now = datetime.now().isoformat();
+    now_dt = datetime.now();
+    now = now_dt.isoformat();
 
     # Every unique person resolved anywhere (people/facts/intents/promises/ties)
     # ends up here exactly once, keyed by jid - one Mentions edge, one entry in
@@ -269,7 +271,10 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction) -> dict[str, any]
         span = safe_span(xi.span, note, xi.text);
         record_mention(note, p, entry["is_new"] as bool, entry["ambiguous_with"] as list[str], span, mentioned, mention_order);
         norm_kind = normalize_intent_kind(xi.kind);
-        it = (note +>:AssertsIntent(span=span):+> Intent(kind=norm_kind, text=xi.text, source_kind="reported"))[0];
+        it = (note +>:AssertsIntent(span=span):+> Intent(
+            kind=norm_kind, text=xi.text, source_kind="reported",
+            expires_at=default_expiry(norm_kind, now_dt)
+        ))[0];
         it +>:IntentAbout:+> p;
         intents_report.append({"intent": it, "about": jid(p), "span": span});
     }
