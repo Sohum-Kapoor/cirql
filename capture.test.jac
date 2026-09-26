@@ -6,7 +6,10 @@ carries a random per-call suffix (`_uid()`) — this guarantees a name is always
 genuinely new, whether this is the first run ever or the hundredth.
 """
 
+import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction }
+import from schema { Fact, Intent, Knows, Me, Note, Person, Promise }
 import uuid;
+import from datetime { datetime }
 
 def _uid() -> str {
     return uuid.uuid4().hex[:8];
