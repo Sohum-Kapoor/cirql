@@ -5,6 +5,8 @@ here. The LLM extraction path itself is proven live via curl (see the SOH-164
 deliverable), not by a test.
 """
 
+import from onboard { OnboardExtraction, handle_from_name, find_by_topic, find_goal_by_text, find_intent }
+
 test "OnboardExtraction obj holds the fields the walker copies out" {
     extraction = OnboardExtraction(
         name="Sam",
@@ -29,15 +31,18 @@ test "handle_from_name slugifies deterministically" {
 
 test "find_by_topic, find_goal_by_text, find_intent dedupe helpers" {
     interests = [Interest(topic="climate tech"), Interest(topic="robotics")];
-    assert find_by_topic(interests, "robotics").topic == "robotics";
+    hit = find_by_topic(interests, "robotics");
+    assert hit is not None and hit.topic == "robotics";
     assert find_by_topic(interests, "not-there") is None;
 
     goals = [Goal(text="Ship a demo.", created_at="2026-01-01T00:00:00")];
-    assert find_goal_by_text(goals, "Ship a demo.").text == "Ship a demo.";
+    g = find_goal_by_text(goals, "Ship a demo.");
+    assert g is not None and g.text == "Ship a demo.";
     assert find_goal_by_text(goals, "Other goal.") is None;
 
     intents = [Intent(kind="need", text="Feedback from users", source_kind="self")];
-    assert find_intent(intents, "need", "feedback from users").text == "Feedback from users";
+    i = find_intent(intents, "need", "feedback from users");
+    assert i is not None and i.text == "Feedback from users";
     assert find_intent(intents, "offer", "feedback from users") is None;
     assert find_intent(intents, "need", "no match") is None;
 }
