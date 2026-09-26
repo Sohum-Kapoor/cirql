@@ -232,7 +232,7 @@ def:pub HomeView(
                         <p role="status" className="rounded-lg border border-dashed border-border-strong pt-2 pb-2 pl-3 pr-3 text-caption text-muted-foreground">
                             Ranking is partial right now — tap Re-rank in a minute.
                         </p>}
-                    {if len(rank_rows) > 0 {
+                    {if len(shown_rows) > 0 {
                         <RankList rows={shown_rows} dim={rank_pending} on_open_person={open_person} />
                     } elif rank_pending or not rank_cached {
                         <RankSkeleton />
