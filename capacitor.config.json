@@ -1,0 +1,12 @@
+{
+  "appId": "com.jessechang.cirql",
+  "appName": "Cirql",
+  "webDir": ".jac/client/dist",
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "capacitor"
+  },
+  "ios": {
+    "contentInset": "always"
+  }
+}

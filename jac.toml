@@ -41,6 +41,16 @@ base_route_app = "app"
 plugins = ["tailwindcss()"]
 lib_imports = ["import tailwindcss from '@tailwindcss/vite'"]
 
+[plugins.client.mobile]
+# Capacitor iOS shell (SOH-174). Set app_id BEFORE `jac setup mobile` (it is baked
+# into the Xcode project). The backend URL is NOT here: scripts/ios_build.sh passes
+# it as JAC_CLIENT_API_BASE_URL at build time (the tunnel URL changes).
+app_name = "Cirql"
+app_id = "com.jessechang.cirql"
+default_platform = "ios"
+ios_sdk = "iphonesimulator"
+ios_destination = "platform=iOS Simulator,name=iPhone 16,OS=latest"
+
 [plugins.scale.microservices]
 # One process. Without this, jac-scale auto-detects every `sv import` target as a
 # separate microservice and spawns subprocesses that never become healthy.
