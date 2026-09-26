@@ -177,3 +177,25 @@ Reports one dict:
   insufficient: bool, fallback: bool }
 ```
 Bounded traversal over the caller's own root: every Note (text capped at 300 chars), Fact, Intent, and Promise, each paired with its about-person's name where one applies, newest-first, capped at `max_items`. Deterministic pre-filter: keep items sharing a lowercase, non-stopword, length-≥4 token with the question; zero matches short-circuits straight to `{ answer: "Insufficient evidence in your notes.", citations: [], insufficient: true, fallback: true }` without spending the one `by llm` call; 1–2 matches widen to the newest 12 items in the whole pool (too few to answer from confidently, not nothing); 3+ matches use the strict set as-is. Fallback (`fallback: true`) otherwise: `"Your notes mention: "` + the top 3 selected items formatted `"{person}: {span} ({observed_at})"`, `insufficient: false`, `citations` = those 3. On the LLM path, an empty `answer` or empty `citation_indices` without the model itself claiming `insufficient` is forced to the same canonical insufficient response server-side (never invents, never silently returns nothing).
+- 2026-09-26 — SOH-190/188, `freshness.sv.jac` + `forget.sv.jac` land. All five walkers below are `:priv`, own-root only, no LLM. Relationships still never decay — nothing here touches `Knows`; only `Fact.status`/`Fact.valid_to` and `Intent.expires_at` are ever written by `freshness.sv.jac`, and `forget.sv.jac` is the one walker that actually deletes graph data (a stale Fact is flagged, never deleted automatically; an expired Intent is only ever listed). Schema: no changes — `Fact.status`/`valid_to` and `Intent.expires_at` already existed; this just gives them a reader and a writer.
+
+  ### `FreshnessSweep(stale_after_days: int = 180)` — SOH-190
+  Reports one dict:
+  ```
+  { stale_facts: [Fact], expired_intents: [Intent], checked_facts: int, checked_intents: int }
+  ```
+  Every Fact reachable from the caller's own Notes (`Note ->:Asserts:-> Fact`, deduped by jid) with `status != "stale"` and either a non-empty `valid_to` in the past or `observed_at` older than `stale_after_days` gets `status = "stale"` and is listed in `stale_facts` (never deleted — a stale fact is flagged, the user corrects it). Every Intent reachable via `Note ->:AssertsIntent:-> Intent` or `Me ->:HasIntent:-> Intent` (deduped by jid) whose `expires_at` is non-empty and already past is listed in `expired_intents` (never mutated — `GoalRank`'s `gather_evidence` already skips it). An unparsable date is skipped, never flagged. Idempotent for facts: a fact already `status == "stale"` is skipped on a later sweep (still counted in `checked_facts`); an expired intent has no such durable flag and is relisted every sweep until reconfirmed.
+
+  ### `ReconfirmFact(fact_id: str, valid_to: str = "")` — SOH-190
+  Reports `[Fact]` with `status = "confirmed"`, `observed_at` bumped to now, and `valid_to` overwritten when given (left alone otherwise); `[{ error: "not_found" }]` for an unknown id or one owned by a different root (same ownership rule as `Receipt`).
+
+  ### `ReconfirmIntent(intent_id: str, expires_at: str = "")` — SOH-190
+  Reports `[Intent]` with `expires_at` set to the given value, or `default_expiry(kind, now)` when none is given (`need` → +90 days, `offer`/`open_to` → +180 days, same ISO-8601 shape as `datetime.now().isoformat()`); `[{ error: "not_found" }]` as above. `default_expiry` also now backfills an empty `expires_at` on every Intent `capture.sv.jac`/`onboard.sv.jac` create.
+
+  ### `Forget(id: str)` — SOH-188
+  Reports one dict:
+  ```
+  { deleted: "person"|"fact"|"intent"|"promise", id: str,
+    retracted: { facts: int, intents: int, promises: int, edges: int, introductions_canceled: int, relevant_to: int } }
+  ```
+  or `[{ error: "not_found" }]` for an unknown id, one owned by a different root, or any node kind other than Person/Fact/Intent/Promise. **Person**: deletes every Fact/Intent/Promise whose ONLY `FactAbout`/`IntentAbout`/`PromiseTo` target is this person (their `Asserts*`/`*About` edges go with them); a Fact/Intent/Promise about this person AND someone else survives, keeping its edge(s) to whoever else it's about. Deletes the person's `Mentions`, `Knows`, and `Reported` (both directions) edges and its `RelevantTo` edges (counted in `edges` and `relevant_to` respectively); every `Introduction` with a `Proposes` edge to them gets `state = "canceled"` (counted in `introductions_canceled`, never deleted); then deletes the Person node. **Fact/Intent/Promise**: deletes the node (its asserting `Asserts*` edge and its `*About`/`PromiseTo` edge(s) go with it, counted in `edges`) and prunes its jid out of every `RelevantTo.evidence` list it appears in under the caller's root (counted in `relevant_to`). The Note (the receipt) is never touched, never deleted, in either case.

@@ -19,6 +19,8 @@ import from reads { Receipt, ListPromises, CompletePromise, GraphView }
 import from imports { ImportPeople, ConfirmPerson, SkipPerson }
 import from drafts { DraftFollowUp }
 import from recall { Recall }
+import from freshness { FreshnessSweep, ReconfirmFact, ReconfirmIntent }
+import from forget { Forget }
 
 # Client-side UI
 cl {
