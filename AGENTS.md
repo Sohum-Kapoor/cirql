@@ -136,3 +136,4 @@ add it to this file under "Gotchas" — one line, with the fix.
 - `def:pub` functions are served at `POST /function/<name>`. Inside one, `root` is `root.shared` only for an anonymous caller; a token-holder's `root` is their own graph, so a universal lookup (the `CardDirectory`) must address `root.shared` explicitly.
 - `revoke(node)` undoes a public `grant` (ambient, no import). Still enforce visibility in the reader as defense in depth.
 - Tests in one `*.test.jac` share a persisted root across runs: filter results by a per-run id (e.g. `source_note_id == jid(note)`), never by a text you reuse.
+- No tuple unpacking (`a, b = f()`): return a dict. Module-level lists need `glob`. Importing plain defs across `*.sv.jac` (`import from goals { _parse_naive_utc }`) works; prefer it to copying helpers.
