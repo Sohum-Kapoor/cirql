@@ -23,6 +23,7 @@ import from freshness { FreshnessSweep, ReconfirmFact, ReconfirmIntent }
 import from forget { Forget }
 import from handshake { OfferHandshake, ListHandshakes, AcceptHandshake, DeclineHandshake }
 import from tend { Tend }
+import from voice { Transcribe }
 
 # Client-side UI
 cl {
