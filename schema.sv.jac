@@ -15,6 +15,7 @@ See docs/PRD.md §8 for the meaning of every node and edge. Rules that matter:
 node Me {
     has name: str;
     has about: str = "";
+    has blocked_handles: list[str] = [];  # Exchange handles whose requests/replies I never see
 }
 
 node Person {
@@ -196,6 +197,7 @@ node IntroRequest {
     has status: str = "open";        # open | replied | approved | opted_in | revealed | declined | expired
     has created_at: str = "";
     has expires_at: str = "";
+    has audience: str = "friends";   # friends | everyone (SOH friend-gated exchange)
 }
 
 node IntroReply {
@@ -208,6 +210,7 @@ node IntroReply {
     has strength: str = "weak";      # strong | medium | weak  (the friend's relationship to the match)
     has status: str = "pending";     # pending | approved | opted_in | revealed | declined
     has revealed_card_handle: str = "";  # set at Reveal only; ClaimReveal finds the Card by it in the CardDirectory
+    has match_tokens: list[str] = [];  # blinded identity tokens of the top match; hashes only, never a name
 }
 
 node ReplyPrivate {
