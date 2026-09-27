@@ -12,7 +12,7 @@ glob MOCK_NOTES: dict[str, any] = {"gone": []};
 glob _NOTES: list[dict[str, any]] = [
          {
              "id": "mock-note-1", "captured_at": "2026-09-26T09:15:00Z", "kind": "debrief",
-             "audio_ref": "mock-audio-1.webm",
+             "audio_ref": "",
              "text": "Caught up with Maya over coffee. She's still running carbon removal purchasing at Stripe Climate and offered to intro me to the climate hardware funds she buys alongside. I said I'd send her the Kiln Labs one-pager this weekend.",
              "people": [{"id": "mock-person-maya", "name": "Maya Chen"}],
              "counts": {"facts": 1, "intents": 1, "promises": 1}

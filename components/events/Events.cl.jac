@@ -97,7 +97,7 @@ def:pub EventRow(
                 <button
                     type="button"
                     onClick={handle_open}
-                    className="flex min-h-11 flex-1 items-center justify-between gap-2 py-2.5 text-left outline-none transition-colors hover:bg-secondary focus-visible:bg-secondary"
+                    className="flex min-h-11 flex-1 items-center justify-between gap-2 py-2.5 text-left outline-none transition-colors hover:bg-secondary focus-visible:bg-secondary focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
                 >
                     <span className="flex min-w-0 flex-col">
                         <span className="truncate text-body-sm">{name}</span>
@@ -111,7 +111,7 @@ def:pub EventRow(
                 <DropdownMenu modal={False}>
                     <DropdownMenuTrigger
                         aria-label={"More for " + name}
-                        className={cn(buttonVariants().call(None, {"variant": "ghost", "size": "icon-sm"}), "text-muted-foreground")}
+                        className={cn(buttonVariants().call(None, {"variant": "ghost", "size": "icon-lg"}), "text-muted-foreground focus-visible:ring-inset")}
                     >
                         <MoreIcon />
                     </DropdownMenuTrigger>
@@ -146,7 +146,7 @@ def:pub AttendeeRow(person: any, busy: bool, onOpen: Callable[[str], None], onRe
             <button
                 type="button"
                 onClick={handle_open}
-                className="flex min-h-11 flex-1 items-center justify-between gap-2 py-2.5 pl-4 pr-2 text-left outline-none transition-colors hover:bg-secondary focus-visible:bg-secondary"
+                className="flex min-h-11 flex-1 items-center justify-between gap-2 py-2.5 pl-4 pr-2 text-left outline-none transition-colors hover:bg-secondary focus-visible:bg-secondary focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
             >
                 <span className="flex min-w-0 flex-col">
                     <span className="truncate text-body-sm">{_s(person, "name")}</span>
@@ -156,10 +156,10 @@ def:pub AttendeeRow(person: any, busy: bool, onOpen: Callable[[str], None], onRe
             </button>
             <Button
                 variant="ghost"
-                size="icon-sm"
+                size="icon-lg"
                 disabled={busy}
                 aria-label={"Remove " + (_s(person, "name") or "this person")}
-                className="mr-2 shrink-0 text-muted-foreground"
+                className="mr-2 shrink-0 text-muted-foreground focus-visible:ring-inset"
                 onClick={handle_remove}
             >
                 <XIcon />
@@ -329,6 +329,10 @@ def:pub Events(on_open_person: Callable[[str], None]) -> JsxElement {
         detail_loaded = True;
     }
 
+    def retry_detail(e: MouseEvent) {
+        open_detail(detail_id, detail_name);
+    }
+
     def close_detail() {
         detail_id = "";
         detail_name = "";
@@ -419,7 +423,11 @@ def:pub Events(on_open_person: Callable[[str], None]) -> JsxElement {
                 </Button>
             </div>
             {create_error and <p role="alert" className="text-body-sm text-destructive">{create_error}</p>}
-            {load_error and <p role="alert" className="text-body-sm text-destructive">{load_error}</p>}
+            {load_error and
+                <div className="flex items-center gap-2">
+                    <p role="alert" className="flex-1 text-body-sm text-destructive">{load_error}</p>
+                    <Button size="sm" variant="outline" onClick={refresh}>Retry</Button>
+                </div>}
             {if not loaded {
                 <div role="status" aria-label="Loading your events" className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
                     <Skeleton className="h-4 w-3/4" />
@@ -459,7 +467,11 @@ def:pub Events(on_open_person: Callable[[str], None]) -> JsxElement {
                     </SheetHeader>
                     <SheetBody className="gap-3">
                         <Button variant="secondary" onClick={open_picker}>Add people</Button>
-                        {detail_error and <p role="alert" className="text-body-sm text-destructive">{detail_error}</p>}
+                        {detail_error and
+                            <div className="flex items-center gap-2">
+                                <p role="alert" className="flex-1 text-body-sm text-destructive">{detail_error}</p>
+                                <Button size="sm" variant="outline" onClick={retry_detail}>Retry</Button>
+                            </div>}
                         {if not detail_loaded {
                             <div role="status" aria-label="Loading event" className="flex flex-col gap-2">
                                 <Skeleton className="h-3.5 w-full" />
@@ -498,7 +510,11 @@ def:pub Events(on_open_person: Callable[[str], None]) -> JsxElement {
                             placeholder="Search people…"
                             aria-label="Search people"
                         />
-                        {picker_error and <p role="alert" className="text-body-sm text-destructive">{picker_error}</p>}
+                        {picker_error and
+                            <div className="flex items-center gap-2">
+                                <p role="alert" className="flex-1 text-body-sm text-destructive">{picker_error}</p>
+                                <Button size="sm" variant="outline" onClick={open_picker}>Retry</Button>
+                            </div>}
                         {if not picker_loaded {
                             <div role="status" aria-label="Loading people" className="flex flex-col gap-2">
                                 <Skeleton className="h-3.5 w-full" />

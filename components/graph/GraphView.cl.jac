@@ -251,7 +251,7 @@ def draw(svg_el: any, graph: dict, open_ref: any, on_select: any) -> any {
         .style("stroke-width", "3px")
         .style("pointer-events", "none");
 
-    focus: dict = {"id": ""};
+    focus: dict = {"id": "", "node": None};
 
     def touches(d: any, fid: str) -> bool {
         return end_id(d["source"]) == fid or end_id(d["target"]) == fid;
@@ -269,6 +269,18 @@ def draw(svg_el: any, graph: dict, open_ref: any, on_select: any) -> any {
         elabel_sel.style("display", lambda(d: any) -> str {
             return "block" if fid and touches(d, fid) else "none";
         });
+    }
+
+    """Releases the previously-focused node's pin (never `me` - it stays fixed
+    for the life of the graph) so it re-joins the simulation once focus moves
+    on or clears."""
+    def unpin_focused() -> None {
+        prev: any = focus["node"];
+        if prev and prev["kind"] != "me" {
+            prev["fx"] = None;
+            prev["fy"] = None;
+        }
+        focus["node"] = None;
     }
 
     sim: any = forceSimulation(nodes)
@@ -328,11 +340,20 @@ def draw(svg_el: any, graph: dict, open_ref: any, on_select: any) -> any {
             }
             return;
         }
+        # Pin the tapped node where it sits and only lightly reheat, so the
+        # layout stops drifting under it and a quick second tap (opening the
+        # sheet) lands on the same spot.
+        unpin_focused();
+        d["fx"] = d["x"];
+        d["fy"] = d["y"];
+        focus["node"] = d;
         apply_focus(d["id"] as str);
+        sim.alpha(0.1).restart();
         on_select.call(None, {"id": d["id"], "kind": d["kind"], "label": d["label"]});
     });
     svg.on("click", lambda(event: any) {
         if focus["id"] {
+            unpin_focused();
             apply_focus("");
             on_select.call(None, {});
         }
@@ -398,6 +419,10 @@ def:pub GraphView(
         reqRef: Ref[str] = Ref("");
 
     async can with [goal_id] entry {
+        await load_graph();
+    }
+
+    async def load_graph -> None {
         token: str = goal_id + ":" + str(Date.now());  # jac:ignore[W2001]
         reqRef.current = token;
         loading = True;
@@ -448,7 +473,11 @@ def:pub GraphView(
                     {("Loading…" if loading else str(people) + (" person" if people == 1 else " people") + ("" if has_goal else " · no goal"))}
                 </span>
             </div>
-            {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
+            {error and
+                <div className="flex items-center gap-2">
+                    <p role="alert" className="flex-1 text-body-sm text-destructive">{error}</p>
+                    <Button size="sm" variant="outline" onClick={load_graph}>Retry</Button>
+                </div>}
             <div
                 className={"relative ml-[calc(50%_-_min(50vw_-_16px,600px))] w-[min(calc(100vw_-_32px),1200px)] overflow-hidden rounded-lg border bg-card shadow-edge" + ("" if height else " h-[440px] md:h-[560px] lg:h-[70vh]")}
                 style={{"height": height} if height else {}}

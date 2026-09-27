@@ -17,9 +17,8 @@ import from ..ui.button { Button, buttonVariants }
 import from ..ui.skeleton { Skeleton }
 import from ..ui.textarea { Textarea }
 import from ..ui.input { Input }
-import from ..ui.icons { ChevronRightIcon, PencilIcon, MoreIcon }
+import from ..ui.icons { ChevronRightIcon, PencilIcon }
 import from ..ui.collapsible { Collapsible, CollapsibleTrigger, CollapsibleContent }
-import from ..ui.dropdown_menu { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem }
 import from ..ui.alert_dialog {
     AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle,
     AlertDialogDescription, AlertDialogAction, AlertDialogCancel
@@ -330,9 +329,10 @@ def:pub PersonSheet(
         edit_error: str = "",
         archive_confirm_open: bool = False,
         archive_busy: bool = False,
-        archive_error: str = "";
+        archive_error: str = "",
+        retry_tick: int = 0;
 
-    async can with [person_id, open] entry {
+    async can with [person_id, open, retry_tick] entry {
         if not open or not person_id {
             return;
         }
@@ -366,6 +366,10 @@ def:pub PersonSheet(
         if not v {
             on_close();
         }
+    }
+
+    def retry_load(e: MouseEvent) {
+        retry_tick = retry_tick + 1;
     }
 
     def toggle(key: str) -> None {
@@ -619,6 +623,8 @@ def:pub PersonSheet(
                         <SheetDescription>
                             {load_error or "This person isn't in your graph any more."}
                         </SheetDescription>
+                        {load_error and
+                            <Button size="sm" variant="outline" className="self-start" onClick={retry_load}>Retry</Button>}
                     </SheetHeader>
                 } else {
                     <SheetHeader>
@@ -682,16 +688,34 @@ def:pub PersonSheet(
                                 {brief_note and <p className="text-caption text-muted-foreground">{brief_note}</p>}
                             </div>}
                         <PersonSection title="Facts" count={len(facts)} default_open={True}>
+                            {if len(facts) == 0 {
+                                <li className="pt-3 pb-3 pl-4 pr-4 text-body-sm text-muted-foreground">
+                                    No facts yet. They show up once a note mentions one.
+                                </li>
+                                skip;
+                            }}
                             {for row in facts {
                                 <FactItem key={_s(row["fact"], "_jac_id")} row={row} open_key={open_key} onToggle={toggle} />
                             }}
                         </PersonSection>
                         <PersonSection title="Wants / offers" count={len(intents)}>
+                            {if len(intents) == 0 {
+                                <li className="pt-3 pb-3 pl-4 pr-4 text-body-sm text-muted-foreground">
+                                    No wants or offers yet. They show up once a note mentions one.
+                                </li>
+                                skip;
+                            }}
                             {for row in intents {
                                 <IntentItem key={_s(row["intent"], "_jac_id")} row={row} open_key={open_key} onToggle={toggle} />
                             }}
                         </PersonSection>
                         <PersonSection title="Promises" count={len(promises)} default_open={len(promises) > 0}>
+                            {if len(promises) == 0 {
+                                <li className="pt-3 pb-3 pl-4 pr-4 text-body-sm text-muted-foreground">
+                                    No promises yet. They show up once a note mentions one.
+                                </li>
+                                skip;
+                            }}
                             {for row in promises {
                                 <PromiseItem
                                     key={_s(row["promise"], "_jac_id")}
@@ -704,24 +728,26 @@ def:pub PersonSheet(
                             }}
                         </PersonSection>
                         <PersonSection title="Notes" count={len(notes)}>
+                            {if len(notes) == 0 {
+                                <li className="pt-3 pb-3 pl-4 pr-4 text-body-sm text-muted-foreground">
+                                    No notes yet. Capture a conversation to see it here.
+                                </li>
+                                skip;
+                            }}
                             {for row in notes {
                                 <NoteItem key={_s(row["note"], "_jac_id")} row={row} open_key={open_key} onToggle={toggle} />
                             }}
                         </PersonSection>
-                        <div className="flex items-center gap-2">
-                            <Button variant="secondary" className="flex-1" onClick={ask_archive}>Archive</Button>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild={True}>
-                                    <Button size="icon-lg" variant="outline" aria-label="More actions for this person">
-                                        <MoreIcon />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem variant="destructive" onSelect={ask_forget}>
-                                        Forget permanently
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                        <div className="flex flex-col gap-2">
+                            <Button variant="secondary" onClick={ask_archive}>Archive</Button>
+                            <Button
+                                variant="ghost"
+                                size="lg"
+                                className="justify-center text-body-sm font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                onClick={ask_forget}
+                            >
+                                Forget permanently…
+                            </Button>
                         </div>
                     </SheetBody>
                     <AlertDialog open={archive_confirm_open} onOpenChange={set_archive_confirm}>
