@@ -235,7 +235,7 @@ test "build_vcard: a person with every field produces the expected lines, CRLF-t
     assert "URL:https://priya.example.com" in lines;
     assert "URL:https://github.com/priyashah" in lines;
     assert "ADR:;;;Ann Arbor;;;" in lines;
-    assert "NOTE:Met via met at the summit\\; Source note: note-123" in lines;
+    assert "NOTE:Met at the summit\\; From Cirql" in lines;
     assert lines[len(lines) - 2] == "END:VCARD";
     assert vc.endswith("\r\n");
     assert "\r\n\r\n" not in vc;   # no blank/doubled line breaks
@@ -254,7 +254,7 @@ test "build_vcard: escaping a comma and a semicolon in name/org/note fields" {
 
     assert "FN:Vcard-escape-test Smith\\, Jr." in lines;
     assert "ORG:Acme\\; Climate\\, Inc." in lines;
-    assert "NOTE:Met via intro\\; via Bob\\, at the conference" in lines;
+    assert "NOTE:Intro\\; via Bob\\, at the conference\\; From Cirql" in lines;
 }
 
 test "vcard_escape: backslash escaped first, then comma/semicolon, then newlines to literal \\n" {
