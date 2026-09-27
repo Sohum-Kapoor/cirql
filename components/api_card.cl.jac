@@ -23,7 +23,7 @@ read built for exactly this: same field set `get_card` returns plus
 
 import from .mocks.card { mock_my_card, mock_publish_card_full, mock_get_card }
 import from .api { mocks_on }
-sv import from ..cards { PublishCard, get_card as sv_get_card, MyCard }
+sv import from ..cards { PublishCard, get_card, MyCard }
 
 glob MOCK_FAST_MS: int = 150;
 
@@ -79,14 +79,24 @@ async def:pub publish_card_full(
     return card;
 }
 
-"""get_card(handle) -> Card fields only (never `visibility`) — "what a friend
-sees" when handed this handle right now. `found: false` with empty fields for
-an unknown handle OR a `handshake_only` card, same as the live `def:pub`."""
-async def:pub get_card(handle: str) -> dict {
+"""fetch_public_card(handle) -> Card fields only (never `visibility`) — "what a
+friend sees" when handed this handle right now. `found: false` with empty
+fields for an unknown handle OR a `handshake_only` card, same as the live
+`def:pub`.
+
+Named `fetch_public_card`, not `get_card` (SOH-228): `sv import`'s generated
+RPC stub dispatches to `/function/<local binding name>` — an alias
+(`get_card as sv_get_card`) sends the request to `/function/sv_get_card`,
+which doesn't exist server-side, and the failure is a silent 405 at runtime
+with `jac check` green (the module-not-found guard doesn't catch a renamed
+endpoint). This wrapper keeps the `sv import` binding UNALIASED (`get_card`,
+matching the server's own name exactly) and is itself named something else,
+so the two don't collide in this module."""
+async def:pub fetch_public_card(handle: str) -> dict {
     if mocks_on() {
         await fake_delay(MOCK_FAST_MS);
         return mock_get_card(handle);
     }
-    out: dict = await sv_get_card(handle);
+    out: dict = await get_card(handle);
     return out;
 }

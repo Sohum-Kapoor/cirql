@@ -23,6 +23,7 @@ import from ..ui.label { Label }
 import from ..ui.tabs { Tabs, TabsList, TabsTrigger }
 import from ..ui.skeleton { Skeleton }
 import from .CardPreview { CardPreview }
+import from .CardQR { CardQR }  # SOH-228: one import + one JSX mount, fed this editor's own live handle/visibility
 import from ...lib.text { join_lines, split_lines }
 import from ..api_card { my_card, publish_card_full }
 import from ...lib.toast { toast }
@@ -288,5 +289,7 @@ def:pub CardEditor() -> JsxElement {
                 updated_at={updated_at}
                 visibility={visibility}
             />
+
+            <CardQR handle={handle} visibility={visibility} />
         </div>;
 }
