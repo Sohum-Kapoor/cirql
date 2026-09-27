@@ -62,6 +62,7 @@ import from .components.mocks.exchange { mock_as_friend, mock_set_as_friend }
 import from .components.exchange.common { Poller, req_active }
 import from .components.exchange.Requests { RequestDetail }
 import from .components.exchange.Inbox { ApprovalView, asks_needing_you }
+import from .components.ui.toaster { Toaster }
 import from .lib.text { join_lines, today_month_day }
 
 sv import from walkers { GetMe }
@@ -635,5 +636,6 @@ def:pub app -> JsxElement {
             }}
             {poll_home_on and <Poller key={"poll-home-" + str(poll_home_ms)} ms={poll_home_ms} onTick={poll_home} />}
             {poll_req_on and <Poller key="poll-request" ms={5000} onTick={poll_request} />}
+            <Toaster key="toaster" />
         </main>;
 }

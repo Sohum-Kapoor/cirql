@@ -9,6 +9,13 @@ import from .icons { XIcon }
 # @hugeicons Cancel01Icon -> inline XIcon (no new npm dependency). The close
 # control is a plain <button> styled with buttonVariants: Radix `asChild` needs
 # a ref-forwarding child and the Jac Button is not one.
+#
+# SOH-226 (POLISH-PLAN item 6): `data-closed:animate-out` /
+# `data-[side=bottom]:data-closed:animate-sheet-out` (assets/main.css) pair
+# with the existing `data-open:animate-in` / `...animate-sheet-in` so a close
+# is a 180ms fade/slide-down instead of the hard cut every transition used to
+# be — Radix's Presence keeps Content mounted while `data-state="closed"` and
+# an animation is still running, so no JS timer is needed here.
 
 def:pub Sheet(props: any) -> JsxElement {
     return <SheetPrimitive.Root data-slot="sheet" {**props}/>;
@@ -31,7 +38,7 @@ def:pub SheetOverlay(props: any) -> JsxElement {
         <SheetPrimitive.Overlay
             {**props}
             data-slot="sheet-overlay"
-            className={cn("fixed inset-0 z-50 bg-overlay data-open:animate-in", props["className"])}
+            className={cn("fixed inset-0 z-50 bg-overlay data-open:animate-in data-closed:animate-out", props["className"])}
         />;
 }
 
@@ -47,8 +54,8 @@ def:pub SheetContent(props: any) -> JsxElement {
                 data-slot="sheet-content"
                 data-side={side}
                 className={cn(
-                    "fixed z-50 flex flex-col gap-4 border-border bg-popover text-body-sm text-popover-foreground shadow-edge outline-none data-open:animate-in",
-                    "data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:mx-auto data-[side=bottom]:max-h-[85svh] data-[side=bottom]:w-full data-[side=bottom]:max-w-md data-[side=bottom]:overflow-y-auto data-[side=bottom]:rounded-t-xl data-[side=bottom]:border-t data-[side=bottom]:border-l data-[side=bottom]:border-r data-[side=bottom]:pb-[max(16px,env(safe-area-inset-bottom))] data-[side=bottom]:data-open:animate-sheet-in",
+                    "fixed z-50 flex flex-col gap-4 border-border bg-popover text-body-sm text-popover-foreground shadow-edge outline-none data-open:animate-in data-closed:animate-out",
+                    "data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:mx-auto data-[side=bottom]:max-h-[85svh] data-[side=bottom]:w-full data-[side=bottom]:max-w-md data-[side=bottom]:overflow-y-auto data-[side=bottom]:rounded-t-xl data-[side=bottom]:border-t data-[side=bottom]:border-l data-[side=bottom]:border-r data-[side=bottom]:pb-[max(16px,env(safe-area-inset-bottom))] data-[side=bottom]:data-open:animate-sheet-in data-[side=bottom]:data-closed:animate-sheet-out",
                     "data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:border-b",
                     "data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:border-r data-[side=left]:sm:max-w-sm",
                     "data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=right]:sm:max-w-sm",

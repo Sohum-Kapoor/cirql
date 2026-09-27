@@ -11,8 +11,11 @@ import from ...lib.utils { cn }
 #   chip      -> evidence / source pill (aria-expanded = open)
 # Sizes: default 40px (DESIGN: CTAs >= 40px tap height), lg 44px; `row` is a
 # full-width list row (goal options, asks) with no fixed height.
+# SOH-226: one shared transition-property list (color + transform) so a hover
+# color change and the active-press scale never fight over `transition-property`
+# (two separate `transition-*` utilities would just have one silently win).
 glob _buttonVariants: any = cva(
-         "group/button inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent bg-clip-padding text-button outline-none select-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/30 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+         "group/button inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent bg-clip-padding text-button outline-none select-none transition-[color,background-color,border-color,box-shadow,transform] duration-100 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/30 active:scale-[0.98] disabled:active:scale-100 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
          {
              "variants": {
                  "variant": {
