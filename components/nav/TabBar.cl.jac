@@ -148,6 +148,46 @@ def:pub RailButton(
         </button>;
 }
 
+"""The `lg:` left rail on its own (SOH-234 follow-up): Capture, Review, Request
+and Ask are full-page views with no bottom tab bar of their own, so they render
+this directly (instead of the full `TabBar`) to pick up the rail at `lg:`
+without adding the phone bottom bar those views intentionally don't have.
+Identical markup to the rail half of `TabBar` below, kept in sync by hand
+since a shared render is more risk than the duplication is at ~25 lines."""
+def:pub DesktopRail(
+    tab: str,
+    onTab: Callable[[str], None],
+    onCapture: Callable[[], None],
+    inbox_badge: int = 0
+) -> JsxElement {
+    def handle_capture(e: MouseEvent) {
+        onCapture();
+    }
+
+    return
+        <nav
+            aria-label="Main"
+            className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-20 lg:flex lg:w-56 lg:flex-col lg:gap-4 lg:border-r lg:bg-background lg:p-4"
+        >
+            <div className="px-3 pt-1 text-subhead font-semibold">Cirql</div>
+            <div className="flex flex-col gap-1">
+                <RailButton value="home" label="Home" active={tab == "home"} badge={0} onPick={onTab}>
+                    <HomeIcon />
+                </RailButton>
+                <RailButton value="inbox" label="Inbox" active={tab == "inbox"} badge={inbox_badge} onPick={onTab}>
+                    <InboxIcon />
+                </RailButton>
+                <RailButton value="people" label="People" active={tab == "people"} badge={0} onPick={onTab}>
+                    <PeopleIcon />
+                </RailButton>
+            </div>
+            <Button className="mt-2 w-full justify-center rounded-lg" aria-label="Capture a conversation" onClick={handle_capture}>
+                <MicIcon className="size-4" />
+                Capture
+            </Button>
+        </nav>;
+}
+
 def:pub TabBar(
     tab: str,
     onTab: Callable[[str], None],
@@ -180,26 +220,6 @@ def:pub TabBar(
                     </Button>
                 </div>
             </nav>
-            <nav
-                aria-label="Main"
-                className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-20 lg:flex lg:w-56 lg:flex-col lg:gap-4 lg:border-r lg:bg-background lg:p-4"
-            >
-                <div className="px-3 pt-1 text-subhead font-semibold">Cirql</div>
-                <div className="flex flex-col gap-1">
-                    <RailButton value="home" label="Home" active={tab == "home"} badge={0} onPick={onTab}>
-                        <HomeIcon />
-                    </RailButton>
-                    <RailButton value="inbox" label="Inbox" active={tab == "inbox"} badge={inbox_badge} onPick={onTab}>
-                        <InboxIcon />
-                    </RailButton>
-                    <RailButton value="people" label="People" active={tab == "people"} badge={0} onPick={onTab}>
-                        <PeopleIcon />
-                    </RailButton>
-                </div>
-                <Button className="mt-2 w-full justify-center rounded-lg" aria-label="Capture a conversation" onClick={handle_capture}>
-                    <MicIcon className="size-4" />
-                    Capture
-                </Button>
-            </nav>
+            <DesktopRail tab={tab} onTab={onTab} onCapture={onCapture} inbox_badge={inbox_badge} />
         </div>;
 }
