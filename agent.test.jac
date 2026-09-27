@@ -353,7 +353,7 @@ test "SOH-226: step_new_match's title/why are product copy - first name, quoted 
     title = str(f["title"]);
     why = str(f["why"]);
 
-    assert title == "Maya: strong match for 'find a technical cofounder'.", title;
+    assert title == "Maya: strong match for 'find a technical cofounder'", title;   # SOH-232 (audit D): titles are headings, no trailing period
     assert "Maya Chen" not in title, "first name only after the first mention";
     assert "I am looking to" not in title and "I'm looking to" not in title, "never splice the raw first-person goal sentence";
     assert "(evidence" not in why.lower(), why;
@@ -574,8 +574,8 @@ test "agent SOH-229: answer_ask title is '<from_name> is looking for <need>.' wh
         act_b = by_req[req_b];
         act_c = by_req[req_c];
 
-        assert str(act_b["title"]) == "Bob is looking for a climate battery investor.", act_b;
-        assert str(act_c["title"]) == f"@{c_handle} is looking for a student at Umich.", act_c;
+        assert str(act_b["title"]) == "Bob is looking for a climate battery investor", act_b;   # SOH-232 (audit D): titles are headings, no trailing period
+        assert str(act_c["title"]) == f"@{c_handle} is looking for a student at Umich", act_c;   # SOH-232 (audit D): titles are headings, no trailing period
 
         pl_b = json.loads(str(act_b["payload_json"]));
         assert str(pl_b["from_name"]) == "Bob", pl_b;

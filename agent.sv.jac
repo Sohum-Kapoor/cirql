@@ -26,7 +26,7 @@ import from schema {
     Note, Fact, Asserts, FactAbout, AssertsPromise, PromiseTo, Mentions
 }
 import from reads { my_node, receipt_for }
-import from goals { evidence_item_from_jid, goal_noun_phrase }
+import from goals { evidence_item_from_jid, goal_noun_phrase, _parse_naive_utc }
 import from gaps { warm_lines_for }
 import from paths { find_path }
 import from tend { tend_for }
@@ -68,6 +68,32 @@ def _clip(text: str, n: int) -> str {
     return t[:n - 3].rstrip() + "...";
 }
 
+"""'Sep 26' style, no leading zero on the day - SOH-232 (audit D). Mirrors
+onboard.sv.jac's own `month_day` (duplicated rather than imported so this
+module doesn't take on a new cross-file dependency for one 2-line date
+formatter -- same idiom freshness.sv.jac uses for `_parse_naive_utc`); this
+compiler's `strftime` has no `%-d`."""
+def _month_day(dt: datetime) -> str {
+    return dt.strftime("%b ") + str(dt.day);
+}
+
+"""SOH-232 (audit D): a Promise's own `due` is free text -- raw model
+output ("next Friday"), or an ISO date once `edits.UpdatePromise` has
+normalized it. Formats it as a human date when it parses as one; an
+unparsable `due` is never dumped raw into a polished sentence, so it falls
+back to the vaguer, always-true 'soon'. Empty only when `due` itself is
+empty (the caller's own signal there's no due date at all)."""
+def _due_label(due: str) -> str {
+    if not due {
+        return "";
+    }
+    dt = _parse_naive_utc(due);
+    if dt is not None {
+        return _month_day(dt);
+    }
+    return "soon";
+}
+
 """One finding, before it becomes (or refreshes) an AgentAction. `propose`
 False means "refresh an open action with this key, but never create one"."""
 def make_finding(
@@ -78,8 +104,17 @@ def make_finding(
     # SOH-226: product copy, not model narration - polished once, here, so
     # every step (`new_match`/`ask_network`/`route`/`promise_due`/`follow_up`/
     # `reconnect`/`answer_ask`) gets the same cleanup without repeating it.
+    # SOH-232 (audit D): `polish_reason` always ensures one terminal
+    # `.`/`!`/`?` -- right for `why` (a sentence) but wrong for `title` (a
+    # heading, never punctuated with a full stop in the Inbox list); a
+    # title that legitimately ends in `?` (step_route's "Ask Dev?") keeps
+    # it, only a trailing PERIOD is stripped.
+    polished_title = polish_reason(title);
+    if polished_title.endswith(".") {
+        polished_title = polished_title[:-1];
+    }
     return {
-        "kind": kind, "title": polish_reason(title), "why": polish_reason(why), "evidence": evidence,
+        "kind": kind, "title": polished_title, "why": polish_reason(why), "evidence": evidence,
         "person_id": person_id, "goal_id": goal_id, "request_id": request_id,
         "draft": draft, "payload_json": json.dumps(payload),
         "source_walker": source_walker,
@@ -90,6 +125,28 @@ def make_finding(
 
 def active_goals(me: Me) -> list[Goal] {
     return [g for g in [me ->:HasGoal:->] if g.active];
+}
+
+"""SOH-232 (audit B): two Goal nodes can share the same
+`goals.goal_noun_phrase` (created via different flows/times, or a
+near-duplicate `SetGoal`/`OnboardMe` call whose own dedupe missed a
+differently-worded original that normalizes to the same phrase) --
+`step_new_match` must never propose one card per duplicate for the same
+person, so goals are collapsed to one-per-phrase before matching. Keeps
+whichever comes first in `goals`' own order (oldest / already the one
+`RelevantTo` edges were computed against)."""
+def _dedupe_goals_by_phrase(goals: list[Goal]) -> list[Goal] {
+    seen: list[str] = [];
+    out: list[Goal] = [];
+    for g in goals {
+        phrase = goal_noun_phrase(g.text).lower().strip();
+        if phrase in seen {
+            continue;
+        }
+        seen.append(phrase);
+        out.append(g);
+    }
+    return out;
 }
 
 """Evidence ids that resolve, via reads.my_node (readable AND owned by the
@@ -220,7 +277,7 @@ weak/below-threshold — SOH-223 tune verified this is what `prior_strengths`
 reads back next run), for the next run's comparison."""
 def step_new_match(goals: list[Goal], prior: dict[str, str] | None, current: dict[str, str], seen_before: bool) -> list[dict[str, any]] {
     raw: list[dict[str, any]] = [];
-    for goal in goals {
+    for goal in _dedupe_goals_by_phrase(goals) {
         gid = jid(goal);
         for p in [goal <-:RelevantTo:<-] {
             if p.archived {
@@ -251,7 +308,7 @@ def step_new_match(goals: list[Goal], prior: dict[str, str] | None, current: dic
                     # SOH-226: first name only + a noun-phrase goal, never the
                     # raw first-person goal sentence spliced into a title.
                     "title": f"{first_name(p.name)}: {e.strength} match for '{goal_phrase}'",
-                    "why": reason,
+                    "why": reason, "goal_phrase": goal_phrase.lower().strip(),
                     "evidence": ev, "person_id": pid, "goal_id": gid, "draft": e.opener,
                     "payload": {"strength": e.strength, "prev_strength": prev}
                 });
@@ -280,9 +337,15 @@ def step_new_match(goals: list[Goal], prior: dict[str, str] | None, current: dic
     out: list[dict[str, any]] = [];
     for c in raw {
         out.append(make_finding(
+            # SOH-232 (audit B): `extra` (folded into `dedup_key`) carries the
+            # goal's own noun phrase alongside its `goal_id` -- `goal_id`
+            # itself is already unified per phrase by `_dedupe_goals_by_phrase`
+            # above (so two same-phrase Goal nodes never even get iterated
+            # separately), but the dedup key itself should read as keyed on
+            # WHAT the goal is, not merely which node happened to survive.
             "new_match", str(c["title"]), str(c["why"]), c["evidence"] as list[str],
             str(c["person_id"]), str(c["goal_id"]), "", str(c["draft"]),
-            c["payload"] as dict[str, any], "GoalRank", "", bool(c["propose"])
+            c["payload"] as dict[str, any], "GoalRank", str(c["goal_phrase"]), bool(c["propose"])
         ));
     }
     return out;
@@ -394,7 +457,12 @@ def step_route(me: Me, gaps: list[Goal]) -> list[dict[str, any]] {
             f"{connector.name} knows someone {where}. Ask {connector.name}?",
             f"{path['reason']} You were told: {told}. Your goal '{goal_phrase}' has no warm path yet.",
             ev, jid(connector), jid(goal), "", draft,
-            {"target_id": jid(target), "connector_id": jid(connector)},
+            # SOH-232 (audit B): `connector_span` (additive, `list_actions_for`
+            # reads it back) is the SAME Knows/Reported edge span already
+            # quoted in `told` above -- carried onto the finding's own
+            # payload so `evidence_view` can show it on the chip instead of
+            # falling back to the whole source Note's captured paragraph.
+            {"target_id": jid(target), "connector_id": jid(connector), "connector_span": _clip(span, 120) if span else ""},
             "PathFinder", jid(target), True
         ));
     }
@@ -431,12 +499,34 @@ def step_tend(me: Me, now: datetime) -> list[dict[str, any]] {
         fb = fallback_draft(p, gather_follow_up_evidence(p, now));
         draft = str(fb["draft"]);
         payload: dict[str, any] = {"evidence_kind": str(evd["kind"])};
+        why = str(it["reason"]);
         if kind == "promise_due" {
             title = f"Keep your promise to {p.name}: {_clip(span, 80)}";
             payload = {"promise_id": eid, "complete": False, "due": ""};
+            due = "";
             pn = my_node(eid);
             if pn is not None and isinstance(pn, Promise) {
-                payload["due"] = (pn as Promise).due;
+                due = (pn as Promise).due;
+                payload["due"] = due;
+            }
+            said_on = "";
+            obs_dt = _parse_naive_utc(str(evd["observed_at"]));
+            if obs_dt is not None {
+                said_on = _month_day(obs_dt);
+            }
+            # SOH-232 (audit D): the title already quotes the promise's own
+            # text ("Keep your promise to Maya: send her our deck") -- `why`
+            # used to just repeat it ("You promised Maya: send her our
+            # deck"). Add information instead: WHEN it's due (or that it
+            # has none yet) and when it was made.
+            first = first_name(p.name);
+            if due {
+                due_label = _due_label(due);
+                why = f"Due {due_label}. You said this to {first} on {said_on}." if said_on else f"Due {due_label}. You said this to {first}.";
+            } elif said_on {
+                why = f"Open since {said_on}.";
+            } else {
+                why = f"You said this to {first}.";
             }
         } elif kind == "follow_up" {
             title = f"Follow up with {p.name} before \"{_clip(span, 60)}\" lapses";
@@ -444,7 +534,7 @@ def step_tend(me: Me, now: datetime) -> list[dict[str, any]] {
             title = f"Reconnect with {p.name}: check \"{_clip(span, 60)}\"";
         }
         out.append(make_finding(
-            kind, title, str(it["reason"]), [eid], jid(p), "", "", draft,
+            kind, title, why, [eid], jid(p), "", "", draft,
             payload, "Tend", eid, True
         ));
     }
@@ -791,7 +881,37 @@ def run_agent_for(me: Me, reason: str, now: datetime) -> dict[str, any] {
 
 # ---------------------------------------------------------------- list
 
-def evidence_view(ids: list[str]) -> list[dict[str, str]] {
+"""The text up to (and including) the first '.'/'!'/'?' — never the whole
+blob. SOH-232 (audit B): a raw debrief Note's own receipt carries no
+per-citation span (the SAME Note can be cited by several Reported/Knows
+edges, each about a different person, so `receipt_for` can't pick one), so
+falling back to the note's own opening line is the best a caller with only
+the note's id (no `route_span` override) can do."""
+def _first_sentence(text: str) -> str {
+    t = (text or "").strip();
+    if not t {
+        return t;
+    }
+    for sep in [". ", "! ", "? "] {
+        idx = t.find(sep);
+        if idx >= 0 {
+            return t[:idx + 1].strip();
+        }
+    }
+    return t;
+}
+
+"""SOH-232 (audit B): a `route` finding's evidence used to resolve to its
+source Note and, since `receipt_for` never sets a Note's own `span`, fall
+back to `_clip`ping the WHOLE captured paragraph ("Met Maya at the climate
+meetup. She is a partner...") — spilling well past the sentence that
+actually names the connector for THIS hop. `route_span`, when given
+(`step_route`'s own already-resolved Knows/Reported edge span, off the
+finding's `connector_span` payload field), wins for a `note`-kind item;
+otherwise falls back to the note's own first sentence — never the raw
+blob. Every fallback is capped at 120 chars; a real edge/Fact/Intent span
+(`r["span"]`, already short) is used as-is, unclipped, same as before."""
+def evidence_view(ids: list[str], route_span: str = "") -> list[dict[str, str]] {
     out: list[dict[str, str]] = [];
     for i in ids {
         n = my_node(i);
@@ -807,7 +927,15 @@ def evidence_view(ids: list[str]) -> list[dict[str, str]] {
         if "error" in r {
             continue;
         }
-        span = r["span"] or _clip(r["text"], 120);
+        span = r["span"];
+        if not span {
+            if r["kind"] == "note" {
+                span = route_span or _first_sentence(r["text"]);
+            } else {
+                span = r["text"];
+            }
+            span = _clip(span, 120);
+        }
         out.append({"id": r["id"], "kind": r["kind"], "observed_at": r["captured_at"], "span": span});
     }
     return out;
@@ -832,7 +960,17 @@ def list_actions_for(me: Me, status: str, limit: int) -> list[dict[str, any]] {
                 person = n as Person;
             }
         }
-        out.append({"action": a, "person": person, "evidence": evidence_view(list(a.evidence))});
+        # SOH-232 (audit B): a `route` action's own `connector_span` payload
+        # field (set by `step_route`) overrides `evidence_view`'s generic
+        # whole-note fallback for its note-kind evidence entry.
+        route_span = "";
+        if a.kind == "route" and a.payload_json {
+            pl = _payload(a);
+            if "connector_span" in pl {
+                route_span = str(pl["connector_span"]);
+            }
+        }
+        out.append({"action": a, "person": person, "evidence": evidence_view(list(a.evidence), route_span)});
     }
     return out;
 }

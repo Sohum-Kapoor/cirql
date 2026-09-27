@@ -13,8 +13,47 @@ stable, unique handle (imported, not copied).
 
 import from datetime { datetime }
 import from schema { Me, Card, Owns, CardDirectory, Lists, CardListing }
-import from onboard { handle_from_name, jid_suffix }
 import from reads { owner_root }
+
+"""SOH-232: a byte-for-byte copy of onboard.sv.jac's own `handle_from_name` /
+`jid_suffix`, not an import — `onboard.sv.jac` now imports `ensure_card_visible`
+from HERE (its own Card-creation call site needs it), and an `import from
+cards` there would make an already-existing `import from onboard { … }`
+into a circular import (fails at runtime -- `jac check` stays green but `jac
+test`/`jac start` raise `ImportError: cannot import name 'ensure_card_visible'
+from partially initialized module 'cards'`). Keeping these two tiny, pure,
+dependency-free string helpers duplicated in both modules breaks the cycle;
+`exchange.sv.jac`'s own copy still imports the `onboard.sv.jac` originals
+(exchange is a leaf no one imports back), so nothing else moves."""
+def handle_from_name(name: str) -> str {
+    slug = "";
+    prev_dash = False;
+    for ch in name.lower() {
+        if ch.isalnum() {
+            slug += ch;
+            prev_dash = False;
+        } elif not prev_dash {
+            slug += "-";
+            prev_dash = True;
+        }
+    }
+    slug = slug.strip("-");
+    if slug == "" {
+        return "me";
+    }
+    return slug;
+}
+
+def jid_suffix(j: str) -> str {
+    tail = j[-6:].lower();
+    out = "";
+    for ch in tail {
+        if ch.isalnum() {
+            out += ch;
+        }
+    }
+    return out;
+}
 
 def now_iso() -> str {
     return datetime.now().isoformat();
@@ -119,6 +158,26 @@ def list_card(card: Card) {
     grant(listing, level=ReadPerm);
 }
 
+"""SOH-232: the get-or-create idiom's last mile, shared by `OnboardMe`,
+`MyCard`, and `PublishCard` so a Card is never left invisible to its own
+public read. Lists `card` in the shared CardDirectory (idempotent, both
+visibilities -- SOH-183: a `handshake_only` card still needs to be
+FINDABLE by handle for a handshake scan before either side has granted
+anything) and grants `ReadPerm` only when `card.visibility == "link"`;
+otherwise `revoke()`s it so a `handshake_only` card is never publicly
+readable through `get_card`. Never changes `card.visibility` itself -- the
+caller decides that. `me` is accepted (not read) for call-site symmetry
+with `exchange.get_or_create_my_card`'s own inline version of this exact
+idiom, which this def is the single shared home for."""
+def ensure_card_visible(me: Me, card: Card) {
+    list_card(card);
+    if card.visibility == "link" {
+        grant(card, level=ReadPerm);
+    } else {
+        revoke(card);
+    }
+}
+
 walker:priv PublishCard {
     """Get-or-create the caller's Card (via their Me) and publish it. Only
     non-empty arguments overwrite fields; `visibility` is always applied and
@@ -194,12 +253,7 @@ walker:priv PublishCard {
         card.visibility = self.visibility;
         card.updated_at = now_iso();
 
-        list_card(card);
-        if self.visibility == "link" {
-            grant(card, level=ReadPerm);
-        } else {
-            revoke(card);
-        }
+        ensure_card_visible(me, card);
 
         report card;
     }
@@ -226,7 +280,15 @@ walker:priv MyCard {
     typed traversal is safe (AGENTS.md's "typed traversal after a restart"
     gotcha only applies to containers OTHER users attach to, e.g.
     root.shared/CardDirectory — not a caller's own Me/Card). `found: false`
-    with empty fields when there is no Me yet or no Card yet."""
+    with empty fields when there is no Me yet or no Card yet.
+
+    SOH-232: the one exception to "never writes anything" -- if the found
+    Card is `visibility == "link"` but was never listed (e.g. `OnboardMe`
+    created it and `PublishCard` never ran), self-heals via
+    `ensure_card_visible` so opening the owner's own card editor is what
+    makes their public `get_card` link start working, instead of it
+    silently 404ing until they happen to hit Publish. A `handshake_only`
+    card, or one already listed, is untouched."""
     has reports: list[dict[str, object]] = [];
 
     can go with Root entry {
@@ -242,6 +304,18 @@ walker:priv MyCard {
             return;
         }
         card = existing_card[0];
+        if card.visibility == "link" {
+            already_listed = False;
+            for c in listed_cards() {
+                if jid(c) == jid(card) {
+                    already_listed = True;
+                    break;
+                }
+            }
+            if not already_listed {
+                ensure_card_visible(me as Me, card);
+            }
+        }
         report {
             "found": True,
             "card": {

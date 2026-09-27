@@ -15,6 +15,7 @@ import from schema {
 }
 import from freshness { default_expiry }
 import from goals { goal_texts_match, goal_noun_phrase }
+import from cards { ensure_card_visible }
 
 
 # ---------------------------------------------------------------- extraction
@@ -496,6 +497,14 @@ walker:priv OnboardMe {
             handle = handle_from_name(me.name) + "-" + jid_suffix(jid(me));
             card = (me +>:Owns:+> Card(handle=handle))[0];
         }
+        # SOH-232: this Card's default visibility ("link") was never listed
+        # in the shared CardDirectory nor granted ReadPerm until the owner
+        # happened to run PublishCard, so the public get_card(handle) 404'd
+        # while Settings still showed "Anyone with the link" plus a QR
+        # (audit D). Every call, not only on first creation -- same idiom as
+        # `exchange.get_or_create_my_card` -- reading the card's OWN chosen
+        # visibility (never set here, so always "link" for a fresh Card).
+        ensure_card_visible(me, card);
         if extracted_ok {
             card.headline = headline;
             card.about = card_about;
