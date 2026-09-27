@@ -328,7 +328,7 @@ def serendipity_for(me: Me, text: str, url: str, limit: int, now: datetime) -> l
         why = f"{p.name} {fragment}.";
 
         excerpt = url if url else text[:80];
-        share_draft = f"Hi {p.name}, saw this and thought of you: {excerpt} — {fragment}. No pressure.";
+        share_draft = f"Hi {p.name}, saw this and thought of you: {excerpt}, {fragment}. No pressure.";
 
         evidence_out: list[dict[str, str]] = [];
         for item in evidence {

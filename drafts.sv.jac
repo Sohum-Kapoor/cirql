@@ -42,11 +42,11 @@ obj FollowUp {
     has draft: str;
     has evidence_indices: list[int];
 }
-sem FollowUp.draft = "A two-to-four sentence message to this person that mentions ONE specific thing from the numbered evidence (a fact, an open promise, or something they wanted), sounds like a real person, no flattery, no subject line, no sign-off placeholder. Never say 'the fact'/'the note'/'the author'/'the user' or narrate where the evidence came from — write the message itself, not a description of it; never quote evidence in parentheses.";
+sem FollowUp.draft = "A two-to-four sentence message to this person that mentions ONE specific thing from the numbered evidence (a fact, an open promise, or something they wanted), sounds like a real person, no flattery, no subject line, no sign-off placeholder. Never say 'the fact'/'the note'/'the author'/'the user' or narrate where the evidence came from — write the message itself, not a description of it; never quote evidence in parentheses. Never use an em-dash or en-dash; use a period, colon or comma instead.";
 sem FollowUp.evidence_indices = "Numbers of the evidence items the draft relies on.";
 
 def draft_follow_up(person_summary: str, evidence_text: str, intent: str) -> FollowUp by llm(temperature=0.5);
-sem draft_follow_up = "Draft a short follow-up message to a specific person using only the given numbered evidence.";
+sem draft_follow_up = "Draft a short follow-up message to a specific person using only the given numbered evidence. Never use an em-dash or en-dash; use a period, colon or comma instead.";
 sem draft_follow_up.person_summary = "The person's name, title, and organization.";
 sem draft_follow_up.evidence_text = "Numbered evidence about this person: facts, open promises, and notes that mention them.";
 sem draft_follow_up.intent = "What the user wants this message to do, e.g. 'send the demo I promised'; empty string when not given.";

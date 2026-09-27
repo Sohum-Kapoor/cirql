@@ -325,8 +325,8 @@ def network_health_for(me: Me) -> dict[str, object] {
     if weak_tie_share > 0 {
         pct = _pct(weak_tie_share);
         notes.append(
-            f"{pct}% of your people are not connected to anyone else you know "
-            "— your network is wide, not clustered."
+            f"{pct}% of your people are not connected to anyone else you know. "
+            "Your network is wide, not clustered."
         );
     }
     if echo_share > 0 {

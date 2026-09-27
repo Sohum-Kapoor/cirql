@@ -43,9 +43,9 @@ obj RankedItem {
 }
 sem RankedItem.index = "The candidate's # number from the input, copied exactly.";
 sem RankedItem.strength = "strong only when a listed fact or intent directly serves the goal; medium when the person's org/role plausibly helps and one piece of evidence points that way; weak when only a job title or org is similar. A matching title alone is never more than weak.";
-sem RankedItem.reason = "One sentence citing the specific evidence, e.g. 'She wants feedback from wheelchair users, which is what your goal needs.' Never mention how long since you last spoke. Speak as the product talking to the user in second person; never say 'the fact', 'the intent', 'the evidence', 'the profile', 'the note', 'the author', 'the speaker', or 'the user'; never quote evidence in parentheses; one sentence, under 160 characters; use the person's first name only, never their full name.";
+sem RankedItem.reason = "One sentence citing the specific evidence, e.g. 'She wants feedback from wheelchair users, which is what your goal needs.' Never mention how long since you last spoke. Speak as the product talking to the user in second person; never say 'the fact', 'the intent', 'the evidence', 'the profile', 'the note', 'the author', 'the speaker', or 'the user'; never quote evidence in parentheses; one sentence, under 160 characters; use the person's first name only, never their full name. Never use an em-dash or en-dash; use a period, colon or comma instead.";
 sem RankedItem.evidence_indices = "The evidence numbers you relied on for this candidate; empty if none.";
-sem RankedItem.opener = "A two-sentence message opener to this person that mentions one specific thing from the evidence; friendly, no flattery, no mention of the goal being a 'goal'. Speak as a real person, never 'the fact'/'the note'/'the author'/'the user'; never quote evidence in parentheses; use the person's first name.";
+sem RankedItem.opener = "A two-sentence message opener to this person that mentions one specific thing from the evidence; friendly, no flattery, no mention of the goal being a 'goal'. Speak as a real person, never 'the fact'/'the note'/'the author'/'the user'; never quote evidence in parentheses; use the person's first name. Never use an em-dash or en-dash; use a period, colon or comma instead.";
 
 obj RankResult {
     has items: list[RankedItem];

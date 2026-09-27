@@ -352,3 +352,23 @@ test "polish_reason: SOH-226 judge pass 4 — strips 'Her intent/evidence explic
     once = polish_reason("Her intent explicitly mentions that her intent is strong.");
     assert once == polish_reason(once), "polish_reason must be idempotent";
 }
+
+test "polish_reason: SOH-226 no em-dash/en-dash reaches the user - two verb clauses become two sentences, a trailing fragment becomes a comma" {
+    # both sides read as their own clause (each has a verb-ish word) -> period
+    assert polish_reason("She wants an intro — she knows the founder well.") == "She wants an intro. She knows the founder well.";
+    assert polish_reason("He is known for climate work – he recently changed roles.") == "He is known for climate work. He recently changed roles.";
+    # bare em-dash (no surrounding spaces) between two verb clauses -> period
+    assert polish_reason("She offered feedback—she has time this week.") == "She offered feedback. She has time this week.";
+    # a trailing noun fragment (no verb on one side) -> comma
+    assert polish_reason("She works at Boeing — a firmware team.") == "She works at Boeing, a firmware team.";
+    assert polish_reason("Ross café — she mentioned it twice.") == "Ross café, she mentioned it twice.";
+    # multiple dashes in one string are all replaced
+    assert polish_reason("She wants an intro — she knows him — he works at Boeing.") == "She wants an intro. She knows him. He works at Boeing.";
+    # no dash -> unchanged apart from the usual capitalize/period pass
+    assert polish_reason("already clean, no dash here") == "Already clean, no dash here.";
+    # idempotent after delashing
+    once = polish_reason("She wants an intro — she knows the founder well.");
+    assert once == polish_reason(once), "polish_reason must be idempotent after delashing";
+    # no literal em-dash or en-dash survives, ever
+    assert "—" not in once and "–" not in once;
+}

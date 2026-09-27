@@ -306,11 +306,11 @@ obj Recap {
     has text: str;
     has evidence_indices: list[int];
 }
-sem Recap.text = "A spoken 20-second recap (45-70 words) for the user's earbuds before meeting this person: who they are, the one thing from the last conversation, any open promise, what they wanted. Plain spoken sentences, second person ('you promised'), no bullet points, no greeting, no sign-off. Speak like a person talking to the user, never like a system describing its input: never say 'the fact', 'the note', 'the author', or 'the user'; never quote evidence in parentheses.";
+sem Recap.text = "A spoken 20-second recap (45-70 words) for the user's earbuds before meeting this person: who they are, the one thing from the last conversation, any open promise, what they wanted. Plain spoken sentences, second person ('you promised'), no bullet points, no greeting, no sign-off. Speak like a person talking to the user, never like a system describing its input: never say 'the fact', 'the note', 'the author', or 'the user'; never quote evidence in parentheses. Never use an em-dash or en-dash; use a period, colon or comma instead.";
 sem Recap.evidence_indices = "Numbers of the evidence items the recap relies on.";
 
 def spoken_brief(person_summary: str, evidence_text: str) -> Recap by llm(temperature=0.4);
-sem spoken_brief = "Write a short spoken recap of this person for the user's earbuds, right before meeting them, using only the given numbered evidence.";
+sem spoken_brief = "Write a short spoken recap of this person for the user's earbuds, right before meeting them, using only the given numbered evidence. Never use an em-dash or en-dash; use a period, colon or comma instead.";
 sem spoken_brief.person_summary = "The person's name, title, and organization.";
 sem spoken_brief.evidence_text = "Numbered evidence about this person: facts, open promises, current intents, and notes that mention them; may end with an unnumbered line about why they're relevant to the user's current goal.";
 

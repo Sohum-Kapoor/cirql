@@ -302,7 +302,7 @@ def digest_for(me: Me, notes: list[Note], now: datetime) -> dict[str, any] {
     }
 
     if stale {
-        lines.append("Your goal ranking is stale — refresh it.");
+        lines.append("Your goal ranking is stale. Refresh it.");
     } else {
         lines.append("Your goal ranking is current.");
     }
