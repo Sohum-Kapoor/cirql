@@ -8,6 +8,7 @@ OS. Owns only the selected mode; the caller owns `open`.
 import from ..ui.sheet { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetBody }
 import from ..ui.tabs { Tabs, TabsList, TabsTrigger }
 import from ...lib.theme { stored_theme, set_theme }
+import from ..card.CardEditor { CardEditor }
 import from .DataPanel { DataPanel }
 import from .AboutPanel { AboutPanel }
 
@@ -45,6 +46,7 @@ def:pub AppearanceSheet(
                             <TabsTrigger value="system">System</TabsTrigger>
                         </TabsList>
                     </Tabs>
+                    <CardEditor />
                     <DataPanel onDeleted={deleted} />
                     <AboutPanel />
                 </SheetBody>
