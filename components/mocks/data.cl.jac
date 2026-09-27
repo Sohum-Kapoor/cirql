@@ -108,3 +108,12 @@ def:pub mock_delete_my_data(confirm: str) -> dict[str, any] {
         "ok": True
     };
 }
+
+"""Mock DeleteAccount: same gate as DeleteMyData, plus the identity flags."""
+def:pub mock_delete_account(confirm: str) -> dict[str, any] {
+    base: dict[str, any] = mock_delete_my_data(confirm);
+    if base["error"] {
+        return base;
+    }
+    return {"ok": confirm == "DELETE", "deleted": base["deleted"], "identity_removed": False, "identity_disabled": confirm == "DELETE"};
+}
