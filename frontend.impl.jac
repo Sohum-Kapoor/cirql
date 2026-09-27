@@ -455,9 +455,25 @@ impl app.set_cap_result(next_result: dict) -> None {
 
 """Done -> home, refresh ListPeople so new people show up; clear the form.
 The new note can change who helps with the active goal, so its cached GoalRank
-is dropped and re-ranked (the old rows are gone; the list shows its skeleton)."""
+is dropped and re-ranked (the old rows are gone; the list shows its skeleton).
+
+Landing (SOH-226): exactly one person touched -> open their sheet directly
+(reuses HomeView's existing open_person_id hook, SOH-207); several -> a
+confirmation strip on Home ("Added X and Y · 2 facts · 1 promise") naming the
+first one, auto-dismissed after 4 s (frontend.cl.jac); none (everything was
+removed in Review, or nothing extracted) -> plain Home, nothing to land on."""
 impl app.capture_done -> None {
     gid: str = active_goal_id(goals_list);
+    cap_people: list[dict] = (cap_result["people"] or []) as list[dict];
+    cap_facts_n: int = len((cap_result["facts"] or []) as list);
+    cap_promises_n: int = len((cap_result["promises"] or []) as list);
+    landing_pid: str = "";
+    landing_strip: dict = {};
+    if len(cap_people) == 1 {
+        landing_pid = _cap_person_id(cap_people[0]);
+    } elif len(cap_people) > 1 {
+        landing_strip = capture_strip(cap_people, cap_facts_n, cap_promises_n);
+    }
     cap_text = "";
     cap_guided = empty_guided();
     cap_voice = empty_voice();
@@ -482,12 +498,31 @@ impl app.capture_done -> None {
     }
     # A new note is exactly what the agent looks at: routes, gaps, follow-ups.
     run_agent_now("capture");
+    if landing_pid {
+        open_person_id = landing_pid;
+    } elif landing_strip {
+        post_capture = landing_strip;
+    }
 }
 
 """Empty extraction -> back to the form with the text kept."""
 impl app.capture_retry -> None {
     cap_result = {};
     view = "capture";
+}
+
+"""Confirmation strip dismissed by hand (SOH-226) — same as its 4 s timeout."""
+impl app.dismiss_post_capture -> None {
+    post_capture = {};
+}
+
+"""Confirmation strip's "View <name>" (SOH-226) -> the first touched person's sheet."""
+impl app.view_captured_person -> None {
+    pid: str = (post_capture["person_id"] or "") as str;
+    post_capture = {};
+    if pid {
+        open_person_id = pid;
+    }
 }
 
 # ---------------------------------------------------------------- goals + ranking (SOH-170)

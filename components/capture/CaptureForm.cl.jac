@@ -11,15 +11,36 @@ Modes (SOH-209 / SOH-168):
   voice  — record -> Transcribe -> editable transcript; kind "debrief" + audio_ref
 """
 
+import from react { useEffect }
 import from ..ui.button { Button }
 import from ..ui.textarea { Textarea }
 import from ..ui.field { Field, FieldLabel, FieldDescription }
 import from ..ui.tabs { Tabs, TabsList, TabsTrigger, TabsContent }
 import from ..ui.icons { MicIcon, ChevronLeftIcon }
+import from ..ui.skeleton { Skeleton }
 import from .GuidedForm { GuidedForm }
 import from .VoiceCapture { VoiceCapture }
 import from .PhotoCapture { PhotoCapture }
 import from .guided { guided_missing, guided_text }
+
+"""The button-label wait (SOH-226) replaced with a 3-stage narrative, stepping
+every 2.5 s while the request is in flight — the pattern onboarding step 4
+uses ("Walking your graph…") next to a skeleton, not a frozen button label."""
+def:pub wait_copy(stage: int) -> str {
+    if stage == 0 {
+        return "Reading your note…";
+    }
+    if stage == 1 {
+        return "Finding people…";
+    }
+    return "Checking promises…";
+}
+
+"""True only for the "Capture failed" message (never the "write something
+first" validation line) — that's the one Retry can safely re-fire."""
+def:pub is_capture_failure(msg: str) -> bool {
+    return bool(msg) and msg.startswith("Couldn't capture that");
+}
 
 """Can this mode submit? "" when yes, else a short reason."""
 def:pub capture_blocker(mode: str, text: str, guided: dict, voice: dict) -> str {
@@ -47,7 +68,20 @@ def:pub CaptureForm(
     onBack: Callable[[], None],
     onPhotoResult: Callable[[dict, str], None] | None = None
 ) -> JsxElement {
-    has voice_busy: bool = False;
+    has voice_busy: bool = False,
+        wait_stage: int = 0;
+
+    # Narrative timer while a request is in flight (SOH-226): 0 -> 1 at 2.5 s,
+    # 1 -> 2 at 5 s; resets the moment `pending` clears.
+    useEffect(lambda {
+        if not pending {
+            wait_stage = 0;
+            return lambda { };
+        }
+        t1: any = setTimeout(lambda { wait_stage = 1; }, 2500);  # jac:ignore[W2001]
+        t2: any = setTimeout(lambda { wait_stage = 2; }, 5000);  # jac:ignore[W2001]
+        return lambda { clearTimeout(t1); clearTimeout(t2); };  # jac:ignore[W2001,E1053]
+    }, [pending]);
 
     def handle_change(e: ChangeEvent) {
         onTextChange(e.target.value);
@@ -118,18 +152,30 @@ def:pub CaptureForm(
                 </TabsContent>
             </Tabs>
             <PhotoCapture disabled={pending} onResult={onPhotoResult} />
-            {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
+            {if error {
+                <div className="flex flex-col items-start gap-2">
+                    <p role="alert" className="text-body-sm text-destructive">{error}</p>
+                    {is_capture_failure(error) and
+                        <Button variant="secondary" size="sm" onClick={handle_submit}>Retry</Button>}
+                </div>
+            }}
             <div className="flex flex-col gap-2">
-                <Button className="w-full" size="lg" disabled={not can_submit} onClick={handle_submit}>
-                    {"Reading your note…" if pending else "Capture"}
-                </Button>
-                {if pending {
-                    <p aria-live="polite" className="text-center text-caption text-muted-foreground">
-                        Pulling out people, facts, intents and promises. Nothing is sent to anyone.
-                    </p>
-                } elif blocker and not voice_busy {
-                    <p className="text-center text-caption text-muted-foreground">{blocker}</p>
-                }}
+                <Button className="w-full" size="lg" disabled={not can_submit} onClick={handle_submit}>Capture</Button>
+                <div className="flex min-h-[4.5rem] flex-col gap-2">
+                    {if pending {
+                        <div className="flex flex-col items-center gap-2">
+                            <p role="status" aria-live="polite" className="text-center text-caption text-muted-foreground">
+                                {wait_copy(wait_stage)}
+                            </p>
+                            <div className="flex w-full flex-col gap-1.5">
+                                <Skeleton className="h-3.5 w-full" />
+                                <Skeleton className="h-3.5 w-2/3" />
+                            </div>
+                        </div>
+                    } elif blocker and not voice_busy {
+                        <p className="text-center text-caption text-muted-foreground">{blocker}</p>
+                    }}
+                </div>
             </div>
         </div>;
 }
