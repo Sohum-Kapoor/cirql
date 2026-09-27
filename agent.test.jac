@@ -147,6 +147,10 @@ test "agent: RunAgent proposes, dedups, respects dismiss, reopens snooze, approv
         assert str(rt["action"]["draft"]).startswith("Hi Dev");
         aa = _ag_by_kind(rows, "answer_ask")[0];
         assert str(aa["action"]["request_id"]) == b_req_id;
+        assert str(aa["action"]["dedup_key"]) == "answer_ask|" + b_req_id;
+        an0 = _ag_by_kind(rows, "ask_network")[0];
+        assert [str(e["kind"]) for e in an0["evidence"]] == ["goal"], an0;
+        assert str(an0["evidence"][0]["observed_at"]), an0;
         pd = _ag_by_kind(rows, "promise_due")[0];
         assert str(pd["action"]["draft"]);
 
@@ -186,7 +190,7 @@ test "agent: RunAgent proposes, dedups, respects dismiss, reopens snooze, approv
         print(f"[agent] approve ask_network {ap}");
         assert str(ap["action"]["status"]) == "approved";
         assert str(ap["action"]["approval_source"]) == "in_app";
-        assert str(ap["result"]["step"]) == "PostRequest";
+        assert str(ap["result"]["step"]) == "posted";
         mine = _ag_run(cl, a, "ListMyRequests", {});
         needs = [str(m["request"]["need"]) for m in mine];
         assert "a robotics engineer to run two pilots t1" in needs, needs;
@@ -207,7 +211,7 @@ test "agent: RunAgent proposes, dedups, respects dismiss, reopens snooze, approv
         orig = _ag_stub_scorer();
         aa_ap = dict(_ag_run(cl, a, "ResolveAgentAction", {"action_id": str(aa["action"]["_jac_id"]), "decision": "approve"})[0]);
         print(f"[agent] approve answer_ask {aa_ap}");
-        assert str(aa_ap["result"]["step"]) == "ReplyToRequest";
+        assert str(aa_ap["result"]["step"]) == "replied";
         assert str(aa_ap["result"]["reply"]["request_id"]) == b_req_id;
 
         # ---- isolation: B never sees or resolves A's actions
