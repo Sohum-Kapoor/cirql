@@ -43,6 +43,7 @@ which `Me` exists, so `UpdatePromise`'s tests run through
 
 import from schema { Me, Person, Promise, Knows }
 import from reads { my_node }
+import from identity { refresh_person_tokens }
 
 def _not_found() -> dict[str, str] {
     return {"error": "not_found"};
@@ -108,8 +109,7 @@ def update_person_for(
     if stripped_location {
         p.location = stripped_location;
     }
-    # TODO(SOH-215): once identity.sv.jac lands, call
-    # refresh_person_tokens(p) here when any contact field above changed.
+    refresh_person_tokens(p);  # SOH-215: name/org/contact changes re-derive the blinded tokens
 
     stripped_how_met = how_met.strip();
     if stripped_how_met and target_edge is not None {
