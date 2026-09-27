@@ -636,8 +636,8 @@ async def:pub capture_image(image_b64: str, mime: str) -> dict {
 # `RestorePerson` / `DeleteMyData` land from a parallel server branch; until merged,
 # go through `jacSpawn` (same POST /walker/<Name> call as PersonDetail/Brief above) —
 # flip to `sv import` + `root spawn` once that branch is on main.
-import from .mocks.data { mock_export_graph, mock_list_archived, mock_restore_person, mock_delete_my_data }
-sv import from ..export { ExportGraph }
+import from .mocks.data { mock_export_graph, mock_export_contacts, mock_list_archived, mock_restore_person, mock_delete_my_data }
+sv import from ..export { ExportGraph, ExportContacts }
 
 """ExportGraph() -> the caller's whole graph as one JSON dict (contracts/walkers.md):
 { exported_at, me, goals, card, people, knows, reported, facts, intents, promises,
@@ -651,6 +651,20 @@ async def:pub export_graph() -> dict {
     }
     result = root spawn ExportGraph();
     out = _first(result, "ExportGraph") as dict;
+    return out;
+}
+
+"""ExportContacts() -> the caller's active (non-archived) people as one
+VERSION:3.0 vCard file (contracts/walkers.md): { vcf: str, count: int }."""
+async def:pub export_contacts() -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = mock_export_contacts();
+        return out;
+    }
+    result = root spawn ExportContacts();
+    out = _first(result, "ExportContacts") as dict;
     return out;
 }
 

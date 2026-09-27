@@ -33,7 +33,7 @@ import from serendipity { Serendipity }
 import from vision { CaptureImage }
 import from person { PersonDetail, Brief }
 import from enrich { Enrich }
-import from export { ExportGraph }
+import from export { ExportGraph, ExportContacts }
 import from edits { UpdatePerson, UpdatePromise }
 import from identity { RefreshIdentityTokens }
 import from search { Search }

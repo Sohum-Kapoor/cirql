@@ -14,6 +14,14 @@ anything, per AGENTS.md.
 SOH-216: `person_dict` gains `email`/`phone`/`links`/`location` — plain
 fields on the `Person` node, never crossing accounts, same as `org`/`title`.
 
+SOH-226: `ExportContacts` — the caller's active (non-archived) people as one
+VERSION:3.0 vCard file (RFC 6350), for "take my contacts out of Cirql".
+`build_vcard(p, ke)` renders one card (deterministic, testable in isolation
+per RFC-6350-escaping/field-shape test); `build_contacts_vcf(me)` walks
+`lifecycle.active_people(me)` (same non-archived filter every other list
+uses — an archived person is a soft delete, so they're excluded here too,
+same as everywhere else) and joins the cards. No `by llm`.
+
 `build_export(me, cap)` is the deterministic, testable core (mirrors
 `reads.sv.jac`'s `graph_view_for` / `list_promises_raw` pattern): the
 walker resolves "the" caller's `Me` via `[root --> [?:Me]][0]` (ambiguous
@@ -36,6 +44,7 @@ import from schema {
     Knows, Reported, Asserts, AssertsIntent, AssertsPromise, Mentions,
     FactAbout, IntentAbout, PromiseTo, HasGoal, Owns
 }
+import from lifecycle { active_people }
 
 # ---------------------------------------------------------------- node dicts
 
@@ -368,5 +377,116 @@ walker:priv ExportDevSeed {
             "p1": jid(p1), "p2": jid(p2),
             "fact": jid(fact), "intent": jid(intent), "promise": jid(promise)
         };
+    }
+}
+
+# ---------------------------------------------------------------- vCard export (SOH-226)
+
+"""RFC 6350 §3.4 text-value escaping: backslash FIRST (else a later escape's
+own backslash gets re-escaped), then comma, then semicolon, then newline
+(CRLF/CR/LF all fold to a literal `\\n` escape sequence, never a raw line
+break inside a value)."""
+def vcard_escape(s: str) -> str {
+    out = s.replace("\\", "\\\\");
+    out = out.replace(",", "\\,");
+    out = out.replace(";", "\\;");
+    out = out.replace("\r\n", "\\n");
+    out = out.replace("\n", "\\n");
+    out = out.replace("\r", "\\n");
+    return out;
+}
+
+"""Split a display name on its LAST space into (family, given) for the `N`
+property; a name with no space is entirely `family` (RFC 6350 has no
+single-token given/family split, and this keeps `FN` and `N` consistent for
+a description-only Person name)."""
+def name_parts(name: str) -> dict[str, str] {
+    trimmed = name.strip();
+    if not trimmed {
+        return {"family": "", "given": ""};
+    }
+    idx = trimmed.rfind(" ");
+    if idx < 0 {
+        return {"family": trimmed, "given": ""};
+    }
+    return {"family": trimmed[idx + 1:], "given": trimmed[:idx]};
+}
+
+"""One VERSION:3.0 vCard (CRLF line endings, no folding — every value here
+is short) for `p`. `ke` is the caller's own `Knows` edge to `p` (or `None`),
+used only for the `NOTE` line: present only when `ke.how_met` and/or
+`ke.source_note` is set, per contracts/walkers.md. Fields left off the
+Person entirely (`org`, `title`, `email`, `phone`, one `URL` per `links`
+entry, `location` as an `ADR` locality) are simply skipped when blank."""
+def build_vcard(p: Person, ke: Knows | None) -> str {
+    parts = name_parts(p.name);
+    lines: list[str] = ["BEGIN:VCARD", "VERSION:3.0"];
+    lines.append(f"N:{vcard_escape(parts['family'])};{vcard_escape(parts['given'])};;;");
+    lines.append(f"FN:{vcard_escape(p.name)}");
+    if p.org {
+        lines.append(f"ORG:{vcard_escape(p.org)}");
+    }
+    if p.title {
+        lines.append(f"TITLE:{vcard_escape(p.title)}");
+    }
+    if p.email {
+        lines.append(f"EMAIL:{vcard_escape(p.email)}");
+    }
+    if p.phone {
+        lines.append(f"TEL:{vcard_escape(p.phone)}");
+    }
+    for link in p.links {
+        if link {
+            lines.append(f"URL:{vcard_escape(link)}");
+        }
+    }
+    if p.location {
+        lines.append(f"ADR:;;;{vcard_escape(p.location)};;;");
+    }
+    note_bits: list[str] = [];
+    if ke is not None {
+        if ke.how_met {
+            note_bits.append(f"Met via {ke.how_met}");
+        }
+        if ke.source_note {
+            note_bits.append(f"Source note: {ke.source_note}");
+        }
+    }
+    if note_bits {
+        lines.append(f"NOTE:{vcard_escape('; '.join(note_bits))}");
+    }
+    lines.append("END:VCARD");
+    return "\r\n".join(lines) + "\r\n";
+}
+
+"""Deterministic, testable core: one VERSION:3.0 vCard per active (non-
+archived) person `me` knows (`lifecycle.active_people`, same filter every
+other list uses), concatenated in `active_people`'s order. Returns
+`{vcf, count}` — `count` is the number of cards, always `len(active_people(me))`."""
+def build_contacts_vcf(me: Me) -> dict[str, any] {
+    people = active_people(me);
+    cards: list[str] = [];
+    for p in people {
+        know_edges = [edge me ->:Knows:-> p];
+        ke = know_edges[0] if know_edges else None;
+        cards.append(build_vcard(p, ke));
+    }
+    return {"vcf": "".join(cards), "count": len(people)};
+}
+
+walker:priv ExportContacts {
+    """Resolves the caller's own Me, then delegates to `build_contacts_vcf`.
+    Reports one dict `{vcf: str, count: int}` (contracts/walkers.md). No Me
+    yet -> `{vcf: "", count: 0}`."""
+    has reports: list[dict[str, any]] = [];
+
+    can go with Root entry {
+        existing = [root --> [?:Me]];
+        if not existing {
+            report {"vcf": "", "count": 0};
+            return;
+        }
+        me = existing[0];
+        report build_contacts_vcf(me);
     }
 }

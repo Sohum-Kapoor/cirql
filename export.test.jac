@@ -24,7 +24,8 @@ a dotted `*.sv.jac` module directly, so a fresh temp dir gets a copy of
 `export.sv.jac` + `schema.sv.jac` next to a dot-free `app.jac`.
 """
 
-import from export { build_export, ExportGraph, ExportDevSeed }
+import from export { build_export, ExportGraph, ExportContacts, ExportDevSeed, build_vcard, build_contacts_vcf, vcard_escape, name_parts }
+import from lifecycle { active_people }
 import from schema {
     Me, Person, Note, Fact, Intent, Promise, Goal, Card,
     Knows, Reported, Asserts, AssertsIntent, AssertsPromise, Mentions,
@@ -206,6 +207,98 @@ test "ExportGraph via root spawn: no Me yet reports the empty shape" {
     assert "exported_at" in out;
     assert "counts" in out;
     assert "truncated" in out;
+}
+
+# ---------------------------------------------------------------- vCard export (SOH-226)
+
+test "build_vcard: a person with every field produces the expected lines, CRLF-terminated" {
+    me = (root ++> Me(name="Vcard-test Me"))[0];
+    p = (me +>:Knows(how_met="met at the summit", status="confirmed", source_note="note-123"):+> Person(
+        name="Vcard-test Priya Shah", org="Acme Climate", title="Founder", status="confirmed",
+        email="priya@example.com", phone="555-0111",
+        links=["https://priya.example.com", "https://github.com/priyashah"],
+        location="Ann Arbor"
+    ))[0];
+    ke = ([edge me ->:Knows:-> p])[0];
+
+    vc = build_vcard(p, ke);
+    lines = vc.split("\r\n");
+
+    assert lines[0] == "BEGIN:VCARD";
+    assert lines[1] == "VERSION:3.0";
+    assert "N:Shah;Vcard-test Priya;;;" in lines;
+    assert "FN:Vcard-test Priya Shah" in lines;
+    assert "ORG:Acme Climate" in lines;
+    assert "TITLE:Founder" in lines;
+    assert "EMAIL:priya@example.com" in lines;
+    assert "TEL:555-0111" in lines;
+    assert "URL:https://priya.example.com" in lines;
+    assert "URL:https://github.com/priyashah" in lines;
+    assert "ADR:;;;Ann Arbor;;;" in lines;
+    assert "NOTE:Met via met at the summit\\; Source note: note-123" in lines;
+    assert lines[len(lines) - 2] == "END:VCARD";
+    assert vc.endswith("\r\n");
+    assert "\r\n\r\n" not in vc;   # no blank/doubled line breaks
+    assert "\n" not in vc.replace("\r\n", "");  # every break is CRLF - no bare LF left over
+}
+
+test "build_vcard: escaping a comma and a semicolon in name/org/note fields" {
+    me = (root ++> Me(name="Vcard-escape-test Me"))[0];
+    p = (me +>:Knows(how_met="intro; via Bob, at the conference"):+> Person(
+        name="Vcard-escape-test Smith, Jr.", org="Acme; Climate, Inc.", status="confirmed"
+    ))[0];
+    ke = ([edge me ->:Knows:-> p])[0];
+
+    vc = build_vcard(p, ke);
+    lines = vc.split("\r\n");
+
+    assert "FN:Vcard-escape-test Smith\\, Jr." in lines;
+    assert "ORG:Acme\\; Climate\\, Inc." in lines;
+    assert "NOTE:Met via intro\\; via Bob\\, at the conference" in lines;
+}
+
+test "vcard_escape: backslash escaped first, then comma/semicolon, then newlines to literal \\n" {
+    assert vcard_escape("a,b;c\\d\ne\rf") == "a\\,b\\;c\\\\d\\ne\\nf";
+}
+
+test "name_parts: splits on the last space; no space -> whole name is family" {
+    parts = name_parts("Maya O.");
+    assert parts["family"] == "O.";
+    assert parts["given"] == "Maya";
+    single = name_parts("Cher");
+    assert single["family"] == "Cher";
+    assert single["given"] == "";
+}
+
+test "build_contacts_vcf: an archived person is excluded, count matches the active people" {
+    me = (root ++> Me(name="Vcard-archive-test Me"))[0];
+    active_p = (me +>:Knows(how_met="conference"):+> Person(
+        name="Vcard-archive-test Active", status="confirmed", archived=False
+    ))[0];
+    archived_p = (me +>:Knows(how_met="conference"):+> Person(
+        name="Vcard-archive-test Archived", status="confirmed", archived=True
+    ))[0];
+
+    out = build_contacts_vcf(me);
+    vcf = out["vcf"] as str;
+    count = out["count"] as int;
+
+    assert "Vcard-archive-test Active" in vcf;
+    assert "Vcard-archive-test Archived" not in vcf;
+    assert count == vcf.count("BEGIN:VCARD");
+    assert count == len(active_people(me));
+    assert jid(archived_p) != jid(active_p);  # sanity: two distinct people were seeded
+}
+
+test "ExportContacts via root spawn: no Me yet reports the empty shape" {
+    result = root spawn ExportContacts();
+    assert len(result.reports) == 1;
+    out = result.reports[0];
+    assert "vcf" in out;
+    assert "count" in out;
+    # This persisted test root already has a Me from earlier tests in this
+    # file, so - like ExportGraph's equivalent test above - this only checks
+    # the report is well-formed, not the true "no Me yet" empty case.
 }
 
 # ---------------------------------------------------------------- two-account isolation

@@ -22,7 +22,7 @@ import from ..ui.alert_dialog {
     AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle,
     AlertDialogDescription, AlertDialogAction, AlertDialogCancel
 }
-import from ..api { export_graph, list_archived, restore_person, delete_my_data }
+import from ..api { export_graph, export_contacts, list_archived, restore_person, delete_my_data }
 import from ...lib.text { join_with }
 import from ...lib.utils { cn }
 
@@ -62,6 +62,21 @@ Object-URL recipe (jac-cl-js-interop): create, click a throwaway <a>, revoke."""
 def _download_json(data: dict, filename: str) {
     text: str = String(JSON.stringify(data, None, 2));  # jac:ignore[W2001]
     blob: any = new(Blob, [text], {"type": "application/json"});  # jac:ignore[W2001,E1053,W1051]
+    url: str = String(URL.createObjectURL(blob));  # jac:ignore[W2001,E1032]
+    a: any = document.createElement("a");  # jac:ignore[W2001]
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);  # jac:ignore[W2001,E1030]
+    a.click();
+    document.body.removeChild(a);  # jac:ignore[W2001,E1030]
+    URL.revokeObjectURL(url);  # jac:ignore[W2001,E1032]
+}
+
+"""Trigger a browser download of `text` as-is (no JSON encoding), named
+`filename`, with mime type `mime`. Same object-URL recipe as `_download_json`
+— used for the vCard export (SOH-226), which is already plain text."""
+def _download_text(text: str, filename: str, mime: str) {
+    blob: any = new(Blob, [text], {"type": mime});  # jac:ignore[W2001,E1053,W1051]
     url: str = String(URL.createObjectURL(blob));  # jac:ignore[W2001,E1032]
     a: any = document.createElement("a");  # jac:ignore[W2001]
     a.href = url;
@@ -134,6 +149,9 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
     has export_busy: bool = False,
         export_error: str = "",
         export_counts: dict = {},
+        contacts_busy: bool = False,
+        contacts_error: str = "",
+        contacts_count: int = -1,
         archived: list[dict] = [],
         archived_loaded: bool = False,
         archived_error: str = "",
@@ -174,6 +192,21 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
             export_error = "Couldn't export right now. " + str(err);
         }
         export_busy = False;
+    }
+
+    async def run_export_contacts(e: MouseEvent) -> None {
+        contacts_busy = True;
+        contacts_error = "";
+        try {
+            data: dict = await export_contacts();
+            vcf: str = _s(data, "vcf");
+            count: int = _n(data, "count");
+            contacts_count = count;
+            _download_text(vcf, "cirql-contacts.vcf", "text/vcard");
+        } except Exception as err {
+            contacts_error = "Couldn't export contacts right now. " + str(err);
+        }
+        contacts_busy = False;
     }
 
     async def do_restore(person_id: str) -> None {
@@ -245,6 +278,23 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                     )}
                     <Button variant="outline" disabled={export_busy} onClick={run_export} className="w-full focus-visible:ring-inset">
                         {"Exporting…" if export_busy else "Export my data"}
+                    </Button>
+                    {contacts_error and
+                        <div className="flex items-center gap-2">
+                            <p role="alert" className="flex-1 text-body-sm text-destructive">{contacts_error}</p>
+                            <Button size="sm" variant="outline" onClick={run_export_contacts}>Retry</Button>
+                        </div>}
+                    {(contacts_count >= 0) and (
+                        <p className="text-caption text-muted-foreground">{str(contacts_count) + " contacts exported"}</p>
+                    )}
+                    <Button
+                        variant="outline"
+                        disabled={contacts_busy}
+                        onClick={run_export_contacts}
+                        aria-label="Export contacts as vCard file"
+                        className="w-full focus-visible:ring-inset"
+                    >
+                        {"Exporting…" if contacts_busy else "Export contacts (.vcf)"}
                     </Button>
                 </CardContent>
             </Card>

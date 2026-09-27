@@ -58,6 +58,31 @@ def:pub mock_export_graph() -> dict[str, any] {
     };
 }
 
+"""ExportContacts() -> the caller's active people as one VERSION:3.0 vCard
+file (contracts/walkers.md). A small, representative shape matching the two
+people in `mock_export_graph` above — enough for the panel to show a count
+and for a downloaded file to be a real .vcf."""
+def:pub mock_export_contacts() -> dict[str, any] {
+    vcf: str = (
+        "BEGIN:VCARD\r\n" +
+        "VERSION:3.0\r\n" +
+        "N:Chen;Maya;;;\r\n" +
+        "FN:Maya Chen\r\n" +
+        "ORG:Stripe Climate\r\n" +
+        "TITLE:Carbon removal lead\r\n" +
+        "NOTE:Met via worked together at Stripe\r\n" +
+        "END:VCARD\r\n" +
+        "BEGIN:VCARD\r\n" +
+        "VERSION:3.0\r\n" +
+        "N:Okafor;Dev;;;\r\n" +
+        "FN:Dev Okafor\r\n" +
+        "ORG:Great Lakes Angels\r\n" +
+        "TITLE:Associate\r\n" +
+        "END:VCARD\r\n"
+    );
+    return {"vcf": vcf, "count": 2};
+}
+
 """ListArchived() -> [Person] (archived == True)."""
 def:pub mock_list_archived() -> list[dict[str, any]] {
     ids: list[str] = MOCK_DATA["archived"] as list[str];
