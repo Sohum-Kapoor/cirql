@@ -18,8 +18,8 @@ though `jac test` runs against one shared, persisted root (jac-testing) and
 earlier tests' nodes are still hanging around.
 """
 
-import from goals { Candidate, EvidenceItem, RankedItem, compute_days_since_contact, gather_evidence, collect_candidates, materialize, fallback_rank, serve_cached, evidence_item_from_jid, collect_all_candidates, count_candidate_people, ranking_is_stale, annotate_ranking, RANK_CAP, goal_texts_match, set_goal_for, goal_noun_phrase }
-import from schema { Me, Person, Goal, Fact, Intent, Note, Knows, Reported, FactAbout, IntentAbout, Mentions, AssertsIntent, RelevantTo, HasGoal }
+import from goals { Candidate, EvidenceItem, RankedItem, compute_days_since_contact, gather_evidence, collect_candidates, materialize, fallback_rank, serve_cached, evidence_item_from_jid, collect_all_candidates, count_candidate_people, ranking_is_stale, annotate_ranking, RANK_CAP, goal_texts_match, set_goal_for, goal_noun_phrase, newest_evidence_at, existing_relevant_to, stale_trigger, candidate_is_stale, change_reason_text, compute_stale_indices, prune_stale_relevantto, materialize_stable }
+import from schema { Me, Person, Goal, Fact, Intent, Promise, Note, Knows, Reported, FactAbout, IntentAbout, PromiseTo, AssertsPromise, Mentions, AssertsIntent, RelevantTo, HasGoal }
 import from datetime { datetime }
 
 test "candidate collection: known, route (both sub-cases), cold" {
@@ -473,4 +473,169 @@ test "set_goal_for: a genuinely different goal creates a second goal and deactiv
     assert g2.active;
     goals = [me ->:HasGoal:->];
     assert len(goals) == 2, f"expected two distinct goals, got {len(goals)}";
+}
+
+# ---------------------------------------------------------------- SOH-226 ranking stability
+# "Maya Chen went strong -> medium after one capture that had nothing to do
+# with her" (POLISH-PLAN #10 / FEEL-AUDIT #3). A candidate's RelevantTo edge
+# is only re-sent to the model when a Fact/Intent/Promise/Note about THAT
+# person is newer than the edge's own `ranked_at`, the goal's text changed,
+# or `force` — never on an unrelated capture.
+
+test "newest_evidence_at: picks the max across facts, intents (via their note), promises (via their note), and notes" {
+    p = (root ++> Person(name="Evidence Timing P", status="confirmed"))[0];
+    assert newest_evidence_at(p) == "", "no evidence at all -> empty";
+
+    f = (root ++> Fact(text="early fact", observed_at="2026-09-01T00:00:00"))[0];
+    f +>:FactAbout():+> p;
+    assert newest_evidence_at(p) == "2026-09-01T00:00:00";
+
+    n_later = (root ++> Note(text="later note", kind="paste", captured_at="2026-09-20T00:00:00"))[0];
+    n_later +>:Mentions():+> p;
+    assert newest_evidence_at(p) == "2026-09-20T00:00:00", "a later Note mentioning p wins";
+
+    i = (root ++> Intent(kind="need", text="wants X", expires_at=""))[0];
+    i +>:IntentAbout():+> p;
+    n_for_intent = (root ++> Note(text="intent note", kind="debrief", captured_at="2026-09-25T00:00:00"))[0];
+    n_for_intent +>:AssertsIntent():+> i;
+    assert newest_evidence_at(p) == "2026-09-25T00:00:00", "an even later Intent (via its Note) wins";
+
+    pr = (root ++> Promise(text="send deck", due=""))[0];
+    pr +>:PromiseTo():+> p;
+    n_for_promise = (root ++> Note(text="promise note", kind="debrief", captured_at="2026-09-27T00:00:00"))[0];
+    n_for_promise +>:AssertsPromise():+> pr;
+    assert newest_evidence_at(p) == "2026-09-27T00:00:00", "the latest Promise (via its Note) wins over everything earlier";
+}
+
+test "stale_trigger: new, goal-edited, evidence-newer, force, and not-stale" {
+    never_ranked = {"exists": False};
+    assert stale_trigger(never_ranked, "goal text", "", False) == "new";
+    assert candidate_is_stale(never_ranked, "goal text", "", False);
+
+    goal_edited = {
+        "exists": True, "ranked_at": "2026-09-26T10:00:00", "ranked_goal_text": "old goal text",
+        "strength": "weak", "label": "cold", "reason": "", "opener": "", "evidence": [],
+        "prev_strength": "", "change_reason": ""
+    };
+    assert stale_trigger(goal_edited, "new goal text", "", False) == "goal";
+
+    fresh = {
+        "exists": True, "ranked_at": "2026-09-26T10:00:00", "ranked_goal_text": "same goal text",
+        "strength": "strong", "label": "known", "reason": "r", "opener": "o", "evidence": [],
+        "prev_strength": "", "change_reason": ""
+    };
+    assert stale_trigger(fresh, "same goal text", "", False) == "", "no newer evidence, same goal, no force -> not stale";
+    assert not candidate_is_stale(fresh, "same goal text", "", False);
+
+    assert stale_trigger(fresh, "same goal text", "2026-09-27T09:00:00", False) == "evidence", "evidence newer than ranked_at -> stale";
+    assert stale_trigger(fresh, "same goal text", "2026-09-25T09:00:00", False) == "", "evidence OLDER than ranked_at -> still not stale";
+    assert stale_trigger(fresh, "same goal text", "", True) == "force", "force wins even with nothing else stale";
+}
+
+test "change_reason_text: product-copy strings per trigger" {
+    assert change_reason_text("force", "") == "re-ranked on request";
+    assert change_reason_text("goal", "") == "goal edited";
+    assert change_reason_text("evidence", "2026-09-27T00:00:00") == "new note on Sep 27";
+    assert change_reason_text("evidence", "not-a-date") == "new evidence";
+    assert change_reason_text("new", "") == "updated";
+}
+
+test "SOH-226 stability: an unrelated capture leaves the untouched candidate's stale_trigger empty (model never asked about them)" {
+    now0 = datetime(2026, 9, 26, 9, 0, 0);
+    goal = (root ++> Goal(text="stability-test-goal", created_at=now0.isoformat()))[0];
+    maya = (root ++> Person(name="Maya Stability", status="confirmed"))[0];
+    other = (root ++> Person(name="Other Stability", status="confirmed"))[0];
+    ev = EvidenceItem(id="ev-stability", kind="fact", observed_at="2026-09-01", span="some evidence");
+    candidates = [
+        Candidate(person=maya, label="known", evidence_items=[ev], days_since_contact=None),
+        Candidate(person=other, label="known", evidence_items=[ev], days_since_contact=None)
+    ];
+
+    # First rank: both are new -> both stale.
+    first_indices = compute_stale_indices(candidates, goal, goal.text, False);
+    assert first_indices == [0, 1], f"both candidates are new -> both stale, got {first_indices}";
+
+    ranked1 = [
+        RankedItem(index=0, strength="strong", reason="Maya reason one.", evidence_indices=[0], opener="Hi Maya"),
+        RankedItem(index=1, strength="weak", reason="Other reason one.", evidence_indices=[0], opener="Hi Other")
+    ];
+    results1 = materialize_stable(goal, candidates, first_indices, ranked1, now0.isoformat(), goal.text, False);
+    by_name1: dict[str, dict[str, any]] = {};
+    for r in results1 {
+        person = r["person"] as Person;
+        by_name1[person.name] = r;
+    }
+    assert by_name1["Maya Stability"]["strength"] == "strong";
+    assert by_name1["Maya Stability"]["cached"] == False, "first materialization is a genuine (fallback/model) result, not a carry-over";
+    maya_opener_after_first_rank = by_name1["Maya Stability"]["opener"] as str;
+
+    # A capture happens about `other`, NOT about Maya at all.
+    later_note = (root ++> Note(text="unrelated capture", kind="debrief", captured_at="2026-09-27T09:00:00"))[0];
+    later_note +>:Mentions():+> other;
+
+    second_indices = compute_stale_indices(candidates, goal, goal.text, False);
+    assert 0 not in second_indices, "Maya's own evidence never changed -> the model must not be asked about her again";
+    assert 1 in second_indices, "other's evidence changed -> other is stale";
+
+    # Second rebuild: only `other` (subset position 0, since Maya isn't in
+    # the stale subset at all) gets a fresh ranked item.
+    ranked2 = [RankedItem(index=0, strength="medium", reason="Other reason two.", evidence_indices=[0], opener="Hi Other again")];
+    results2 = materialize_stable(goal, candidates, second_indices, ranked2, "2026-09-27T09:05:00", goal.text, False);
+    by_name2: dict[str, dict[str, any]] = {};
+    for r in results2 {
+        person = r["person"] as Person;
+        by_name2[person.name] = r;
+    }
+
+    assert by_name2["Maya Stability"]["strength"] == "strong", "Maya's strength must be identical to the first rank";
+    assert by_name2["Maya Stability"]["reason"] == "Maya reason one.", "Maya's reason must be identical to the first rank";
+    assert by_name2["Maya Stability"]["opener"] == maya_opener_after_first_rank, "Maya's opener must be identical to the first rank";
+    assert by_name2["Maya Stability"]["cached"] == True, "Maya was carried over verbatim, never re-sent to the model";
+    assert by_name2["Maya Stability"]["prev_strength"] == "", "nothing changed for Maya -> no prev_strength recorded";
+    assert by_name2["Maya Stability"]["change_reason"] == "", "nothing changed for Maya -> no change_reason recorded";
+
+    assert by_name2["Other Stability"]["strength"] == "medium", "other WAS re-evaluated and its strength changed";
+    assert by_name2["Other Stability"]["cached"] == False;
+    assert by_name2["Other Stability"]["prev_strength"] == "weak", "other's previous strength must be recorded on change";
+    assert by_name2["Other Stability"]["change_reason"] == "new note on Sep 27", "other's change is attributed to the new note";
+}
+
+test "SOH-226 stability: force re-evaluates a candidate even when nothing about them changed" {
+    now0 = datetime(2026, 9, 26, 9, 0, 0);
+    goal = (root ++> Goal(text="stability-force-test-goal", created_at=now0.isoformat()))[0];
+    maya = (root ++> Person(name="Maya Force", status="confirmed"))[0];
+    ev = EvidenceItem(id="ev-force", kind="fact", observed_at="2026-09-01", span="some evidence");
+    candidates = [Candidate(person=maya, label="known", evidence_items=[ev], days_since_contact=None)];
+
+    first_indices = compute_stale_indices(candidates, goal, goal.text, False);
+    ranked1 = [RankedItem(index=0, strength="strong", reason="Maya reason one.", evidence_indices=[0], opener="Hi Maya")];
+    materialize_stable(goal, candidates, first_indices, ranked1, now0.isoformat(), goal.text, False);
+
+    # Nothing about Maya or the goal changed -> not stale without force.
+    assert compute_stale_indices(candidates, goal, goal.text, False) == [], "unforced, unchanged -> nobody stale";
+
+    # An explicit force re-ranks her anyway.
+    forced_indices = compute_stale_indices(candidates, goal, goal.text, True);
+    assert forced_indices == [0], "force re-evaluates every candidate regardless of individual staleness";
+
+    ranked2 = [RankedItem(index=0, strength="medium", reason="Maya reason two.", evidence_indices=[0], opener="Hi Maya again")];
+    results = materialize_stable(goal, candidates, forced_indices, ranked2, "2026-09-27T09:00:00", goal.text, True);
+    assert results[0]["strength"] == "medium";
+    assert results[0]["cached"] == False;
+    assert results[0]["prev_strength"] == "strong";
+    assert results[0]["change_reason"] == "re-ranked on request";
+}
+
+test "prune_stale_relevantto: a person no longer a candidate loses their RelevantTo edge; a kept candidate keeps theirs" {
+    goal = (root ++> Goal(text="prune-test-goal", created_at="2026-09-26T09:00:00"))[0];
+    kept = (root ++> Person(name="Kept Prune P", status="confirmed"))[0];
+    dropped = (root ++> Person(name="Dropped Prune P", status="confirmed"))[0];
+
+    kept +>:RelevantTo(reason="r", strength="weak", label="known", evidence=[], opener=""):+> goal;
+    dropped +>:RelevantTo(reason="r", strength="weak", label="known", evidence=[], opener=""):+> goal;
+
+    prune_stale_relevantto(goal, [Candidate(person=kept, label="known", evidence_items=[], days_since_contact=None)]);
+
+    assert [edge kept ->:RelevantTo:-> goal], "kept candidate's edge must survive pruning";
+    assert not [edge dropped ->:RelevantTo:-> goal], "a person no longer in the candidate list must lose their RelevantTo edge";
 }

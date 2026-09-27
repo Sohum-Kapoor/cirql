@@ -33,7 +33,8 @@ import from schema {
     Knows, PromiseTo, AssertsPromise, FactAbout, IntentAbout, AssertsIntent,
     RelevantTo, HasGoal
 }
-import from goals { _parse_naive_utc, compute_days_since_contact, evidence_item_from_jid }
+import from goals { _parse_naive_utc, compute_days_since_contact, evidence_item_from_jid, goal_noun_phrase }
+import from scoring { polish_reason }
 
 # ---------------------------------------------------------------- helpers
 
@@ -239,10 +240,18 @@ def _gather_newly_relevant(me: Me, active_goal: Goal | None, now: datetime) -> l
             ev_item = {"id": "", "kind": "fact", "span": e.reason, "observed_at": ""};
         }
         days = compute_days_since_contact(_knows_last_contact(me, p), now);
+        first_name = p.name.split(" ")[0] if p.name else p.name;
+        noun_phrase = goal_noun_phrase(goal.text);
+        # SOH-226: product copy, not a sentence splice ("X is a strong match
+        # for I am looking to find a technical cofounder..."). `goal_noun_phrase`
+        # (goals.sv.jac) turns the goal into a quotable noun phrase; `polish_reason`
+        # (scoring.sv.jac) is the one cleanup pass every user-facing reason goes
+        # through project-wide.
+        reason = polish_reason(f"{first_name}: strong match for '{noun_phrase}'");
         out.append({
             "kind": "newly_relevant",
             "person": p,
-            "reason": f"{p.name} is a strong match for your goal '{goal.text}'",
+            "reason": reason,
             "evidence": ev_item,
             "suggested_action": "Reach out (use the drafted opener)",
             "days_since_contact": days,
