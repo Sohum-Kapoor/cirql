@@ -262,11 +262,21 @@ def _promise_sort_key(item: dict[str, object]) -> tuple[int, int, str] {
 }
 
 walker:priv ListPromises {
+    """SOH-236: `open_only=True` skips every done Promise (`Promise.done ==
+    True`, the schema's only completion field — there is no separate status
+    enum). Default `False` keeps the original shape/ordering unchanged."""
+    has open_only: bool = False;
     has reports: list[dict[str, object]] = [];
 
     can go with Root entry {
         items = sorted(list_promises_raw(), key=_promise_sort_key);
         for it in items {
+            if self.open_only {
+                promise = it["promise"] as Promise;
+                if promise.done {
+                    continue;
+                }
+            }
             report it;
         }
     }
@@ -315,18 +325,28 @@ def graph_view_for(me: Me, goal_id: str) -> dict[str, object] {
     edges: list[dict[str, str]] = [];
 
     people: list[Person] = [];
-    people_jids: list[str] = [];
+    people_jids: dict[str, bool] = {};
 
-    for p in [me ->:Knows:->] {
+    all_people: list[Person] = [me ->:Knows:->];
+    all_know_edges: list[Knows] = [edge me ->:Knows:->];
+    know_by_person: dict[str, Knows] = {};
+    i = 0;
+    for p in all_people {
+        if i < len(all_know_edges) {
+            know_by_person[jid(p)] = all_know_edges[i];
+        }
+        i = i + 1;
+    }
+
+    for p in all_people {
         if len(people) >= 300 {
             break;
         }
         people.append(p);
-        people_jids.append(jid(p));
+        people_jids[jid(p)] = True;
         nodes.append(person_node_dict(p));
-        know_edges = [edge me ->:Knows:-> p];
-        if know_edges {
-            ke = know_edges[0];
+        if jid(p) in know_by_person {
+            ke = know_by_person[jid(p)];
             edges.append({
                 "from": jid(me), "to": jid(p), "kind": "knows",
                 "label": ke.how_met, "strength": ke.status

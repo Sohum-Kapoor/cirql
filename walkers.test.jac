@@ -146,6 +146,44 @@ test "isolation: A never sees B's person" {
     }
 }
 
+test "ListPeople fields=list omits contact/identity keys (SOH-236)" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        harness = _make_harness(tmp_dir);
+        client = JacTestClient.from_file(harness, base_path=os.path.join(tmp_dir, "data"));
+
+        reg = client.register_user("dana@example.com", "password123");
+        assert reg.ok, f"register failed: {reg.status_code} {reg.text}";
+        token = str(reg.data["token"]);
+        client.set_auth_token(token);
+
+        added = client.post("/walker/DevAddPerson", json={"name": "Dana's Friend", "me_name": "Dana"});
+        assert added.ok, added.text;
+
+        omitted_keys = ["identity_tokens", "links", "email", "phone"];
+
+        full_rows = client.post("/walker/ListPeople").data["reports"] as list[dict[str, any]];
+        assert len(full_rows) == 1;
+        for k in omitted_keys {
+            assert k in full_rows[0], f"default fields='full' should keep {k}: {full_rows[0]}";
+        }
+        assert "name" in full_rows[0] and "last_contact" in full_rows[0] and "how_met" in full_rows[0];
+
+        list_rows = client.post("/walker/ListPeople", json={"fields": "list"}).data["reports"] as list[dict[str, any]];
+        assert len(list_rows) == 1;
+        for k in omitted_keys {
+            assert k not in list_rows[0], f"fields='list' should omit {k}: {list_rows[0]}";
+        }
+        assert "name" in list_rows[0] and "last_contact" in list_rows[0] and "how_met" in list_rows[0];
+    } finally {
+        if client is not None {
+            client.close();
+        }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
 test "isolation: unauthenticated call is rejected" {
     tmp_dir = tempfile.mkdtemp();
     client: (JacTestClient | None) = None;

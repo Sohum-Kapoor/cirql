@@ -176,6 +176,39 @@ test "ListPromises reports one open promise with the right to/span/source_note_i
     assert idx_open < idx_done, f"a done promise must sort after any still-open promise (source_note_id order: {note_ids})";
 }
 
+test "ListPromises open_only hides a done promise but keeps an open one (SOH-236)" {
+    me = (root ++> Me(name="Reads-test OpenOnly Me"))[0];
+    p1 = (me +>:Knows(how_met="test"):+> Person(name="Reads-test OpenOnly P1", status="confirmed"))[0];
+
+    open_note = (root ++> Note(
+        text="Reads-test-unique-openonly: I'll send the open-only report by Monday.",
+        kind="debrief", captured_at="2026-09-26T16:00:00"
+    ))[0];
+    open_promise = (open_note +>:AssertsPromise(span="send the open-only report by Monday"):+> Promise(
+        text="Reads-test-unique-openonly open promise", due="2026-10-05"
+    ))[0];
+    open_promise +>:PromiseTo:+> p1;
+
+    done_note = (root ++> Note(
+        text="Reads-test-unique-openonly: I'll call about the done promise.",
+        kind="debrief", captured_at="2026-09-26T16:05:00"
+    ))[0];
+    done_promise = (done_note +>:AssertsPromise(span="call about the done promise"):+> Promise(
+        text="Reads-test-unique-openonly done promise", due="", done=True
+    ))[0];
+    done_promise +>:PromiseTo:+> p1;
+
+    default_result = root spawn ListPromises();
+    default_ids = [r["source_note_id"] for r in default_result.reports];
+    assert jid(open_note) in default_ids, "default open_only=False keeps the open promise";
+    assert jid(done_note) in default_ids, "default open_only=False still reports the done promise";
+
+    open_only_result = root spawn ListPromises(open_only=True);
+    open_only_ids = [r["source_note_id"] for r in open_only_result.reports];
+    assert jid(open_note) in open_only_ids, "open_only=True keeps the still-open promise";
+    assert jid(done_note) not in open_only_ids, "open_only=True hides the done promise";
+}
+
 test "CompletePromise on an unknown id reports not_found" {
     result = root spawn CompletePromise(promise_id="not-a-real-promise-id");
     assert len(result.reports) == 1;
