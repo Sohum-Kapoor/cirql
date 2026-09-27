@@ -5,15 +5,22 @@ Stateless: the shell owns `about`, `pending`, `error` and the OnboardMe call.
 
 import from "..ui.button" { Button }
 import from "..ui.textarea" { Textarea }
+import from "..ui.input" { Input }
 import from "..ui.field" { Field, FieldLabel, FieldDescription }
 
 def:pub AboutStep(
+    name: str,
     about: str,
     pending: bool,
     error: str,
+    onNameChange: Callable[[str], None],
     onAboutChange: Callable[[str], None],
     onContinue: Callable[[], None]
 ) -> JsxElement {
+    def handle_name_change(e: ChangeEvent) {
+        onNameChange(e.target.value);
+    }
+
     def handle_change(e: ChangeEvent) {
         onAboutChange(e.target.value);
     }
@@ -22,7 +29,7 @@ def:pub AboutStep(
         onContinue();
     }
 
-    can_continue: bool = len(about.strip()) > 0 and not pending;
+    can_continue: bool = len(name.strip()) > 0 and len(about.strip()) > 0 and not pending;
 
     return
         <div className="flex flex-col gap-4">
@@ -32,6 +39,19 @@ def:pub AboutStep(
                     Cirql drafts your goals and a card from this. You can edit everything next.
                 </p>
             </div>
+            <Field>
+                <FieldLabel htmlFor="name">Your name</FieldLabel>
+                <Input
+                    id="name"
+                    autoFocus={True}
+                    autoComplete="name"
+                    required={True}
+                    value={name}
+                    onChange={handle_name_change}
+                    disabled={pending}
+                    placeholder="Jesse Chang"
+                />
+            </Field>
             <Field>
                 <FieldLabel htmlFor="about">
                     Tell Cirql about yourself: what you do, what you're working toward, what you could help with

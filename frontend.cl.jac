@@ -344,6 +344,7 @@ def:pub app -> JsxElement {
         auth_pending: bool = False,
         people: list[Person] = [],
         step: int = 1,
+        onboard_name: str = "",
         about: str = "",
         about_pending: bool = False,
         about_error: str = "",
@@ -658,9 +659,11 @@ def:pub app -> JsxElement {
                 if step == 1 {
                     <AboutStep
                         key="step-1"
+                        name={onboard_name}
                         about={about}
                         pending={about_pending}
                         error={about_error}
+                        onNameChange={lambda v: str { onboard_name = v; }}
                         onAboutChange={lambda v: str { about = v; }}
                         onContinue={submit_about}
                     />
