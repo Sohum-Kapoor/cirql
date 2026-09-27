@@ -224,7 +224,7 @@ def:pub GuidedForm(
                     />}
             </section>
             <section aria-label="When" className="flex flex-col gap-2">
-                <SectionLabel text="When?" />
+                <SectionLabel text="When?" hint="optional" />
                 <ChipGroup label="When" options={WHEN_OPTIONS} value={(guided["when"] or "today") as str} onChange={pick_when} disabled={pending} clearable={False} />
                 {guided["when"] == "date" and
                     <Input
@@ -236,7 +236,7 @@ def:pub GuidedForm(
                     />}
             </section>
             <section aria-label="What you talked about" className="flex flex-col gap-2">
-                <SectionLabel text="What did you talk about?" htmlFor="guided-talked" />
+                <SectionLabel text="What did you talk about?" hint="optional" htmlFor="guided-talked" />
                 <Textarea
                     id="guided-talked"
                     rows={3}
