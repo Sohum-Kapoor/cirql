@@ -14,15 +14,15 @@ Written 2026-09-26 20:00 after five persona walkthroughs (SOH-208), two adversar
 
 | Gap | Why | Owner | Status |
 |---|---|---|---|
-| Search over people, facts, notes | the most frequent CRM action; Recall is a model call | server SOH-216, client search box on Home | building / Needs B |
-| Contact details on a person (email, phone, links, location) | you have to be able to act on a connection | server SOH-216, sheet fields | building / Needs B |
-| Notes timeline (list, delete a note and retract only what it alone supported) | preparing for a meeting means reading what happened | server SOH-219, client tab | building / Needs B |
-| Real dates on promises and intents ("Fri", "in March" → a date), upcoming view | a task list that cannot sort by date is not one | server SOH-219 | building |
-| Card editor with "what a friend would see" preview | the card is the only thing that crosses accounts; users must control it | client SOH-179 | Needs B |
-| Friend list: exchange visible to people you exchanged cards with | today every account sees every open request | server SOH-218, client copy | building / Needs B |
-| Archive instead of delete; delete my data; restore from export | a lifelong graph needs an undo and a way out | server SOH-220, settings UI | building / Needs B |
-| Bulk import (CSV, paste a list) in the UI | onboarding takes five people at a time; ImportPeople exists | client SOH-181 | Needs B |
-| Onboarding shows the extracted goal (em-dash bug) | three personas hit it on the first screen | client | Needs B |
+| Search over people, facts, notes | the most frequent CRM action; Recall is a model call | server SOH-216, client search box on Home | done |
+| Contact details on a person (email, phone, links, location) | you have to be able to act on a connection | server SOH-216, sheet fields | done |
+| Notes timeline (list, delete a note and retract only what it alone supported) | preparing for a meeting means reading what happened | server SOH-219, client tab | done |
+| Real dates on promises and intents ("Fri", "in March" → a date), upcoming view | a task list that cannot sort by date is not one | server SOH-219 | done |
+| Card editor with "what a friend would see" preview | the card is the only thing that crosses accounts; users must control it | client SOH-179 | done (A took it over, 02:40) |
+| Friend list: exchange visible to people you exchanged cards with | today every account sees every open request | server SOH-218, client copy | server done; client toggle pending (audience defaults to everyone) |
+| Archive instead of delete; delete my data; restore from export | a lifelong graph needs an undo and a way out | server SOH-220, settings UI | done (+ Delete account) |
+| Bulk import (CSV, paste a list, vCard) in the UI | onboarding takes five people at a time; ImportPeople exists | client SOH-181 | done (A took it over, 02:40) |
+| Onboarding shows the extracted goal (em-dash bug) | three personas hit it on the first screen | client | done (B, PR #77; goal block reflowed 02:35) |
 
 ## B. Makes it stick
 

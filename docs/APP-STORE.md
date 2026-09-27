@@ -41,7 +41,7 @@ Written 2026-09-26 22:00, after the product wave. Status words: **done** (on mai
 2. Promises owed **to** you: today a Promise is only what you committed to, so "he said he'd send his deck" lands as an offer Intent by design; a direction field and a "they owe you" list in Today.
 3. Offline capture queue with replay.
 4. Push notifications for promises due and incoming asks (needs APNs setup).
-5. Phone contacts import through the Capacitor Contacts plugin.
+5. Phone contacts import through the Capacitor Contacts plugin (today: paste, CSV or a .vcf file in People → Import).
 6. A production host (not a quick tunnel to a laptop) with TLS, backups of `.jac/data`, and a process manager.
 7. Rate limiting per account on model-backed walkers.
 8. TestFlight round with the five personas as real testers.
