@@ -22,6 +22,7 @@ gives the client its own `base_path`. No `jac clean` anywhere.
 
 import from edits { UpdatePerson, UpdatePromise, DevAddPromise, update_person_for }
 import from schema { Me, Person, Promise, Knows }
+import from datetime { datetime, timedelta }
 
 # ---------------------------------------------------------------- UpdatePerson
 #
@@ -159,6 +160,25 @@ test "UpdatePromise: text and due overwrite non-empty args only" {
     out2 = result2.reports[0] as Promise;
     assert out2.text == "Edits-test new promise text", "text must be left unchanged when the arg is empty";
     assert out2.due == "2026-11-15";
+}
+
+test "UpdatePromise: natural-language due is normalized via dates.sv.jac's parse_due (SOH-219)" {
+    seeded = root spawn DevAddPromise(text="Edits-test nl due promise", due="");
+    pr = seeded.reports[0] as Promise;
+
+    result = root spawn UpdatePromise(promise_id=jid(pr), due="tomorrow");
+    out = result.reports[0] as Promise;
+    expected = (datetime.now() + timedelta(days=1)).date().isoformat();
+    assert out.due == expected;
+}
+
+test "UpdatePromise: a due parse_due can't place on a calendar is stored as the raw text (SOH-219)" {
+    seeded = root spawn DevAddPromise(text="Edits-test unparsable due promise", due="");
+    pr = seeded.reports[0] as Promise;
+
+    result = root spawn UpdatePromise(promise_id=jid(pr), due="whenever works");
+    out = result.reports[0] as Promise;
+    assert out.due == "whenever works";
 }
 
 test "UpdatePromise: unknown promise_id reports not_found" {

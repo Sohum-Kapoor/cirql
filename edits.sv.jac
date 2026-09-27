@@ -41,9 +41,11 @@ which `Me` exists, so `UpdatePromise`'s tests run through
 `root spawn UpdatePromise(...)` directly without that ambiguity.
 """
 
+import from datetime { datetime }
 import from schema { Me, Person, Promise, Knows }
 import from reads { my_node }
 import from identity { refresh_person_tokens }
+import from dates { parse_due }
 
 def _not_found() -> dict[str, str] {
     return {"error": "not_found"};
@@ -160,9 +162,12 @@ walker:priv UpdatePerson {
 walker:priv UpdatePromise {
     """Overwrite non-empty (stripped) `text`/`due` on one of the caller's own
     Promises. Ownership check identical to `reads.sv.jac`'s
-    `CompletePromise` (`my_node`). Reports `[Promise]`, or
-    `[{error: "not_found"}]` when `promise_id` doesn't resolve to a Promise
-    owned by the caller."""
+    `CompletePromise` (`my_node`). `due` (SOH-219) is run through
+    `dates.sv.jac`'s `parse_due` against "now": a parseable value ("Fri",
+    "next week", "March 3", ...) is stored normalized as ISO; anything
+    `parse_due` can't place on a calendar is stored as the raw text, same
+    as before. Reports `[Promise]`, or `[{error: "not_found"}]` when
+    `promise_id` doesn't resolve to a Promise owned by the caller."""
     has promise_id: str;
     has text: str = "";
     has due: str = "";
@@ -182,7 +187,8 @@ walker:priv UpdatePromise {
         }
         due = self.due.strip();
         if due {
-            pr.due = due;
+            parsed = parse_due(due, datetime.now().isoformat());
+            pr.due = parsed if parsed else due;
         }
 
         report pr;

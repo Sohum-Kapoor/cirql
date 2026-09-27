@@ -518,3 +518,46 @@ Bounded traversal over the caller's own root: every Note (text capped at 300 cha
 
   ### `ExportGraph()` — `people[]` entries gain `email`, `phone`, `links`, `location`
   Plain fields on the `Person` node, copied the same way `org`/`title`/`status` already are.
+- 2026-09-26 — SOH-219 notes timeline, real dates, weekly digest. New modules `notes.sv.jac` and `dates.sv.jac`, no schema changes. `edits.sv.jac`'s `UpdatePromise(due)` now runs `due` through `dates.sv.jac`'s `parse_due` before storing it (report shape unchanged). Every walker below is `:priv`, own-root only, no `by llm`. `main.jac`: `import from notes { ListNotes, DeleteNote, ConfirmFact, Digest }`, `import from dates { NormalizeDates, UpcomingDates }`.
+
+  ### `parse_due(text: str, base_iso: str) -> str` — plain `def`, `dates.sv.jac`, not served
+  Deterministic natural-language date parser used by `UpdatePromise`/`NormalizeDates`/`UpcomingDates`/`Digest`. Recognizes (case-insensitive, whitespace-stripped): a weekday name full or abbreviated ("Fri"/"Friday", always 1-7 days strictly after `base_iso`'s date, never the same day); "today"/"tomorrow"/"next week" (+7)/"end of month" (last day of `base_iso`'s month); "in N days/weeks/months" (month arithmetic clamps the day to the target month's length: Jan 31 + 1 month -> Feb 28/29); "in \<Month\>" (1st of that month, on/after `base_iso`'s date else next year); "\<Month\> D"/"\<Mon\> D"/"M/D" (that month/day, on/after `base_iso`'s date else next year); "YYYY-MM-DD" (returned as-is once validated as a real calendar date). Anything else, an invalid calendar date ("Feb 30"), or an unparsable `base_iso` -> `""`.
+
+  ### `ListNotes(limit: int = 50, before: str = "", kind: str = "")` — SOH-219
+  Reports one entry per Note, newest `captured_at` first:
+  ```
+  { note: Note, people: [{id, name}], counts: {facts, intents, promises}, text_preview: str }
+  ```
+  `kind` (non-empty) filters to that `Note.kind`. `before` is an ISO cursor: only Notes with `captured_at` strictly earlier than `before` are returned (page by passing the last item's `note.captured_at`). `people` = every Person the Note `Mentions`, deduped by jid. `counts` = the Note's own `Asserts`/`AssertsIntent`/`AssertsPromise` edge counts. `text_preview` = `note.text` cut at 140 chars on a word boundary, `"…"`-suffixed when truncated. `limit` clamped to `[0, 200]` (SOH-211 bounded-budget idiom).
+
+  ### `DeleteNote(note_id: str)` — SOH-219
+  Deletes the Note, and every Fact/Intent/Promise it asserts whose ONLY asserting Note it was (a claim another Note also asserts survives — only the dangling `Asserts*` edge to the deleted Note disappears, node-delete cascade). People are NEVER deleted. Deletion of each doomed Fact/Intent/Promise is delegated to `forget.sv.jac`'s `_forget_fact`/`_forget_intent`/`_forget_promise` (so `RelevantTo` evidence pruning stays in one place). Reports one dict:
+  ```
+  { deleted: {facts: int, intents: int, promises: int}, kept_people: int }
+  ```
+  `kept_people` = the number of distinct people the deleted Note `Mentions` (counted before the delete; the Person nodes themselves are untouched). `[{error: "not_found"}]` when `note_id` isn't a Note owned by the caller (same ownership idiom as `Forget`).
+
+  ### `ConfirmFact(fact_id: str)` — SOH-219
+  Sets `status = "confirmed"` on the caller's own Fact. Reports `[Fact]`, or `[{error: "not_found"}]` when `fact_id` isn't a Fact owned by the caller.
+
+  ### `NormalizeDates()` — SOH-219
+  Re-runs `parse_due` over every Promise's `due` and every Intent's `expires_at` reachable from the caller's own Notes; a non-empty result that differs from the stored raw text overwrites it (idempotent: an already-ISO value re-parses to the same string, a full ISO timestamp with a time component never matches any `parse_due` pattern and is left alone). Reports one dict `{ promises_updated: int, intents_updated: int }`.
+
+  ### `UpcomingDates(days: int = 14)` — SOH-219
+  Reports one dict:
+  ```
+  { promises: [{promise: Promise, to: Person|null, due: str}],
+    intents_expiring: [{intent: Intent, about: Person|null, expires_at: str}],
+    events: [{event: Event}] }
+  ```
+  `promises` = open (`done == False`) Promises whose `due` (re-parsed through `parse_due` so an un-normalized raw text still counts) lands in `[now, now + days]` inclusive, ascending by due date. `intents_expiring` = Intents with a set, parseable `expires_at` in the same window, ascending; `about` is the `IntentAbout` target or `null` for a self-onboarded Intent. `events` = the caller's own `HasEvent` Events with a set, parseable `date` in the same window, ascending. `days` clamped to `[0, 90]`.
+
+  ### `Digest()` — SOH-219
+  No args, deterministic, no `by llm`. Reports one dict:
+  ```
+  { week_of: str, promises_due: [...same shape as UpcomingDates.promises...],
+    intents_expiring: [...same shape as UpcomingDates.intents_expiring...],
+    new_people: [{id, name, how_met}], stale_ranking: bool,
+    suggestions: [...same shape as Tend...], lines: [str] }
+  ```
+  `week_of` = the ISO date of the Monday starting the current week. `promises_due`/`intents_expiring` = `UpcomingDates`' own gathering with a fixed 14-day window. `new_people` = people the caller met (`Knows`) whose `source_note` resolves to a Note captured in the last 7 days (inclusive), newest first. `stale_ranking` = `true` when the active Goal's `ranked_at` predates a Note's `captured_at` (reuses `goals.sv.jac`'s own `ranking_is_stale` rule verbatim), `false` with no active Goal. `suggestions` = the top 3 items from `tend.sv.jac`'s `tend_for` (same shape as `Tend`'s report). `lines` = exactly five plain-English sentences (week-of, promise count, intent count, new-people count, ranking freshness) a phone can show as-is.
