@@ -441,7 +441,7 @@ def:pub HomeView(
                         <SheetDescription className="sr-only">People from your import you haven't placed yet</SheetDescription>
                     </SheetHeader>
                     <SheetBody>
-                        <Deck onClose={close_deck} onChanged={onRefresh} />
+                        <Deck onClose={close_deck} onChanged={onRefresh} people={known} />
                     </SheetBody>
                 </SheetContent>
             </Sheet>

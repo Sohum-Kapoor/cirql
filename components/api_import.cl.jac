@@ -7,9 +7,9 @@ swap point, same `mocks_on()` idiom as the rest of `api.cl.jac`. Live path:
 `sv import` + `root spawn`, matching `capture`/`onboard_me`/`goal_rank`.
 """
 
-import from .mocks.import { mock_import_people, mock_confirm_person, mock_skip_person, mock_confirm_people }
+import from .mocks.import { mock_import_people, mock_confirm_person, mock_skip_person, mock_confirm_people, mock_skip_people }
 import from .api { mocks_on }
-sv import from ..imports { ImportPeople, ConfirmPerson, SkipPerson, ConfirmPeople }
+sv import from ..imports { ImportPeople, ConfirmPerson, SkipPerson, ConfirmPeople, SkipPeople }
 
 glob IMPORT_DELAY_MS: int = 500;
 
@@ -107,4 +107,28 @@ async def:pub skip_person(person_id: str) -> dict {
         return {"ok": True};
     }
     return first as dict;
+}
+
+"""SkipPeople(person_ids) -> { skipped: [id], not_found: [id], count: int }
+(SOH-236; server half landing in parallel — walker not necessarily live yet).
+One round trip for "Skip the rest" instead of one `SkipPerson` per row.
+`result`/`reps` are typed `any` here on purpose: `SkipPeople` may not exist
+in `..imports` yet, and an unresolved `sv import` name makes every typed
+access on its result Unknown to the checker (E1032) unless the intermediate
+locals stay untyped, same pattern used to bring in a walker ahead of its
+landing. Raises (unresolved name, no report) when the walker isn't there yet
+or the call otherwise fails, so `ImportPeople.cl.jac`'s `skip_the_rest` can
+fall back to the sequential `skip_person` loop, same idiom `confirm_people`
+gives `confirm_all` for `ConfirmPeople`."""
+async def:pub skip_people(person_ids: list[str]) -> dict {
+    if mocks_on() {
+        await fake_delay_import(IMPORT_DELAY_MS);
+        return mock_skip_people(person_ids);
+    }
+    result: any = root spawn SkipPeople(person_ids=person_ids);
+    reps: list[any] = result.reports as list[any];
+    if len(reps) == 0 {
+        raise Exception("SkipPeople returned no report");
+    }
+    return reps[0] as dict;
 }
