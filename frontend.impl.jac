@@ -1403,7 +1403,18 @@ impl app.answer_ask_action(aid: str, rid: str) -> None {
         }
     }
     if not ent["request"] {
-        ent["request"] = {"_jac_id": rid, "need": act["title"], "from_handle": "", "about_line": ""};
+        # Fallback when the request is not in the loaded list: build it from the
+        # action's payload (need/from_handle/from_name/goal_text, SOH-229), never
+        # from the title, which is already a full sentence.
+        pl_fb: dict = (payload_of(act) or {}) as dict;
+        ent["request"] = {
+            "_jac_id": rid,
+            "need": ((pl_fb["need"] or "") as str) or (act["title"] as str),
+            "from_handle": (pl_fb["from_handle"] or "") as str,
+            "from_name": (pl_fb["from_name"] or "") as str,
+            "about_line": (pl_fb["about_line"] or "") as str,
+            "goal_text": (pl_fb["goal_text"] or "") as str
+        };
     }
     if reply["_jac_id"] {
         ent["reply"] = reply;

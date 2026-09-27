@@ -63,7 +63,7 @@ import from .components.mocks.exchange { mock_as_friend, mock_set_as_friend }
 import from .components.exchange.common { Poller, req_active }
 import from .components.exchange.Requests { RequestDetail }
 import from .components.exchange.Inbox { ApprovalView }
-import from .components.agent.common { asks_needing_count, pick_unchecked }
+import from .components.agent.common { asks_needing_count, pick_unchecked, payload_of }
 import from .components.ui.toaster { Toaster }
 import from .components.card.PublicCard { PublicCard }
 import from .lib.text { join_lines, today_month_day, join_with }
