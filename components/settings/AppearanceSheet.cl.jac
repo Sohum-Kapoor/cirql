@@ -42,7 +42,7 @@ def:pub SettingsHeader(name: str, handle: str) -> JsxElement {
         <div className="flex items-center gap-3 pb-1">
             <Avatar name={name} size="lg" />
             <div className="flex min-w-0 flex-col">
-                <span className="truncate text-card-title font-medium">{_display_name(name)}</span>
+                <span className="truncate text-subhead font-semibold">{_display_name(name)}</span>
                 {handle and <span className="truncate text-caption text-muted-foreground">{"@" + handle}</span>}
             </div>
         </div>;

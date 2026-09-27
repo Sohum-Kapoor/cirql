@@ -42,6 +42,7 @@ collapse into one "<N> people are looking for …" row with its own expand.
 """
 
 import from ..ui.button { Button }
+import from ..ui.badge { Badge }
 import from ..ui.skeleton { Skeleton }
 import from ..ui.icons { ChevronLeftIcon, ChevronDownIcon, ChevronRightIcon }
 import from .common { StatusChip, DraftBlock, reply_label, ask_title, asker_label, asker_subject, asker_object, same_asker_label, need_sentence, goal_approved_line, handle_caption, need_group_key, same_ask_group }
@@ -318,26 +319,32 @@ def:pub OtherAsksSection(other: list[dict]) -> JsxElement {
     }
     groups: list[dict] = _group_asks(other);
     return
-        <section aria-label="Other asks" className="flex flex-col gap-2">
-            <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="w-full justify-between px-1"
-                aria-expanded={open}
-                onClick={toggle}
-            >
-                <span>{"Other asks (" + str(len(other)) + ")"}</span>
-                {<ChevronDownIcon className="size-4" /> if open else <ChevronRightIcon className="size-4" />}
-            </Button>
-            <p className="px-1 text-caption text-ink-muted">Cirql found no match; nothing to approve.</p>
-            {if open {
-                <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card">
-                    {for g in groups {
+        <section aria-label="Other asks" className="flex flex-col gap-3">
+            <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">
+                <li className="flex flex-col">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="row"
+                        aria-expanded={open}
+                        onClick={toggle}
+                    >
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="min-w-0 text-body-sm">Other asks</span>
+                            <div className="flex items-center gap-2">
+                                <Badge variant="secondary">{str(len(other))}</Badge>
+                                {<ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" /> if open else <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />}
+                            </div>
+                        </div>
+                    </Button>
+                    <p className="-mt-1 px-4 pb-3 text-caption text-muted-foreground">Cirql found no match; nothing to approve.</p>
+                </li>
+                {if open {
+                    for g in groups {
                         <OtherAskGroupRow key={g["key"] as str} group={g} />
-                    }}
-                </ul>
-            }}
+                    }
+                }}
+            </ul>
         </section>;
 }
 
