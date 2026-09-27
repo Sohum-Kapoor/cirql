@@ -180,13 +180,19 @@ def:pub goal_approved_line(from_name: str, from_handle: str, goal_text: str) -> 
     return asker_label(from_name, from_handle) + " approved this ask from their goal '" + goal_text + "'.";
 }
 
-"""SOH-229 footer under an expanded ask: only meaningful once a name is known."""
+"""SOH-229 footer under an expanded ask (judge pass item 4): shown whenever
+there's a handle at all, even with no known name — generic wording then,
+so the footer isn't silently dropped for a `@handle`-only asker."""
 def:pub handle_caption(from_name: str, from_handle: str) -> str {
-    fn: str = first_name(from_name);
-    if not fn {
+    handle: str = (from_handle or "").strip();
+    if not handle {
         return "";
     }
-    return "@" + (from_handle or "") + " is " + fn + "'s Cirql handle.";
+    fn: str = first_name(from_name);
+    if fn {
+        return "@" + handle + " is " + fn + "'s Cirql handle.";
+    }
+    return "@" + handle + " is this person's Cirql handle.";
 }
 
 glob _NEED_CHARS: str = "abcdefghijklmnopqrstuvwxyz0123456789 ";
@@ -221,11 +227,28 @@ def:pub need_group_key(req: dict) -> str {
     return join_with(_need_tokens((req["need"] or "") as str), " ");
 }
 
+"""Judge-pass fix (item 1): these describe the SHAPE of an ask ("someone who
+can help", "willing to speak", "an intro"), not what it's actually about, so
+they never count toward "shared" between two `need_group_key`s. Without this
+list, "intro to a founder ... speak at a meetup" and "operations director at
+a Midwest 3PL provider" shared enough filler words to look like the same
+ask. Distinct from `NEED_STOPWORDS` above (that one trims the key itself;
+this one only narrows what `same_ask_group` is allowed to count as a
+match)."""
+glob GROUP_IGNORE_STEMS: list[str] = [
+    "intro", "introduction", "warm", "someone", "willing", "want", "need",
+    "looking", "help", "find", "meet", "talk", "speak", "connect", "person",
+    "people"
+];
+
 """SOH-229: two asks belong to the same group when their `need_group_key`
 stem sets (space-separated, e.g. "climate compani hir intern invest summer")
-match exactly OR share at least 2 stems. Blank keys never match anything
-(each stays its own group) so an ask with no recoverable need text never
-merges by accident."""
+match exactly, OR — after dropping `GROUP_IGNORE_STEMS` from both sides —
+they share at least 2 CONTENT stems AND those shared stems cover at least
+40% of the smaller side's content stems (`shared / min(len(a), len(b)) >=
+0.4`), so two asks that only overlap on generic wording never group. Blank
+keys never match anything (each stays its own group) so an ask with no
+recoverable need text never merges by accident."""
 def:pub same_ask_group(a_key: str, b_key: str) -> bool {
     a: str = (a_key or "").strip();
     b: str = (b_key or "").strip();
@@ -235,15 +258,20 @@ def:pub same_ask_group(a_key: str, b_key: str) -> bool {
     if a == b {
         return True;
     }
-    a_toks: list[str] = [t for t in a.split(" ") if t];
-    b_toks: list[str] = [t for t in b.split(" ") if t];
+    a_toks: list[str] = [t for t in a.split(" ") if t and t not in GROUP_IGNORE_STEMS];
+    b_toks: list[str] = [t for t in b.split(" ") if t and t not in GROUP_IGNORE_STEMS];
+    if len(a_toks) == 0 or len(b_toks) == 0 {
+        return False;
+    }
     shared: int = 0;
     for t in a_toks {
         if t in b_toks {
             shared = shared + 1;
         }
     }
-    return shared >= 2;
+    min_len: int = len(a_toks) if len(a_toks) < len(b_toks) else len(b_toks);
+    ratio: float = shared / min_len;
+    return shared >= 2 and ratio >= 0.4;
 }
 
 """Calls `onTick` every `ms` while mounted (skips while the tab is hidden).

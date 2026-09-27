@@ -48,6 +48,8 @@ import from .common { StatusChip, DraftBlock, reply_label, ask_title, asker_labe
 import from .Requests { match_phrase }
 import from ..agent.common { friend_status, is_zero_match, split_asks }
 import from ...lib.utils { cn }
+import from ...lib.toast { toast }
+import from ...lib.text { join_with }
 
 """SOH-229 item 3: the reply-state sentence under an expanded ask. A
 count-0 reply never reaches here — `split_asks` already routes it to
@@ -434,11 +436,22 @@ def:pub AsksSection(
         onOpen(rid);
     }
 
+    def undo_dismiss(rid: str) -> None {
+        hidden_ids = [h for h in hidden_ids if h != rid];
+    }
+
+    """SOH-229 item 5: "Not now" is a session-only local hide (no walker
+    call — the ask is still on the exchange). A toast with Undo makes that
+    reversible instead of a silent, un-recoverable disappearance."""
     def dismiss_now(rid: str) -> None {
         hidden_ids = hidden_ids + [rid];
         if expanded_key == rid {
             expanded_key = "";
         }
+        def do_undo() -> None {
+            undo_dismiss(rid);
+        }
+        toast("Ask hidden", "info", do_undo);
     }
 
     if len(all_needs) == 0 and len(other) == 0 {
@@ -494,6 +507,12 @@ def:pub ApprovalView(
     approved: str = goal_approved_line(from_name, from_handle, goal_text);
     caption: str = handle_caption(from_name, from_handle);
     n: int = (reply["match_count"] or 0) as int;
+    # SOH-229 item 3: the actual match words when the shell threaded them
+    # through from the originating action's payload (`matched`) — no
+    # identity, just the tokens that lined up; read defensively off either
+    # side, empty when neither carries any.
+    matched: list[str] = (req["matched"] or reply["matched"] or []) as list[str];
+    matched_text: str = ("Matches: " + join_with(matched, ", ")) if len(matched) > 0 else "";
 
     def handle_back(e: MouseEvent) {
         onBack();
@@ -560,7 +579,8 @@ def:pub ApprovalView(
                             <p className="text-body font-medium">{"You have " + match_phrase(reply) + " in your network."}</p>
                             <div className="flex flex-col gap-0.5">
                                 <span className="text-eyebrow text-muted-foreground">Why it fits</span>
-                                <p className="text-caption text-ink-muted">Cirql checked your people on this phone; nothing leaves it until you approve.</p>
+                                {matched_text and <p className="text-caption text-ink-muted">{matched_text}</p>}
+                                <p className="text-caption text-ink-muted">Cirql checked your people on this device; nothing leaves it until you approve.</p>
                             </div>
                         </div>
                     }}
@@ -600,6 +620,9 @@ def:pub ApprovalView(
                         <p className="rounded-md bg-success/10 pt-3 pb-3 pl-3 pr-3 text-body-sm text-success-text">
                             {"Card granted read-only to " + asker + ". The three-way intro is drafted on their phone."}
                         </p>
+                        <div>
+                            <Button className="flex-1" onClick={handle_back}>Back to Inbox</Button>
+                        </div>
                     } elif status == "declined" {
                         <p className="text-body-sm text-muted-foreground">{"Declined. " + asker + " is not told why."}</p>
                     }}

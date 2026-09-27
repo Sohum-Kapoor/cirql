@@ -1413,12 +1413,22 @@ impl app.answer_ask_action(aid: str, rid: str) -> None {
             "from_handle": (pl_fb["from_handle"] or "") as str,
             "from_name": (pl_fb["from_name"] or "") as str,
             "about_line": (pl_fb["about_line"] or "") as str,
-            "goal_text": (pl_fb["goal_text"] or "") as str
+            "goal_text": (pl_fb["goal_text"] or "") as str,
+            "matched": (pl_fb["matched"] or [])
         };
     }
     if reply["_jac_id"] {
         ent["reply"] = reply;
     }
+    # SOH-229 item 3 ("Why it fits"): thread this action's own `matched`
+    # tokens (SOH-223's `agent.sv.jac` tune, `payload_json.matched`) onto the
+    # request object the approval view reads — read-only, never identity,
+    # and only present when this device's own AgentAction found it.
+    req_with_matched: dict = {**((ent["request"] or {}) as dict)};
+    if not req_with_matched["matched"] {
+        req_with_matched["matched"] = (payload_of(act)["matched"] or []);
+    }
+    ent["request"] = req_with_matched;
     friend_put(rid, ent);
     publish_ex();
     # SOH-229: only let the approval view auto-check again when it actually has
