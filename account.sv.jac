@@ -147,8 +147,10 @@ walker:priv DeleteAccount {
         root_id = jid(root);
         result = delete_my_data();
         disabled = _disable_identity(root_id);
+        # ok only when BOTH halves happened: a wiped graph with a still-working
+        # login is a partial deletion the caller must be told about (Codex review).
         report {
-            "ok": result["ok"],
+            "ok": bool(result["ok"]) and disabled,
             "deleted": result["deleted"],
             "identity_removed": False,
             "identity_disabled": disabled
