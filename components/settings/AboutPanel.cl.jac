@@ -99,7 +99,7 @@ def:pub AboutPanel() -> JsxElement {
                             Delete my data removes everything. A note you delete takes only
                             the claims it alone supported.
                             {" "}
-                            <a href="/static/privacy.html" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm">Read the privacy page</a>
+                            <a href="/static/privacy.html" className="underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm">Read the privacy page</a>
                         </p>
                     </section>
 

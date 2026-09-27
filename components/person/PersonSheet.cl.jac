@@ -232,7 +232,7 @@ def:pub FactItem(row: dict, open_key: str, onToggle: Callable[[str], None]) -> J
         <ReviewRow row_key={key} is_open={is_open} span={_s(row, "span")} note_text="" onToggle={onToggle}>
             <span className="text-body-sm">{_s(fact, "text")}</span>
             <span className="flex flex-wrap items-center gap-1.5 text-caption text-muted-foreground">
-                {age and <span title={observed[:10] if observed else ""}>{age + (" · " + when if is_open and when else "")}</span>}
+                {(age or when) and <span title={observed[:10] if observed else ""}>{(age + " · " + when if age and when else (age or when))}</span>}
                 {_s(fact, "status") == "stale" and <Badge variant="outline">stale</Badge>}
                 {url and
                     <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex">
