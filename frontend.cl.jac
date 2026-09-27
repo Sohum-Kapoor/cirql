@@ -47,6 +47,7 @@ import from .components.onboarding.PeopleStep { PeopleStep }
 import from .components.onboarding.RecallStep { RecallStep }
 import from .components.capture.CaptureForm { CaptureForm }
 import from .components.capture.Review { Review }
+import from .components.capture.CaptureLanded { CaptureLandedStrip }
 import from .components.capture.guided { empty_guided, guided_text, how_met_line, remember_met, guided_names }
 import from .lib.local_edits { local_view, local_rows }
 import from react { useEffect }
@@ -63,7 +64,7 @@ import from .components.exchange.common { Poller, req_active }
 import from .components.exchange.Requests { RequestDetail }
 import from .components.exchange.Inbox { ApprovalView, asks_needing_you }
 import from .components.ui.toaster { Toaster }
-import from .lib.text { join_lines, today_month_day }
+import from .lib.text { join_lines, today_month_day, join_with }
 
 sv import from walkers { GetMe }
 sv import from schema { Person }
@@ -278,6 +279,54 @@ def active_goal_id(goals: list[dict]) -> str {
     return "";
 }
 
+"""One Capture-report people row's name / person id, or "" when it's missing."""
+def _cap_person_name(row: dict) -> str {
+    p: dict = (row["person"] or {}) as dict;
+    return (p["name"] or "") as str;
+}
+
+def _cap_person_id(row: dict) -> str {
+    p: dict = (row["person"] or {}) as dict;
+    return (p["_jac_id"] or "") as str;
+}
+
+"""'Priya Nair' / 'Priya Nair and Dev Okafor' / 'Priya, Dev, and Tom' — the
+confirmation strip's subject line."""
+def join_and(names: list[str]) -> str {
+    n: int = len(names);
+    if n == 0 {
+        return "";
+    }
+    if n == 1 {
+        return names[0];
+    }
+    if n == 2 {
+        return names[0] + " and " + names[1];
+    }
+    return join_with(names[:n - 1], ", ") + ", and " + names[n - 1];
+}
+
+""""2 facts" / "1 promise"; "" when `n` is 0 — count_phrase(0, ...) is dropped."""
+def count_phrase(n: int, singular: str, plural: str) -> str {
+    if n <= 0 {
+        return "";
+    }
+    return str(n) + " " + (singular if n == 1 else plural);
+}
+
+"""The post-Capture confirmation strip for a MULTI-person report: {summary,
+person_id, person_name} for the first person touched, or {} when there is no
+one to name (every person was removed in Review, or none were extracted)."""
+def capture_strip(people: list[dict], facts_n: int, promises_n: int) -> dict {
+    names: list[str] = [_cap_person_name(row) for row in people if _cap_person_name(row)];
+    if len(names) == 0 {
+        return {};
+    }
+    parts: list[str] = [p for p in [count_phrase(facts_n, "fact", "facts"), count_phrase(promises_n, "promise", "promises")] if p];
+    summary: str = "Added " + join_and(names) + ((" · " + join_with(parts, " · ")) if len(parts) > 0 else "");
+    return {"summary": summary, "person_id": _cap_person_id(people[0]), "person_name": _cap_person_name(people[0])};
+}
+
 def empty_voice() -> dict {
     return {"text": "", "audio_ref": "", "error": "", "mime": ""};
 }
@@ -317,6 +366,7 @@ def:pub app -> JsxElement {
         cap_error: str = "",
         cap_note: str = "",
         cap_result: dict = {},
+        post_capture: dict = {},
         goals_list: list[dict] = [],
         goals_loaded: bool = False,
         goal_busy: bool = False,
@@ -372,6 +422,8 @@ def:pub app -> JsxElement {
     async def submit_capture -> None;
     def capture_done -> None;
     def capture_retry -> None;
+    def dismiss_post_capture -> None;
+    def view_captured_person -> None;
     def set_guided(field: str, value: any) -> None;
     def set_cap_result(next_result: dict) -> None;
     async def load_goals -> None;
@@ -460,6 +512,15 @@ def:pub app -> JsxElement {
             mark_seen(unseen_reveals);
         }
     }, [view, tab, len(unseen_reveals)]);
+    # Capture -> Done confirmation strip (SOH-226): auto-dismiss after 4 s.
+    post_capture_summary: str = (post_capture["summary"] or "") as str;
+    useEffect(lambda {
+        if not post_capture_summary {
+            return lambda { };
+        }
+        t: any = setTimeout(lambda { post_capture = {}; }, 4000);  # jac:ignore[W2001]
+        return lambda { clearTimeout(t); };  # jac:ignore[W2001,E1053]
+    }, [post_capture_summary]);
     poll_home_on: bool = view == "home";
     poll_home_ms: int = 5000 if tab == "inbox" else 15000;
     poll_req_on: bool = view == "request" and mine_wants_poll(ex_mine, ex_claims);
@@ -481,8 +542,15 @@ def:pub app -> JsxElement {
             } elif view == "loading" {
                 <p key="loading" role="status" data-theme-boot={BOOT_THEME} className="pt-10 text-body-sm text-muted-foreground">Loading your graph…</p>
             } elif view == "home" {
+                <div key="home" className="flex flex-col gap-3">
+                {post_capture_summary and
+                    <CaptureLandedStrip
+                        summary={post_capture_summary}
+                        person_name={(post_capture["person_name"] or "") as str}
+                        onView={view_captured_person}
+                        onDismiss={dismiss_post_capture}
+                    />}
                 <HomeView
-                    key="home"
                     people={people_shown}
                     status={status}
                     goals={goals_list}
@@ -531,6 +599,7 @@ def:pub app -> JsxElement {
                     onPostAskAction={post_ask_action}
                     onAnswerAsk={answer_ask_action}
                 />
+                </div>
             } elif view == "request" {
                 <RequestDetail
                     key={"request-" + open_req_id}
@@ -582,7 +651,7 @@ def:pub app -> JsxElement {
                     onDone={capture_done}
                     onRetry={capture_retry}
                     onResult={set_cap_result}
-                    onOpenPerson={lambda pid: str { capture_done(); open_person_id = pid; }}
+                    onOpenPerson={lambda pid: str { capture_done(); post_capture = {}; open_person_id = pid; }}
                 />
             } else {
                 <StepIndicator key="indicator" step={step} total={4} label={STEP_LABELS[step - 1]} />
