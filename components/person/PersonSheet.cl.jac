@@ -23,11 +23,12 @@ import from ..ui.alert_dialog {
     AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle,
     AlertDialogDescription, AlertDialogAction, AlertDialogCancel
 }
+import from ..ui.avatar { Avatar }
 import from ..capture.Review { ReviewRow }
 import from ..capture.ReviewEditors { EditorField, EditorFooter }
 import from ..goals.RankList { strength_variant }
 import from ..api { person_detail, brief, complete_promise, draft_follow_up, forget, update_person_contact, archive_person }
-import from ...lib.text { join_with, short_date }
+import from ...lib.text { join_with, short_date, ics_for_promise }
 import from ...lib.utils { cn }
 
 glob _INTENT_LABEL: dict[str, str] = {"need": "wants", "offer": "offers", "open_to": "open to"};
@@ -257,20 +258,46 @@ def:pub IntentItem(row: dict, open_key: str, onToggle: Callable[[str], None]) ->
         </ReviewRow>;
 }
 
+"""Trigger a browser download of `text` as-is, named `filename`, mime
+"text/calendar" — same object-URL recipe `components/settings/DataPanel.cl.jac`'s
+`_download_text` uses (SOH-226)."""
+def _download_ics(text: str, filename: str) {
+    blob: any = new(Blob, [text], {"type": "text/calendar"});  # jac:ignore[W2001,E1053,W1051]
+    url: str = String(URL.createObjectURL(blob));  # jac:ignore[W2001,E1032]
+    a: any = document.createElement("a");  # jac:ignore[W2001]
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);  # jac:ignore[W2001,E1030]
+    a.click();
+    document.body.removeChild(a);  # jac:ignore[W2001,E1030]
+    URL.revokeObjectURL(url);  # jac:ignore[W2001,E1032]
+}
+
 def:pub PromiseItem(
     row: dict,
     is_done: bool,
     open_key: str,
     onToggle: Callable[[str], None],
-    onCheck: Callable[[str, bool], None]
+    onCheck: Callable[[str, bool], None],
+    person_name: str = ""
 ) -> JsxElement {
     promise: dict = (row["promise"] or {}) as dict;
     prid: str = _s(promise, "_jac_id");
     key: str = "p-" + prid;
     due: str = _s(promise, "due");
+    text: str = _s(promise, "text");
 
     def handle_check(e: ChangeEvent) {
         onCheck(prid, bool(e.target.checked));
+    }
+
+    def handle_calendar(e: MouseEvent) {
+        e.stopPropagation();
+        desc: str = ("Promised to " + person_name + ".") if person_name else "";
+        ics: str = ics_for_promise(text, due, desc, prid);
+        if ics {
+            _download_ics(ics, "cirql-promise.ics");
+        }
     }
 
     return
@@ -284,10 +311,24 @@ def:pub PromiseItem(
                 />
                 <span className="flex flex-col gap-0.5">
                     <span className={cn("text-body-sm", "text-muted-foreground line-through" if is_done else "")}>
-                        {_s(promise, "text")}
+                        {text}
                     </span>
                     {due and <span className="text-caption text-muted-foreground">{"due " + (short_date(due) or due)}</span>}
                 </span>
+                {due and
+                    <button
+                        type="button"
+                        aria-label="Add to calendar"
+                        onClick={handle_calendar}
+                        className="ml-auto shrink-0 rounded-md p-1.5 text-muted-foreground outline-none transition-colors hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                    >
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                            <rect x="3" y="4" width="18" height="18" rx="2" />
+                            <path d="M16 2v4" />
+                            <path d="M8 2v4" />
+                            <path d="M3 10h18" />
+                        </svg>
+                    </button>}
             </label>
         </ReviewRow>;
 }
@@ -639,6 +680,7 @@ def:pub PersonSheet(
                     <SheetHeader>
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex flex-wrap items-center gap-2">
+                                <Avatar name={_s(person, "name")} size="sm" />
                                 <SheetTitle>{_s(person, "name")}</SheetTitle>
                                 {rel_label and <Badge variant="outline">{rel_label}</Badge>}
                                 {rel_strength and
@@ -733,6 +775,7 @@ def:pub PersonSheet(
                                     open_key={open_key}
                                     onToggle={toggle}
                                     onCheck={check_promise}
+                                    person_name={_s(person, "name")}
                                 />
                             }}
                         </PersonSection>

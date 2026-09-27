@@ -1,13 +1,17 @@
-"""DataPanel (SOH-222): export, archived people, delete-my-data. OWNER: Person B.
+"""DataPanel (SOH-222/226): export, archived people, one Danger zone card.
+OWNER: Person B.
 
-Three cards, meant to live inside the appearance/settings sheet (mount:
-`<DataPanel onDeleted={logout} />`). (1) Export downloads the caller's whole
-graph as one JSON file via a Blob + object URL — nothing leaves the browser.
-(2) Archived people lists soft-deleted people with a Restore action; empty
-state reads "Nothing archived." (3) Delete my data is destructive and gated
-behind typing DELETE; on success it shows the counts and calls `onDeleted` so
-the shell can log the user out. Never says private/secure/encrypted — this
-graph is isolated by construction, granted read-only to no one by default.
+Meant to live inside the settings sheet (mount: `<DataPanel onDeleted={logout}
+/>`). (1) Export downloads the caller's whole graph as one JSON file via a
+Blob + object URL — nothing leaves the browser; export contacts is the same
+recipe for a .vcf. (2) Archived people lists soft-deleted people with a
+Restore action; empty state reads "Nothing archived." (3) Danger zone is ONE
+red card (SOH-226 — was two stacked red cards) with two destructive actions,
+each gated behind typing DELETE: Delete my data (keeps the login, clears the
+graph) and Delete account (also disables the login); on success either calls
+`onDeleted` so the shell can log the user out. Never says
+private/secure/encrypted — this graph is isolated by construction, granted
+read-only to no one by default.
 
 Owns only what it loaded and its own dialog/input state; the caller owns
 `onDeleted`.
@@ -18,6 +22,7 @@ import from ..ui.button { Button }
 import from ..ui.input { Input }
 import from ..ui.label { Label }
 import from ..ui.skeleton { Skeleton }
+import from ..ui.separator { Separator }
 import from ..ui.alert_dialog {
     AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle,
     AlertDialogDescription, AlertDialogAction, AlertDialogCancel
@@ -380,31 +385,31 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                 </CardContent>
             </Card>
 
-            <Card>
+            <h3 className="text-eyebrow text-muted-foreground">Danger zone</h3>
+            <Card className="border-destructive/30">
                 <CardHeader>
-                    <CardTitle>Delete my data</CardTitle>
-                    <CardDescription>
-                        Removes everything in your graph. Your export is the only copy after this.
-                    </CardDescription>
+                    <CardTitle className="text-destructive">Danger zone</CardTitle>
                 </CardHeader>
-                <CardContent className="flex flex-col gap-2">
-                    {Boolean(len(list(delete_result.keys())) if delete_result else 0) and (
-                        <p className="text-body-sm text-muted-foreground">{"Deleted " + _counts_line(delete_result) + "."}</p>
-                    )}
-                    <Button variant="destructive" className="w-full focus-visible:ring-inset" onClick={ask_delete}>Delete my data</Button>
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle>Delete account</CardTitle>
-                    <CardDescription>
-                        Removes your graph and disables this login. Your username is freed up; nothing
-                        is kept on the server.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-2">
-                    <Button variant="destructive" className="w-full focus-visible:ring-inset" onClick={ask_account}>Delete account</Button>
+                <CardContent className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-2">
+                        <p className="text-body-sm font-medium">Delete my data</p>
+                        <p className="text-caption text-muted-foreground">
+                            Removes everything in your graph. Your export is the only copy after this.
+                        </p>
+                        {Boolean(len(list(delete_result.keys())) if delete_result else 0) and (
+                            <p className="text-body-sm text-muted-foreground">{"Deleted " + _counts_line(delete_result) + "."}</p>
+                        )}
+                        <Button variant="destructive" className="w-full focus-visible:ring-inset" onClick={ask_delete}>Delete my data</Button>
+                    </div>
+                    <Separator />
+                    <div className="flex flex-col gap-2">
+                        <p className="text-body-sm font-medium">Delete account</p>
+                        <p className="text-caption text-muted-foreground">
+                            Removes your graph and disables this login. Your username is freed up;
+                            nothing is kept on the server.
+                        </p>
+                        <Button variant="destructive" className="w-full focus-visible:ring-inset" onClick={ask_account}>Delete account</Button>
+                    </div>
                 </CardContent>
             </Card>
 

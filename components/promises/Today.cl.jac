@@ -10,7 +10,7 @@ import from ..ui.button { Button }
 import from ..ui.skeleton { Skeleton }
 import from ..capture.Review { ReviewRow }
 import from ..api { list_promises, complete_promise }
-import from ...lib.text { short_date }
+import from ...lib.text { short_date, ics_for_promise }
 import from ...lib.utils { cn }
 
 def _s(d: any, key: str) -> str {
@@ -18,6 +18,21 @@ def _s(d: any, key: str) -> str {
         return "";
     }
     return (d[key] or "") as str;
+}
+
+"""Trigger a browser download of `text` as-is, named `filename`, mime
+"text/calendar" — same object-URL recipe `components/settings/DataPanel.cl.jac`'s
+`_download_text` uses (SOH-226)."""
+def _download_ics(text: str, filename: str) {
+    blob: any = new(Blob, [text], {"type": "text/calendar"});  # jac:ignore[W2001,E1053,W1051]
+    url: str = String(URL.createObjectURL(blob));  # jac:ignore[W2001,E1032]
+    a: any = document.createElement("a");  # jac:ignore[W2001]
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);  # jac:ignore[W2001,E1030]
+    a.click();
+    document.body.removeChild(a);  # jac:ignore[W2001,E1030]
+    URL.revokeObjectURL(url);  # jac:ignore[W2001,E1032]
 }
 
 def:pub TodayRow(
@@ -32,6 +47,7 @@ def:pub TodayRow(
     prid: str = _s(promise, "_jac_id");
     key: str = "t-" + prid;
     due: str = _s(promise, "due");
+    text: str = _s(promise, "text");
     pid: str = _s(row["to"], "_jac_id");
     name: str = _s(row["to"], "name");
 
@@ -45,6 +61,15 @@ def:pub TodayRow(
         }
     }
 
+    def handle_calendar(e: MouseEvent) {
+        e.stopPropagation();
+        desc: str = ("Promised to " + name + ".") if name else "";
+        ics: str = ics_for_promise(text, due, desc, prid);
+        if ics {
+            _download_ics(ics, "cirql-promise.ics");
+        }
+    }
+
     return
         <ReviewRow row_key={key} is_open={open_key == key} span={_s(row, "span")} note_text="" onToggle={onToggle}>
             <label className="flex items-start gap-2.5">
@@ -52,12 +77,26 @@ def:pub TodayRow(
                     type="checkbox"
                     checked={is_done}
                     onChange={handle_check}
-                    aria-label={("Mark not done: " if is_done else "Mark done: ") + _s(promise, "text")}
+                    aria-label={("Mark not done: " if is_done else "Mark done: ") + text}
                     className="mt-0.5 size-4 shrink-0 accent-primary"
                 />
                 <span className={cn("text-body-sm", "text-muted-foreground line-through" if is_done else "")}>
-                    {_s(promise, "text")}
+                    {text}
                 </span>
+                {due and
+                    <button
+                        type="button"
+                        aria-label="Add to calendar"
+                        onClick={handle_calendar}
+                        className="ml-auto shrink-0 rounded-md p-1.5 text-muted-foreground outline-none transition-colors hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                    >
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                            <rect x="3" y="4" width="18" height="18" rx="2" />
+                            <path d="M16 2v4" />
+                            <path d="M8 2v4" />
+                            <path d="M3 10h18" />
+                        </svg>
+                    </button>}
             </label>
             <span className="flex flex-wrap items-center gap-x-2 pl-6.5 text-caption text-muted-foreground">
                 {if pid {

@@ -2,10 +2,16 @@
 Cirql is, what leaves the phone, the exchange flow step by step, and the
 product rules that never change. OWNER: Person B.
 
-Mounted inside AppearanceSheet, under DataPanel, as a collapsible section (the
-same disclosure pattern person/PersonSheet.cl.jac's PersonSection uses). Fully
+Mounted inside AppearanceSheet's footer row, below every accordion-style
+section (Appearance / My card / Data / Danger zone): the trigger is styled to
+sit flush as a plain footer link (no card border) next to Privacy and Send
+feedback, but it's still the same disclosure — the content still expands in
+place (same pattern person/PersonSheet.cl.jac's PersonSection uses). Fully
 self-contained: owns its own open/closed state, calls nothing on the server,
-takes no props.
+takes no props. `today_build_line()` is exported separately so the footer's
+own always-visible version line (outside this accordion) can reuse the same
+date logic without a second "Built with…" paragraph inside the collapsed
+content.
 """
 
 import from ..ui.collapsible { Collapsible, CollapsibleTrigger, CollapsibleContent }
@@ -35,19 +41,25 @@ def _page_title() -> str {
     return s or "Cirql";
 }
 
+""""Cirql · build 2026-09-27" — the footer's always-visible version line
+(SOH-226), outside any accordion."""
+def:pub today_build_line() -> str {
+    return _page_title() + " · build " + _today_str();
+}
+
 def:pub AboutPanel() -> JsxElement {
     return
-        <Collapsible className="overflow-hidden rounded-lg border border-border bg-card shadow-edge">
+        <Collapsible className="overflow-hidden rounded-md">
             <CollapsibleTrigger
                 aria-label="How Cirql works — expand or collapse"
                 className={cn(
                     buttonVariants().call(None, {"variant": "ghost", "size": "row"}),
-                    "flex-row items-center justify-between rounded-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 [&[data-state=open]>span>svg]:rotate-90"
+                    "flex-row items-center justify-between rounded-md focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 [&[data-state=open]>span>svg]:rotate-90"
                 )}
             >
-                <span className="flex items-center gap-1.5 text-body-sm font-medium">
-                    <ChevronRightIcon className="size-4 text-muted-foreground transition-transform" />
+                <span className="flex items-center gap-1.5 text-body-sm">
                     How Cirql works
+                    <ChevronRightIcon className="size-4 text-muted-foreground transition-transform" />
                 </span>
             </CollapsibleTrigger>
             <CollapsibleContent>
@@ -113,7 +125,6 @@ def:pub AboutPanel() -> JsxElement {
 
                     <p className="text-caption text-muted-foreground">
                         Built with Jac (walkers on a graph), Gemini, and ElevenLabs.
-                        {" " + _page_title() + " · build " + _today_str()}
                     </p>
                 </div>
             </CollapsibleContent>
