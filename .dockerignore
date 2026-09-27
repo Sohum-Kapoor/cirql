@@ -1,0 +1,14 @@
+.venv
+.jac
+node_modules
+.git
+.claude
+.env
+seed/seed.real.json
+ios
+android
+uploads
+docs/research
+*.ipa
+*.apk
+.DS_Store
