@@ -398,7 +398,8 @@ def:pub ImportedRow(
 
 def:pub ImportPeople(
     on_open_person: Callable[[str], None],
-    onDone: Callable[[], None] | None = None
+    onDone: Callable[[], None] | None = None,
+    onChanged: Callable[[], None] | None = None
 ) -> JsxElement {
     has step: str = "paste",
         paste_text: str = "",
@@ -563,6 +564,9 @@ def:pub ImportPeople(
         next_dec: dict = {**decisions};
         next_dec[person_id] = "confirmed";
         decisions = next_dec;
+        if onChanged {
+            onChanged();
+        }
     }
 
     async def skip_row(person_id: str) -> None {
@@ -589,6 +593,9 @@ def:pub ImportPeople(
         next_dec: dict = {**decisions};
         next_dec[person_id] = "skipped";
         decisions = next_dec;
+        if onChanged {
+            onChanged();
+        }
     }
 
     async def confirm_all(e: MouseEvent) -> None {
