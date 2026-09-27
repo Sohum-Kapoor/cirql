@@ -1,0 +1,44 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_emma_14",
+  "email": "pop.emma.14@example.com",
+  "name": "Emma Larsson",
+  "about_me": "I'm Emma, an HCI master's student at UMSI studying how wheelchair users navigate campus. I need 12 participants for interviews and a partner who builds mobility hardware.",
+  "goals": [
+    "Recruit 12 wheelchair users for my navigation study"
+  ],
+  "debriefs": [
+    {
+      "text": "Sofia Lindqvist, my labmate and a PhD student, is recruiting wheelchair users too, for an accessibility study. She suggested we share a recruitment flyer.",
+      "how_met": "lab meeting"
+    },
+    {
+      "text": "Met Kenji Watanabe from the Iyer robotics lab. He builds soft grippers for assistive arms and wants user feedback.",
+      "how_met": "accessibility seminar"
+    },
+    {
+      "text": "Hannah Brooks, the Ann Arbor city planner, said the city is redoing curb ramps on Main Street and wants accessibility input.",
+      "how_met": "public meeting"
+    },
+    {
+      "text": "Talked to Hana Yoshida, a design student building accessible playground equipment. She knows parents who use wheelchairs.",
+      "how_met": "design school crit"
+    }
+  ],
+  "card": {
+    "headline": "HCI master's student, accessibility",
+    "about": "Studying wheelchair navigation on campus.",
+    "looking_for": [
+      "study participants",
+      "mobility hardware partners"
+    ],
+    "can_offer": [
+      "user research methods",
+      "accessibility audits"
+    ]
+  },
+  "request": {
+    "need": "Wheelchair users in Ann Arbor willing to do a paid one-hour interview",
+    "about_line": "HCI master's student studying accessible campus navigation"
+  }
+}

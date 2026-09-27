@@ -1,0 +1,39 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_hana_28",
+  "email": "pop.hana.28@example.com",
+  "name": "Hana Yoshida",
+  "about_me": "I'm Hana, an industrial design senior building accessible playground equipment. I need families who use wheelchairs to test prototypes and a manufacturer for small runs.",
+  "goals": [
+    "Test the playground prototype with five families"
+  ],
+  "debriefs": [
+    {
+      "text": "Emma Larsson, an HCI master's student, is recruiting wheelchair users too and offered to share contacts.",
+      "how_met": "design school crit"
+    },
+    {
+      "text": "Tariq Mahmoud at the Kerrytown makerspace said I can use the CNC router on weekends.",
+      "how_met": "makerspace"
+    },
+    {
+      "text": "Hannah Brooks, city planner, mentioned Ann Arbor is rebuilding two playgrounds next year.",
+      "how_met": "public meeting"
+    },
+    {
+      "text": "Derek Olsen, patent attorney, gave me a free consult on design patents.",
+      "how_met": "A2 Launchpad open house"
+    }
+  ],
+  "card": {
+    "headline": "Industrial design senior",
+    "about": "Accessible playground equipment.",
+    "looking_for": [
+      "families to test prototypes",
+      "small-run manufacturer"
+    ],
+    "can_offer": [
+      "design help"
+    ]
+  }
+}

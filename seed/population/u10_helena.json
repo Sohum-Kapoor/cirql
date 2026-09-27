@@ -1,0 +1,44 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_helena_10",
+  "email": "pop.helena.10@example.com",
+  "name": "Helena Brandt",
+  "about_me": "I'm Helena Brandt, a mechanical engineering professor at Michigan running a battery thermal-management lab. Two of my students want to spin out a startup. I'm looking for industry partners for an NSF grant and for investors who understand deep-tech timelines.",
+  "goals": [
+    "Find an industry partner for the battery-cooling NSF grant"
+  ],
+  "debriefs": [
+    {
+      "text": "Met Rachel Adler, an associate at Northwind Climate Fund, at our lab tour. She said Northwind backs grid and battery hardware and wants to meet our students early. She promised to send a founder FAQ.",
+      "how_met": "lab tour"
+    },
+    {
+      "text": "Talked to Omar Haddad from GridLeaf. His storage units overheat in summer and he wants to test our cooling plates. He could be the industry partner on the grant.",
+      "how_met": "Detroit Hardware Night"
+    },
+    {
+      "text": "Elena Ortiz at the Great Lakes Innovation Fund said their clean-tech pilot grants can match NSF funds. The deadline is January 10.",
+      "how_met": "state clean-tech workshop"
+    },
+    {
+      "text": "Derek Olsen, the patent attorney, advised us to file a provisional before the students present anywhere public.",
+      "how_met": "tech transfer office"
+    },
+    {
+      "text": "Chen Wei from GM asked about our cooling results for their EV packs, but said GM partnerships take a year to sign.",
+      "how_met": "industry day"
+    }
+  ],
+  "card": {
+    "headline": "Professor, battery thermal management",
+    "about": "Lab spinning out battery-cooling tech.",
+    "looking_for": [
+      "industry grant partners",
+      "deep-tech investors"
+    ],
+    "can_offer": [
+      "battery testing expertise",
+      "student researchers"
+    ]
+  }
+}

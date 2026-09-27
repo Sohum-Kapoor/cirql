@@ -1,0 +1,47 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_colin_17",
+  "email": "pop.colin.17@example.com",
+  "name": "Colin O'Brien",
+  "about_me": "I'm Colin, founder of Shiftly, a marketplace that fills open nursing shifts at small hospitals. We're in two hospitals in Michigan. I need nurse advisors and intros to hospital operations leaders.",
+  "goals": [
+    "Sign three more hospitals to Shiftly"
+  ],
+  "debriefs": [
+    {
+      "text": "Andre Williams, an ED nurse at Michigan Medicine, gave us blunt feedback on the app. He said nurses want to see pay before accepting a shift.",
+      "how_met": "user interview"
+    },
+    {
+      "text": "Talked to Bethany Kowalski, ED nurse manager. She said Michigan Medicine won't use outside staffing apps, but she'd advise informally.",
+      "how_met": "hospital innovation day"
+    },
+    {
+      "text": "Met Ravi Menon, Ann Arbor angel, who said he likes staffing marketplaces and asked for our retention numbers. I promised to send them Monday.",
+      "how_met": "angel breakfast"
+    },
+    {
+      "text": "Esther Wu from Stryker BD knows hospital COOs across the state and offered to make two intros if we get a case study.",
+      "how_met": "medtech conference"
+    },
+    {
+      "text": "Carmen Diaz, a pediatric NP, said rural hospitals are desperate for shift coverage.",
+      "how_met": "conference panel"
+    }
+  ],
+  "card": {
+    "headline": "Founder, Shiftly",
+    "about": "Fills open nursing shifts at small hospitals.",
+    "looking_for": [
+      "nurse advisors",
+      "hospital operations intros"
+    ],
+    "can_offer": [
+      "staffing market data"
+    ]
+  },
+  "request": {
+    "need": "Experienced nurses willing to advise a nurse-staffing startup",
+    "about_line": "Founder of a nursing-shift marketplace live in two Michigan hospitals"
+  }
+}

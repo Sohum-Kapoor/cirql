@@ -1,0 +1,44 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_samira_07",
+  "email": "pop.samira.07@example.com",
+  "name": "Samira Haddad",
+  "about_me": "I'm Samira, a transportation planner with the City of Ann Arbor. I run pieces of the Main Street curb-management pilot. I need startups or researchers with sensor data on delivery-vehicle parking.",
+  "goals": [
+    "Find a sensor-data partner for the curb-management pilot"
+  ],
+  "debriefs": [
+    {
+      "text": "Hannah Brooks, my colleague in city planning, leads the curb pilot and wants data by March. She said Routewise might have delivery-stop data.",
+      "how_met": "coworker at City Hall"
+    },
+    {
+      "text": "Met Ben Hartley at the Detroit mobility summit. He's an engineering manager at Routewise, which routes delivery fleets. He said their stop data is proprietary but could be shared under a pilot agreement.",
+      "how_met": "mobility summit"
+    },
+    {
+      "text": "Irene Kovacs from Detroit's Office of Mobility Innovation ran a similar pilot last year and offered to share their data-sharing template. I promised to send her our pilot scope.",
+      "how_met": "mobility summit panel"
+    },
+    {
+      "text": "Talked to Luis Romero, operations manager at Lakeside Cold Storage in Detroit. His drivers complain about Main Street loading zones and he'd love a routing pilot.",
+      "how_met": "mobility summit lunch"
+    },
+    {
+      "text": "Omar Haddad is not related to me, people keep asking. He's the GridLeaf founder and wants curbside battery storage for food trucks.",
+      "how_met": "Detroit Hardware Night"
+    }
+  ],
+  "card": {
+    "headline": "Transportation planner, City of Ann Arbor",
+    "about": "Curb management and delivery loading zones.",
+    "looking_for": [
+      "sensor data partners",
+      "mobility startups for pilots"
+    ],
+    "can_offer": [
+      "city pilot introductions",
+      "permitting guidance"
+    ]
+  }
+}

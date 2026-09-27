@@ -1,0 +1,39 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_hyejin_16",
+  "email": "pop.hyejin.16@example.com",
+  "name": "Hye-jin Park",
+  "about_me": "I'm Hye-jin, a Ross BBA junior who did a product internship at a fintech. I want a summer 2027 PM internship at an EV company. I can help with market research and user interviews.",
+  "goals": [
+    "Land a summer 2027 PM internship at an EV company"
+  ],
+  "debriefs": [
+    {
+      "text": "Met Nate Okonkwo, a PM at Rivian in Plymouth on charging software. He said they hire PM interns in January and he'd refer me if I do a product teardown.",
+      "how_met": "alumni panel"
+    },
+    {
+      "text": "Grace Adeyemi from the Venture Club said EV startups hire PMs through investors, and suggested I talk to Theo Vance at Huron Ventures.",
+      "how_met": "Venture Club meeting"
+    },
+    {
+      "text": "Coffee with Liam O'Connor, a Ford software engineer building an EV charging-map side project. He wants a PM to help with user interviews.",
+      "how_met": "coffee at Ross"
+    },
+    {
+      "text": "Lucia Ferraro, Ford recruiter, said Ford Pro has a PM rotational program for new grads, not interns.",
+      "how_met": "career fair"
+    }
+  ],
+  "card": {
+    "headline": "Ross BBA, product",
+    "about": "Product internships, EV focus.",
+    "looking_for": [
+      "EV PM internship"
+    ],
+    "can_offer": [
+      "market research",
+      "user interviews"
+    ]
+  }
+}

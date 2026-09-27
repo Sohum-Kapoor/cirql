@@ -1,0 +1,43 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_kenji_04",
+  "email": "pop.kenji.04@example.com",
+  "name": "Kenji Watanabe",
+  "about_me": "I'm Kenji, a robotics PhD student in Prof. Anand Iyer's lab at Michigan working on soft grippers for assistive arms. I want a summer 2027 research internship in industry, ideally at an automaker's robotics group. Happy to talk soft robotics with anyone.",
+  "goals": [
+    "Land a summer 2027 industry robotics internship"
+  ],
+  "debriefs": [
+    {
+      "text": "Advisor meeting with Prof. Anand Iyer. He consults for Ford's manufacturing robotics group and said he'd mention me to their research lead if I finish the grasping paper by December.",
+      "how_met": "advisor meeting"
+    },
+    {
+      "text": "Met Lucia Ferraro at the engineering career fair. She's a recruiter at Ford hiring new-grad embedded engineers for Ford Pro, but she said research interns go through a different pipeline she can point me to.",
+      "how_met": "engineering career fair"
+    },
+    {
+      "text": "Talked to Chen Wei after his guest lecture. He's a senior autonomy engineer at GM in Warren and mentors students. He said GM's robotics team takes PhD interns and he'd review my resume.",
+      "how_met": "guest lecture"
+    },
+    {
+      "text": "Sofia Lindqvist from UMSI asked if our gripper could be tested with wheelchair users in her accessibility study. She's recruiting participants now. I said I'd send her our demo video.",
+      "how_met": "accessibility seminar"
+    },
+    {
+      "text": "Met Tariq Mahmoud at the Kerrytown makerspace. He runs the space and offered after-hours laser cutter access for student projects.",
+      "how_met": "Kerrytown makerspace"
+    }
+  ],
+  "card": {
+    "headline": "Robotics PhD, soft grippers",
+    "about": "Soft grippers for assistive arms in the Iyer lab.",
+    "looking_for": [
+      "industry robotics internship"
+    ],
+    "can_offer": [
+      "soft robotics consults",
+      "gripper prototyping help"
+    ]
+  }
+}

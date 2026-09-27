@@ -1,0 +1,40 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_talia_22",
+  "email": "pop.talia.22@example.com",
+  "name": "Talia Rosen",
+  "about_me": "I'm Talia, I run a half-acre urban farm in Detroit's North End and sit on the Grown Together Detroit board. I want affordable soil sensors and grant money for a hoop house.",
+  "goals": [
+    "Fund a hoop house for the farm"
+  ],
+  "debriefs": [
+    {
+      "text": "Julia Brennan, who runs Grown Together Detroit, is pushing sensors in every garden by spring and wants me to test SoilSense first.",
+      "how_met": "board meeting"
+    },
+    {
+      "text": "Met Diego Ramirez, SoilSense founder. He offered two free sensors in exchange for feedback.",
+      "how_met": "Eastern Market"
+    },
+    {
+      "text": "Elena Ortiz at the Great Lakes Innovation Fund said urban ag projects are eligible for pilot grants. Deadline January 10.",
+      "how_met": "grant workshop"
+    },
+    {
+      "text": "Tomasz Nowak, the Kestrel chef, buys greens from us and wants microgreens year-round.",
+      "how_met": "farm customer"
+    }
+  ],
+  "card": {
+    "headline": "Urban farmer, North End Detroit",
+    "about": "Half-acre farm, community garden board.",
+    "looking_for": [
+      "affordable soil sensors",
+      "hoop house grants"
+    ],
+    "can_offer": [
+      "fresh produce for restaurants",
+      "farm tours"
+    ]
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_diego_02",
+  "email": "pop.diego.02@example.com",
+  "name": "Diego Ramirez",
+  "about_me": "I'm Diego, founder of SoilSense, a low-cost soil-moisture sensor for urban farms, based in Detroit. We have 40 sensors deployed with community gardens. I'm raising a $600k pre-seed and looking for climate or ag investors who back hardware.",
+  "goals": [
+    "Close a $600k pre-seed round for SoilSense",
+    "Find two more urban-farm pilot partners"
+  ],
+  "debriefs": [
+    {
+      "text": "Met Julia Brennan at the Eastern Market grower meeting. She runs Grown Together Detroit, a network of 30 community gardens, and wants soil sensors in every plot by spring. She offered to connect us with five garden leads.",
+      "how_met": "Eastern Market grower meeting"
+    },
+    {
+      "text": "Pitched Priya Rao, partner at Northwind Climate Fund, at Detroit Hardware Night. She said they back climate hardware at seed and wants to see unit economics on the sensor. I promised to send her our cost-down plan next week.",
+      "how_met": "Detroit Hardware Night"
+    },
+    {
+      "text": "Coffee with Elena Ortiz, program officer at the Great Lakes Innovation Fund. The fund gives state grants up to $100k for clean-tech pilots and the next deadline is January 10. She said ag sensing fits.",
+      "how_met": "coffee in Midtown"
+    },
+    {
+      "text": "Talked to Omar Haddad, founder of GridLeaf. He's raising his seed round too and said Priya was the first check he got a meeting with. He knows Jamal Pierce well.",
+      "how_met": "Detroit Hardware Night"
+    },
+    {
+      "text": "Met Derek Olsen, a patent attorney at a Detroit firm, at the Launchpad open house. He offers a free first consult to student and early founders. I want to ask him about our probe design.",
+      "how_met": "A2 Launchpad open house"
+    },
+    {
+      "text": "Chatted with Victor Stahl from Lakeshore Capital in Chicago. He said they're not doing climate this year, only consumer and fintech, but he'd look again at Series A.",
+      "how_met": "VC mixer in Chicago"
+    }
+  ],
+  "card": {
+    "headline": "Founder, SoilSense (soil sensors for urban farms)",
+    "about": "Low-cost soil-moisture sensors, 40 deployed across Detroit gardens.",
+    "looking_for": [
+      "climate/ag seed investors",
+      "urban-farm pilot partners"
+    ],
+    "can_offer": [
+      "sensor data for researchers",
+      "hardware prototyping advice"
+    ]
+  },
+  "request": {
+    "need": "An intro to a seed investor who backs climate or agriculture hardware",
+    "about_line": "Detroit founder of a soil-sensor startup with 40 units deployed"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_lila_09",
+  "email": "pop.lila.09@example.com",
+  "name": "Lila Moreno",
+  "about_me": "I'm Lila, a sophomore and lead organizer of WolvHacks, the campus hackathon. We're expecting 600 hackers in March. I need two more title sponsors and mentors from industry.",
+  "goals": [
+    "Sign two title sponsors for WolvHacks"
+  ],
+  "debriefs": [
+    {
+      "text": "Zoe Park, president of Women in Computing, is co-organizing WolvHacks with me. She said she'd handle mentor recruiting if I handle sponsors.",
+      "how_met": "WolvHacks planning meeting"
+    },
+    {
+      "text": "Met Lucia Ferraro, Ford recruiter, at the career fair. She said Ford sponsors two hackathons a year and budget decisions are made in December. I promised to send her our sponsorship packet.",
+      "how_met": "engineering career fair"
+    },
+    {
+      "text": "Talked to Nate Okonkwo, a PM at Rivian working on charging software. He said Rivian might send mentors but not money.",
+      "how_met": "alumni panel"
+    },
+    {
+      "text": "Sam Delaney from engineering alumni relations runs mentor matching and offered to email alumni about mentoring at the hackathon.",
+      "how_met": "alumni relations office"
+    },
+    {
+      "text": "Met Mei Tanaka, a data scientist at Domino's HQ, at a Women in Computing talk. She said Domino's sponsored a data challenge before and she'd ask her manager.",
+      "how_met": "Women in Computing talk"
+    }
+  ],
+  "card": {
+    "headline": "Lead organizer, WolvHacks",
+    "about": "600-person student hackathon in March.",
+    "looking_for": [
+      "title sponsors",
+      "industry mentors"
+    ],
+    "can_offer": [
+      "recruiting access to 600 student hackers"
+    ]
+  }
+}

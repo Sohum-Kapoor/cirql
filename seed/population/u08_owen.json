@@ -1,0 +1,43 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_owen_08",
+  "email": "pop.owen.08@example.com",
+  "name": "Owen Fitzgerald",
+  "about_me": "I'm Owen, a Ross MBA and VP of the Michigan Venture Club. Before school I was a mechanical engineer at an automotive supplier. I want a full-time VC associate role after graduation, ideally at a Midwest climate or mobility fund.",
+  "goals": [
+    "Get a full-time VC associate offer at a Midwest fund"
+  ],
+  "debriefs": [
+    {
+      "text": "Grace Adeyemi, our club president, is running the Chicago VC trek in February. She's lining up Lakeshore Capital and wants a climate fund on the list.",
+      "how_met": "club leadership meeting"
+    },
+    {
+      "text": "Met Priya Rao at the Northwind Climate Fund office hours. She's a partner there, backs climate hardware at seed, and said they might add an associate next fall. She wants to see a sourcing memo from me.",
+      "how_met": "Northwind office hours"
+    },
+    {
+      "text": "Coffee with Victor Stahl, partner at Lakeshore Capital in Chicago. They do growth-stage consumer and fintech and said they're not hiring associates this year.",
+      "how_met": "coffee in Chicago"
+    },
+    {
+      "text": "Talked to Olivia Grant, talent partner at Huron Ventures. She helps portfolio companies hire and knows which Midwest funds are adding associates. She offered to review my resume.",
+      "how_met": "Huron Ventures happy hour"
+    },
+    {
+      "text": "Met Wes Bradley at A2 Launchpad office hours. He's an angel and former HR-tech founder who holds Friday office hours. He said he'd introduce me to two fund GPs.",
+      "how_met": "A2 Launchpad office hours"
+    }
+  ],
+  "card": {
+    "headline": "Ross MBA, VP Michigan Venture Club",
+    "about": "Engineer turned investor, focused on climate and mobility.",
+    "looking_for": [
+      "VC associate roles"
+    ],
+    "can_offer": [
+      "deal sourcing",
+      "automotive supply chain knowledge"
+    ]
+  }
+}

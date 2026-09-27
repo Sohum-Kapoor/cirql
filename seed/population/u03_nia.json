@@ -1,0 +1,44 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_nia_03",
+  "email": "pop.nia.03@example.com",
+  "name": "Nia Thompson",
+  "about_me": "I'm Nia, an ICU nurse at Michigan Medicine. I'm building a shift-handoff app because handoffs are where things get lost. I need a technical co-founder who can build a HIPAA-aware mobile app.",
+  "goals": [
+    "Find a technical co-founder for my shift-handoff app"
+  ],
+  "debriefs": [
+    {
+      "text": "Talked with Bethany Kowalski, the nurse manager in the emergency department. She runs the clinical innovation pilot program and wants tools that cut charting time. She said she'd let us pilot in two units if we get an MVP.",
+      "how_met": "hospital innovation huddle"
+    },
+    {
+      "text": "Met Arjun Shah at the healthtech meetup. He's CTO of Clearpath Meds, a medication adherence startup, and he said he's not looking for another project but knows engineers who want to do health. He promised to send me two names.",
+      "how_met": "healthtech meetup"
+    },
+    {
+      "text": "Coffee with Ravi Menon, an Ann Arbor angel who sold a logistics software company. He writes $25k checks in healthtech and said he'd want to see a co-founder in place first.",
+      "how_met": "coffee at Sweetwaters"
+    },
+    {
+      "text": "Andre Williams from the ED said he'd be a clinical advisor. He's been a nurse for twelve years and hates the current handoff form as much as I do.",
+      "how_met": "coworker in the ED"
+    }
+  ],
+  "card": {
+    "headline": "ICU nurse building a shift-handoff app",
+    "about": "Nurse at Michigan Medicine fixing where handoffs lose information.",
+    "looking_for": [
+      "technical co-founder",
+      "pilot users on nursing units"
+    ],
+    "can_offer": [
+      "clinical workflow expertise",
+      "intros to nurse managers"
+    ]
+  },
+  "request": {
+    "need": "A technical co-founder who can build a secure mobile app for nurses",
+    "about_line": "ICU nurse with a pilot site lined up for a shift-handoff app"
+  }
+}
