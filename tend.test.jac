@@ -25,6 +25,8 @@ import from schema {
     RelevantTo, HasGoal
 }
 import from datetime { datetime, timedelta }
+import from goals { goal_noun_phrase }
+import from scoring { polish_reason }
 
 def _person_names(result: list[dict[str, any]]) -> list[str] {
     names: list[str] = [];
@@ -151,7 +153,10 @@ test "tend_for: open promises (due ascending, empty due last), expiring intents 
     assert len(relevant) == 1;
     relevant_person = relevant[0]["person"] as Person;
     assert relevant_person.name == "Tend-test Strong Match";
-    assert relevant[0]["reason"] == "Tend-test Strong Match is a strong match for your goal 'Tend-test goal'";
+    # SOH-226: no raw-sentence splice ("X is a strong match for I am looking
+    # to..."); "<First name>: strong match for '<noun phrase>'", same
+    # `goal_noun_phrase` + `polish_reason` idiom the rest of the codebase uses.
+    assert relevant[0]["reason"] == polish_reason(f"Tend-test: strong match for '{goal_noun_phrase('Tend-test goal')}'"), relevant[0]["reason"];
     assert relevant[0]["evidence"]["id"] == jid(strong_fact);
     assert relevant[0]["suggested_action"] == "Reach out (use the drafted opener)";
     assert "Tend-test Weak Match" not in names, "a weak RelevantTo match must never surface";
@@ -277,4 +282,28 @@ test "tend_for: overall `limit` truncates the final ordered list" {
     assert len(result) == 3, f"expected the overall limit to cap the list at 3, got {len(result)}";
     ordered_names = [(item["person"] as Person).name for item in result];
     assert ordered_names == ["Tend-limit-test P0", "Tend-limit-test P1", "Tend-limit-test P2"];
+}
+
+test "tend_for: newly_relevant reason is product copy, not a raw-goal sentence splice (SOH-226)" {
+    now = datetime(2026, 9, 26, 12, 0, 0);
+    me = (root ++> Me(name="Tend-splice-test Me"))[0];
+    # A raw, first-person goal ask (what SetGoal would have stored before
+    # SOH-226) - the fix must still read cleanly off it, never as
+    # "... is a strong match for I am looking to find a technical cofounder".
+    goal = (me +>:HasGoal:+> Goal(text="I am looking to find a technical cofounder", created_at=now.isoformat(), active=True))[0];
+
+    p = (me +>:Knows(status="confirmed", last_contact=""):+> Person(name="Priya Nair", status="confirmed"))[0];
+    fact = (root ++> Fact(text="Has shipped embedded firmware for five years", observed_at="2026-09-20"))[0];
+    fact +>:FactAbout:+> p;
+    p +>:RelevantTo(reason="r", strength="strong", label="known", evidence=[jid(fact)], opener="o"):+> goal;
+
+    result = tend_for(me, now, 8);
+    relevant = _by_kind(result, "newly_relevant");
+    assert len(relevant) == 1;
+
+    reason = relevant[0]["reason"] as str;
+    assert "is a strong match for" not in reason, f"must never splice the raw goal sentence: {reason}";
+    assert "I am looking to" not in reason, f"the raw first-person goal text must never appear verbatim: {reason}";
+    assert reason.startswith("Priya:"), f"first name only, colon-led product copy: {reason}";
+    assert "find a technical cofounder" in reason, f"the noun-phrased goal must still appear: {reason}";
 }

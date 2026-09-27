@@ -180,6 +180,14 @@ edge RelevantTo: Person --> Goal {
     has evidence: list[str] = [];    # jids of Facts/Intents/Notes/Cards; GoalRank rebuilds {id,kind,observed_at,span} at report time
     has opener: str = "";            # drafted opener, cached so GoalRank can be pre-warmed
     has label: str = "cold";         # known | route | cold
+    # SOH-226 ranking stability: this ONE candidate is only re-sent to the
+    # model when something about THEM or the goal changed since ranked_at
+    # (see goals.sv.jac `stale_trigger`); otherwise strength/reason/opener/
+    # label above are kept verbatim across a GoalRank rebuild.
+    has ranked_at: str = "";           # ISO; when THIS edge's strength was last (re-)computed
+    has ranked_goal_text: str = "";    # snapshot of Goal.text as of ranked_at (detects an edited goal)
+    has prev_strength: str = "";       # strength before the most recent change; "" if unchanged this pass
+    has change_reason: str = "";       # "new note on Sep 27" | "goal edited" | "re-ranked on request"; "" if unchanged
 }
 
 # ---------------------------------------------------------------- Exchange (v0.3)

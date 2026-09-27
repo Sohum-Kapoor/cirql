@@ -27,7 +27,7 @@ as `Person.status == "proposed"` with `Knows.status == "proposed"`):
 import re;
 import from datetime { datetime }
 import from jaclang { JacRuntime as Jac }
-import from schema { Me, Person, Note, Fact, Intent, Goal, Knows, Reported, HasGoal, FactAbout, IntentAbout, Mentions, AssertsIntent, RelevantTo }
+import from schema { Me, Person, Note, Fact, Intent, Promise, Goal, Knows, Reported, HasGoal, FactAbout, IntentAbout, PromiseTo, AssertsIntent, AssertsPromise, Mentions, RelevantTo }
 import from llm { llm }
 import from scoring { polish_reason }
 import time;
@@ -621,7 +621,9 @@ def serve_cached(goal: Goal, me: Me) -> list[dict[str, any]] {
             "evidence": ev_out,
             "days_since_contact": days,
             "opener": e.opener,
-            "cached": True
+            "cached": True,
+            "prev_strength": e.prev_strength,
+            "change_reason": e.change_reason
         });
     }
 
@@ -709,6 +711,336 @@ def materialize(goal: Goal, ranked: list[RankedItem], candidates: list[Candidate
     return sorted(report_items, key=_sort_key);
 }
 
+# ---------------------------------------------------------------- SOH-226 ranking stability
+# Audit finding (POLISH-PLAN #10 / FEEL-AUDIT #3): "Maya Chen went strong ->
+# medium after one capture that had nothing to do with her." A person's
+# RelevantTo strength may change only when something about THAT person or
+# THAT goal changed since their edge was last ranked (a new/edited Fact,
+# Intent, Promise or Note mentioning them; the goal's text; or an explicit
+# force). Otherwise the candidate is never sent to the model at all -
+# strength/label/reason/opener are kept exactly as they were.
+
+"""Latest observed_at/captured_at among `p`'s Facts (own `observed_at`),
+Intents and Promises (their asserting Note's `captured_at`), and Notes
+mentioning `p` - whichever is newest, ISO string, "" if nothing parses.
+Compared against a RelevantTo edge's own `ranked_at` to decide whether that
+ONE candidate needs to go back through the model. An edited Fact
+(`ReconfirmFact` bumps `observed_at` to now) counts as new evidence for
+free, since it's compared directly rather than through a Note."""
+def newest_evidence_at(p: Person) -> str {
+    best: str = "";
+    best_dt: datetime | None = None;
+
+    for f in [p <-:FactAbout:<-] {
+        dt = _parse_naive_utc(f.observed_at);
+        if dt is None {
+            continue;
+        }
+        if best_dt is None or dt > (best_dt as datetime) {
+            best_dt = dt;
+            best = f.observed_at;
+        }
+    }
+    for i in [p <-:IntentAbout:<-] {
+        notes_for_intent: list[Note] = [i <-:AssertsIntent:<-];
+        if not notes_for_intent {
+            continue;
+        }
+        ts = notes_for_intent[0].captured_at;
+        dt = _parse_naive_utc(ts);
+        if dt is None {
+            continue;
+        }
+        if best_dt is None or dt > (best_dt as datetime) {
+            best_dt = dt;
+            best = ts;
+        }
+    }
+    for pr in [p <-:PromiseTo:<-] {
+        notes_for_promise: list[Note] = [pr <-:AssertsPromise:<-];
+        if not notes_for_promise {
+            continue;
+        }
+        ts = notes_for_promise[0].captured_at;
+        dt = _parse_naive_utc(ts);
+        if dt is None {
+            continue;
+        }
+        if best_dt is None or dt > (best_dt as datetime) {
+            best_dt = dt;
+            best = ts;
+        }
+    }
+    for n in [p <-:Mentions:<-] {
+        dt = _parse_naive_utc(n.captured_at);
+        if dt is None {
+            continue;
+        }
+        if best_dt is None or dt > (best_dt as datetime) {
+            best_dt = dt;
+            best = n.captured_at;
+        }
+    }
+
+    return best;
+}
+
+"""The caller's existing RelevantTo edge from `p` into `goal`, as a plain
+dict (never the edge object itself, so this stays trivially testable and
+JSON-shaped) - `{"exists": false}` when none exists yet."""
+def existing_relevant_to(p: Person, goal: Goal) -> dict[str, any] {
+    matched = [edge p ->:RelevantTo:-> goal];
+    if not matched {
+        return {"exists": False};
+    }
+    e = matched[0];
+    return {
+        "exists": True,
+        "ranked_at": e.ranked_at,
+        "ranked_goal_text": e.ranked_goal_text,
+        "strength": e.strength,
+        "label": e.label,
+        "reason": e.reason,
+        "opener": e.opener,
+        "evidence": e.evidence,
+        "prev_strength": e.prev_strength,
+        "change_reason": e.change_reason
+    };
+}
+
+"""Why (if at all) this ONE candidate must go back through the model this
+GoalRank call: "force" (explicit override), "new" (never ranked for this
+goal before, or a pre-SOH-226 edge with no parseable `ranked_at`), "goal"
+(the goal's text changed since this edge was ranked), "evidence" (a Fact/
+Intent/Promise/Note about this person is newer than `ranked_at`), or ""
+(not stale - skip the model, keep the edge verbatim)."""
+def stale_trigger(prior: dict[str, any], goal_text: str, newest_at: str, force: bool) -> str {
+    if force {
+        return "force";
+    }
+    if not (prior["exists"] as bool) {
+        return "new";
+    }
+    if (prior["ranked_goal_text"] as str) != goal_text {
+        return "goal";
+    }
+    prior_dt = _parse_naive_utc(prior["ranked_at"] as str);
+    if prior_dt is None {
+        return "new";
+    }
+    newest_dt = _parse_naive_utc(newest_at);
+    if newest_dt is not None and newest_dt > prior_dt {
+        return "evidence";
+    }
+    return "";
+}
+
+def candidate_is_stale(prior: dict[str, any], goal_text: str, newest_at: str, force: bool) -> bool {
+    return stale_trigger(prior, goal_text, newest_at, force) != "";
+}
+
+"""`"Sep 27"` from an ISO timestamp; "" if unparsable."""
+def _short_date(ts: str) -> str {
+    dt = _parse_naive_utc(ts);
+    if dt is None {
+        return "";
+    }
+    s = dt.strftime("%b %d");
+    if len(s) >= 5 and s[4] == "0" {
+        s = s[:4] + s[5:];
+    }
+    return s;
+}
+
+"""Product-copy `change_reason` for a candidate whose strength just changed,
+keyed off why it was re-evaluated (see `stale_trigger`)."""
+def change_reason_text(trigger: str, newest_at: str) -> str {
+    if trigger == "force" {
+        return "re-ranked on request";
+    }
+    if trigger == "goal" {
+        return "goal edited";
+    }
+    if trigger == "evidence" {
+        d = _short_date(newest_at);
+        if d {
+            return f"new note on {d}";
+        }
+        return "new evidence";
+    }
+    return "updated";
+}
+
+"""Every candidate index (into `candidates`) whose RelevantTo edge is stale
+for this goal (see `stale_trigger`) - the ONLY candidates a rebuild sends to
+the model. Pure/no LLM, directly testable on a hand-built goal + candidates."""
+def compute_stale_indices(candidates: list[Candidate], goal: Goal, goal_text: str, force: bool) -> list[int] {
+    idxs: list[int] = [];
+    for i in range(len(candidates)) {
+        p = candidates[i].person;
+        prior = existing_relevant_to(p, goal);
+        trigger = stale_trigger(prior, goal_text, newest_evidence_at(p), force);
+        if trigger != "" {
+            idxs.append(i);
+        }
+    }
+    return idxs;
+}
+
+"""Delete a goal's RelevantTo edges for people no longer in `candidates`
+(archived, or no longer reachable) - cleanup only; every candidate a rebuild
+KEEPS is left untouched here (materialize_stable handles those)."""
+def prune_stale_relevantto(goal: Goal, candidates: list[Candidate]) -> None {
+    keep_ids: list[str] = [jid(c.person) for c in candidates];
+    for p in [goal <-:RelevantTo:<-] {
+        if jid(p) not in keep_ids {
+            for e in [edge p ->:RelevantTo:-> goal] {
+                del e;
+            }
+        }
+    }
+}
+
+"""Like `materialize`, but touches only the stale subset of `candidates`
+(`stale_indices`, computed by `compute_stale_indices`): those get a fresh
+RelevantTo edge from `ranked` (same evidence-gate/strength-normalization
+rules as `materialize`), with `prev_strength`/`change_reason` set ONLY when
+the new strength differs from what the edge already had. Every other
+candidate is reported straight off its existing edge, verbatim, no model
+call, `cached: true`. Exactly one report entry per candidate, ordered by
+`_sort_key`. `ranked[i].index` selects `stale_indices[i]`'s candidate (the
+model was only ever shown the stale subset), not `candidates[i]`."""
+def materialize_stable(goal: Goal, candidates: list[Candidate], stale_indices: list[int], ranked: list[RankedItem], now_iso: str, goal_text: str, force: bool) -> list[dict[str, any]] {
+    pos_in_subset: dict[int, int] = {};
+    for j in range(len(stale_indices)) {
+        pos_in_subset[stale_indices[j]] = j;
+    }
+
+    by_subset_index: dict[int, RankedItem] = {};
+    for item in ranked {
+        if item.index < 0 or item.index >= len(stale_indices) {
+            continue;
+        }
+        if item.index in by_subset_index {
+            continue;   # dedupe by index: first wins
+        }
+        by_subset_index[item.index] = item;
+    }
+
+    report_items: list[dict[str, any]] = [];
+
+    for idx in range(len(candidates)) {
+        c = candidates[idx];
+        p = c.person;
+        prior = existing_relevant_to(p, goal);
+        prior_exists = prior["exists"] as bool;
+
+        if idx not in pos_in_subset {
+            # Not stale this pass: keep the existing edge exactly as it was,
+            # no model call. A candidate that somehow has no prior edge and
+            # was also never selected as stale (should not happen -
+            # `compute_stale_indices` always marks a brand-new candidate
+            # "new" -> stale) still gets a safe default entry.
+            if prior_exists {
+                ev_out: list[dict[str, any]] = [];
+                for eid in (prior["evidence"] as list[str]) {
+                    item2 = evidence_item_from_jid(eid);
+                    if item2 is not None {
+                        ev_out.append(item2);
+                    }
+                }
+                report_items.append({
+                    "person": p,
+                    "label": prior["label"] as str,
+                    "strength": prior["strength"] as str,
+                    "reason": prior["reason"] as str,
+                    "evidence": ev_out,
+                    "days_since_contact": c.days_since_contact,
+                    "opener": prior["opener"] as str,
+                    "cached": True,
+                    "prev_strength": prior["prev_strength"] as str,
+                    "change_reason": prior["change_reason"] as str
+                });
+            } else {
+                report_items.append({
+                    "person": p,
+                    "label": c.label,
+                    "strength": "weak",
+                    "reason": "No ranking returned for this person.",
+                    "evidence": [],
+                    "days_since_contact": c.days_since_contact,
+                    "opener": "",
+                    "cached": False,
+                    "prev_strength": "",
+                    "change_reason": ""
+                });
+            }
+            continue;
+        }
+
+        sub_idx = pos_in_subset[idx];
+        if sub_idx in by_subset_index {
+            item = by_subset_index[sub_idx];
+            strength = item.strength if item.strength in ["strong", "medium", "weak"] else "weak";
+            reason = item.reason;
+            opener = item.opener;
+            evidence_indices = item.evidence_indices;
+        } else {
+            strength = "weak";
+            reason = "No ranking returned for this person.";
+            opener = "";
+            evidence_indices = [];
+        }
+        reason = polish_reason(reason);
+        opener = polish_reason(opener);
+
+        ev_out: list[dict[str, any]] = [];
+        ev_ids: list[str] = [];
+        for ei in evidence_indices {
+            if ei >= 0 and ei < len(c.evidence_items) {
+                it = c.evidence_items[ei];
+                ev_ids.append(it.id);
+                ev_out.append({"id": it.id, "kind": it.kind, "observed_at": it.observed_at, "span": it.span});
+            }
+        }
+        if not ev_ids {
+            strength = "weak";   # strong/medium requires at least one evidence item
+        }
+
+        trigger = stale_trigger(prior, goal_text, newest_evidence_at(p), force);
+        prev_strength = "";
+        change_reason = "";
+        if prior_exists and strength != (prior["strength"] as str) {
+            prev_strength = prior["strength"] as str;
+            change_reason = change_reason_text(trigger, newest_evidence_at(p));
+        }
+
+        for e in [edge p ->:RelevantTo:-> goal] {
+            del e;
+        }
+        p +>:RelevantTo(
+            reason=reason, strength=strength, evidence=ev_ids, opener=opener,
+            label=c.label, ranked_at=now_iso, ranked_goal_text=goal_text,
+            prev_strength=prev_strength, change_reason=change_reason
+        ):+> goal;
+
+        report_items.append({
+            "person": p,
+            "label": c.label,
+            "strength": strength,
+            "reason": reason,
+            "evidence": ev_out,
+            "days_since_contact": c.days_since_contact,
+            "opener": opener,
+            "cached": False,
+            "prev_strength": prev_strength,
+            "change_reason": change_reason
+        });
+    }
+
+    return sorted(report_items, key=_sort_key);
+}
+
 # ---------------------------------------------------------------- walkers
 
 walker:priv SetGoal {
@@ -762,17 +1094,29 @@ walker:priv CloseGoal {
 
 walker:priv GoalRank {
     """Rebuild the goal's RelevantTo edges and report, ordered best-first,
-    one entry per candidate. One batched `by llm` call for the whole run;
-    falls back to deterministic ranking on failure. Goal not found -> [].
+    one entry per candidate. Goal not found -> [].
 
     `refresh=False` (default): if the goal already has at least one incoming
     `RelevantTo` edge, serve the ranking straight off those edges via
     `serve_cached` — no LLM call, entries carry `cached: true`. `refresh=True`,
-    or no edges exist yet, takes the full rebuild path below; those entries
-    carry `cached: false`. `CloseGoal` deletes the edges, so a reopened goal
-    always re-ranks fresh next time."""
+    or no edges exist yet, takes the rebuild path below. `CloseGoal` deletes
+    the edges, so a reopened goal always re-ranks fresh next time.
+
+    SOH-226 ranking stability: the rebuild path is SELECTIVE, not a blanket
+    re-score. Per candidate, `stale_trigger` decides whether anything about
+    THAT person or the goal changed since their edge was last ranked (a new/
+    edited Fact, Intent, Promise or Note about them; the goal's text; or
+    `force`); only that stale subset goes into the one batched `by llm` call
+    (falls back to deterministic ranking on failure) and only their edges are
+    rewritten. Every other candidate is reported straight off its existing
+    edge, verbatim — same strength/label/reason/opener, `cached: true`, model
+    never asked about them. `force=True` (a distinct, explicit override — not
+    the `refresh` the client already sends on every capture/Re-rank tap,
+    see contracts/walkers.md) re-evaluates every candidate regardless of
+    individual staleness."""
     has goal_id: str;
     has refresh: bool = False;
+    has force: bool = False;
     has reports: list[dict[str, any]] = [];
 
     can run with Root entry {
@@ -804,13 +1148,18 @@ walker:priv GoalRank {
         }
 
         now = datetime.now();
+        now_iso = now.isoformat();
         all_candidates = collect_all_candidates(me, now);
         total_people = len(all_candidates);
         candidates = all_candidates[:RANK_CAP] if total_people > RANK_CAP else all_candidates;
 
+        prune_stale_relevantto(goal, candidates);
+        stale_indices = compute_stale_indices(candidates, goal, goal.text, self.force);
+        stale_candidates = [candidates[i] for i in stale_indices];
+
         ranked: list[RankedItem] = [];
-        if candidates {
-            candidates_text = build_candidates_text(candidates);
+        if stale_candidates {
+            candidates_text = build_candidates_text(stale_candidates);
             try {
                 result = rank_candidates(goal.text, candidates_text);
                 ranked = result.items;
@@ -822,13 +1171,13 @@ walker:priv GoalRank {
                     result = rank_candidates(goal.text, candidates_text);
                     ranked = result.items;
                 } except Exception {
-                    ranked = fallback_rank(candidates);
+                    ranked = fallback_rank(stale_candidates);
                 }
             }
         }
 
-        results = materialize(goal, ranked, candidates);
-        goal.ranked_at = now.isoformat();
+        results = materialize_stable(goal, candidates, stale_indices, ranked, now_iso, goal.text, self.force);
+        goal.ranked_at = now_iso;
         annotate_ranking(results, False, goal.ranked_at, total_people);
         for item in results {
             report item;
