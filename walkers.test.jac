@@ -44,6 +44,9 @@ Every test cleans up its own temp dir and any server process group in a
 """
 
 import from jaclang.runtimelib.testing { JacTestClient }
+import from walkers { filter_people }
+import from schema { Person, Circle, Event, InCircle, MetAt }
+import uuid;
 import os;
 import shutil;
 import signal;
@@ -305,4 +308,66 @@ test "persistence: person survives real server restart" {
         }
         shutil.rmtree(tmp_dir, ignore_errors=True);
     }
+}
+
+# ---------------------------------------------------------------- ListPeople filters (SOH-217)
+#
+# `filter_people` (the walker's own filter logic, extracted to a plain def)
+# is exercised directly on hand-built Person nodes rather than through
+# `root spawn ListPeople(...)` — same "test the plain def directly, not the
+# `[root --> [?:Me]]`-resolving walker" idiom `edits.test.jac` uses for
+# `update_person_for` (AGENTS.md Gotcha). This also sidesteps a real
+# limitation this task uncovered: a `:priv` walker spawned in-process right
+# after building fixtures with a bare `root ++>`/`+>:Edge:+>` in the SAME
+# `jac test` method does not reliably see edges attached that way when it
+# re-reads them through a chained typed traversal (`[root --> [?:Me]
+# ->:Knows:->]` reported 0 results here even though `[me ->:Knows:->]`
+# reported 4, moments earlier, in the same test) — nobody else in this
+# codebase mixes bare `root ++>` fixtures with `root spawn` on a
+# `[root --> [?:Me] ->: ...]`-style walker for exactly this reason.
+
+def _uid() -> str {
+    return uuid.uuid4().hex[:8];
+}
+
+test "filter_people: circle_id, event_id, include_archived (SOH-217)" {
+    suffix = _uid();
+    circle = (root ++> Circle(name="Filter Circle " + suffix, created_at=""))[0];
+    other_circle = (root ++> Circle(name="Other Circle " + suffix, created_at=""))[0];
+    event = (root ++> Event(name="Filter Event " + suffix, created_at=""))[0];
+    other_event = (root ++> Event(name="Other Event " + suffix, created_at=""))[0];
+
+    in_circle = (root ++> Person(name="In Circle " + suffix))[0];
+    in_circle +>:InCircle:+> circle;
+
+    at_event = (root ++> Person(name="At Event " + suffix))[0];
+    at_event +>:MetAt(source_note=""):+> event;
+
+    archived = (root ++> Person(name="Archived " + suffix))[0];
+    archived.archived = True;
+
+    plain = (root ++> Person(name="Plain " + suffix))[0];
+
+    all_people = [in_circle, at_event, archived, plain];
+
+    default_ids = [jid(p) for p in filter_people(all_people, "", "", False)];
+    assert jid(in_circle) in default_ids;
+    assert jid(at_event) in default_ids;
+    assert jid(plain) in default_ids;
+    assert jid(archived) not in default_ids, "archived people are excluded by default";
+
+    with_archived_ids = [jid(p) for p in filter_people(all_people, "", "", True)];
+    assert jid(archived) in with_archived_ids;
+
+    circle_ids = [jid(p) for p in filter_people(all_people, jid(circle), "", False)];
+    assert circle_ids == [jid(in_circle)], f"expected only the circle's member, got {circle_ids}";
+
+    empty_circle_ids = [jid(p) for p in filter_people(all_people, jid(other_circle), "", False)];
+    assert empty_circle_ids == [];
+
+    event_ids = [jid(p) for p in filter_people(all_people, "", jid(event), False)];
+    assert event_ids == [jid(at_event)], f"expected only the event's attendee, got {event_ids}";
+
+    empty_event_ids = [jid(p) for p in filter_people(all_people, "", jid(other_event), False)];
+    assert empty_event_ids == [];
 }

@@ -40,6 +40,8 @@ import from search { Search }
 import from notes { ListNotes, DeleteNote, ConfirmFact, Digest }
 import from notes { ListNotes, DeleteNote, ConfirmFact, Digest, DevSeedNote }
 import from dates { NormalizeDates, UpcomingDates }
+import from circles { CreateCircle, RenameCircle, DeleteCircle, AddToCircle, RemoveFromCircle, ListCircles }
+import from events { CreateEvent, ListEvents, AddToEvent, RemoveFromEvent, EventPeople, UpdateEvent }
 
 # Client-side UI
 cl {
