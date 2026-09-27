@@ -261,3 +261,41 @@ def:pub humanize_iso_dates(text: str) -> str {
     }
     return out;
 }
+
+"""LinkedIn's `Connected On` column ("12 Apr 2023", also tolerates a full
+month name like "12 April 2023") -> "LinkedIn connection since Apr 2023".
+Unparsable (missing/short year, no recognizable month token) falls back to
+the raw trimmed text unchanged, per SOH-181's spec (rather than "" — a
+`how_met` reader should still show something useful)."""
+def:pub linkedin_how_met(connected_on: str) -> str {
+    raw: str = connected_on.strip();
+    if not raw {
+        return "";
+    }
+    parts: list[str] = [p for p in raw.split(" ") if p.strip() != ""];
+    if len(parts) < 2 {
+        return raw;
+    }
+    month_tok: str = parts[len(parts) - 2].strip().lower();
+    year_tok: str = parts[len(parts) - 1].strip();
+    month_idx: int = -1;
+    i: int = 0;
+    while i < 12 {
+        if month_tok.startswith(_MONTHS[i].lower()) {
+            month_idx = i;
+        }
+        i = i + 1;
+    }
+    year_ok: bool = len(year_tok) == 4;
+    if year_ok {
+        for ch in year_tok {
+            if not _is_digit(ch) {
+                year_ok = False;
+            }
+        }
+    }
+    if month_idx < 0 or not year_ok {
+        return raw;
+    }
+    return "LinkedIn connection since " + _MONTHS[month_idx] + " " + year_tok;
+}
