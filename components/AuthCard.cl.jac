@@ -77,6 +77,9 @@ def:pub AuthCard(
             <p className="text-body-sm text-muted-foreground">
                 Your notes stay yours: export or delete them any time, and only a card you write is ever shared.
             </p>
+            <p className="text-caption text-muted-foreground">
+                <a href="/static/site/index.html" className="underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm">What is Cirql?</a>
+            </p>
             {show_status and <p role="status" className="text-body-sm text-muted-foreground">{show_status}</p>}
             <p className="text-caption text-muted-foreground">Each account's graph is isolated by construction.</p>
         </div>;
