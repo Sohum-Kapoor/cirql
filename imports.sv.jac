@@ -19,6 +19,12 @@ Rules this file must obey (AGENTS.md):
   - Every imported person carries provenance: one `Note(kind="import")` per
     `ImportPeople` call, with a `Mentions` edge from it to every person the
     call touches (new or reused).
+  - SOH-226: a NEW `Knows` edge (the person wasn't already known) gets
+    `last_contact=now` — display only, same as `capture.sv.jac`/`vision.sv.jac`/
+    `handshake.sv.jac` — so a person imported a minute ago never reads as
+    quiet 90+ days. An existing edge being enriched keeps its own
+    `last_contact` untouched; this is not "relationships never decay" wiring,
+    just the same display field every other capture path already sets.
   - No LLM in this module.
   - All walkers are `:priv`.
 
@@ -147,7 +153,10 @@ walker:priv ImportPeople {
                 is_new = False;
             } else {
                 effective_how_met = how_met.strip() or f"imported from {self.source}";
-                p = (me +>:Knows(how_met=effective_how_met, status="proposed", source_note=jid(note)):+> Person(
+                # SOH-226: last_contact=now on the NEW edge only — a person imported
+                # a minute ago must not read as quiet-90+-days (display-only, same
+                # as every other capture path; nothing here lowers or ranks on it).
+                p = (me +>:Knows(how_met=effective_how_met, status="proposed", source_note=jid(note), last_contact=now):+> Person(
                     name=name, org=org, title=title, status="proposed",
                     email=email, phone=phone, location=location
                 ))[0];

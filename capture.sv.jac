@@ -92,7 +92,7 @@ sem XTie.to_name = "The name of the second person in a stated acquaintance.";
 sem XTie.span = "Verbatim substring of the note that states the two people know each other.";
 
 sem CaptureExtraction.people = "Every person in the note other than the author (who says 'I'); include people only mentioned as someone's acquaintance. When a person is referred to only by description, use the description as the name (e.g. 'the young man from the robotics thing who built the wheelchair sensor') and set named=false. A person needs a name or a distinguishing description (a place, a role plus context); a bare relation or role word ('her manager', 'a friend', 'the CEO', 'my roommate') is not a person - attach what was said about them as a fact on the named person it relates to, or drop it.";
-sem CaptureExtraction.facts = "Facts stated about any person in the note, including the author's notes-to-self about the relationship ('conflict of interest', 'keep in mind'), which are facts about that person with source_kind='self'. Hedged claims keep their hedge.";
+sem CaptureExtraction.facts = "Facts stated about any person in the note, including the author's notes-to-self about the relationship ('conflict of interest', 'keep in mind'), which are facts about that person with source_kind='self'. Hedged claims keep their hedge. Ignore the writer's remarks about the note itself or about this app ('nothing to do with my project', 'not sure if this matters'); they are not facts about the person.";
 sem CaptureExtraction.intents = "Needs, offers, or openness stated about any person in the note.";
 sem CaptureExtraction.promises = "Promises the author (the note's 'I') made to any person in the note - only where the note shows the author's own commitment ('I said I'd send', 'I'll intro', 'promised', 'owe her', 'follow up'), with the concrete deliverable as the text and the due date if stated ('wants ROI deck by Fri. Follow up Thu.' -> text 'send the ROI deck', due 'Fri'). 'She wants intros to founders' with no commitment from the author is an Intent(need), not a Promise.";
 sem CaptureExtraction.ties = "Pairs of people the note says know each other.";
@@ -294,24 +294,47 @@ def promise_is_only_a_want(span: str, note_text: str) -> bool {
     return True;
 }
 
+"""SOH-226 (judge pass 4): month-name date, no year when it's the current
+year ("Sep 27"), the year appended otherwise ("Sep 27, 2025") — hand-written
+month/day the same way `onboard.sv.jac`'s `month_day` does (this compiler's
+`datetime.strftime` has no `%-d`, so `strftime("%b ")` — already trailing a
+space — plus the plain `str(dt.day)` avoids a leading zero). Duplicated
+rather than imported: this default serves every OTHER capture (AGENTS.md
+ownership boundary noted in `onboard.sv.jac`), so it stays self-contained
+here. Falls back to the raw `day` string on anything unparsable."""
+def _human_date(day: str) -> str {
+    try {
+        dt = datetime.fromisoformat(day);
+    } except (ValueError, TypeError) {
+        return day;
+    }
+    month_day = dt.strftime("%b ") + str(dt.day);
+    if dt.year == datetime.now().year {
+        return month_day;
+    }
+    return f"{month_day}, {dt.year}";
+}
+
 """SOH-214: the default `Knows.how_met` is a human line, never the raw note:
-"from a debrief on 2026-09-26", "from a pasted note on …", "from an import on
-…", "from your about-me on …"."""
+"from a debrief on Sep 26", "from a pasted note on …", "from an import on
+…", "from your about-me on …". SOH-226: month-name date (see `_human_date`),
+not the raw ISO day."""
 def default_how_met(kind: str, captured_at: str) -> str {
     day = (captured_at or "")[:10];
     if len(day) != 10 {
         day = datetime.now().isoformat()[:10];
     }
+    human_day = _human_date(day);
     k = (kind or "").strip().lower();
     if k == "about_me" {
-        return f"from your about-me on {day}";
+        return f"from your about-me on {human_day}";
     }
     label = k if len(k) > 0 else "note";
     if k == "paste" {
         label = "pasted note";
     }
     article = "an" if label[:1] in ["a", "e", "i", "o", "u"] else "a";
-    return f"from {article} {label} on {day}";
+    return f"from {article} {label} on {human_day}";
 }
 
 glob TITLE_HONORIFICS: list[str] = ["dr", "prof", "professor", "rev", "reverend"];

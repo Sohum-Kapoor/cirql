@@ -10,6 +10,7 @@ lowercase name.
 
 import from imports { ImportPeople, ConfirmPerson, SkipPerson, row_str }
 import from schema { Me, Person, Note, Knows, Mentions }
+import from datetime { datetime }
 import uuid;
 
 def _uid() -> str {
@@ -212,6 +213,35 @@ test "SkipPerson / ConfirmPerson: unknown person_id -> not_found" {
     r2 = root spawn ConfirmPerson(person_id="definitely-not-a-jid");
     err2 = r2.reports[0] as dict[str, any];
     assert err2["error"] == "not_found";
+}
+
+test "SOH-226 ImportPeople: last_contact=now on a NEW Knows edge only; a reused edge's last_contact is left untouched" {
+    suffix = _uid();
+    name = f"Ravi {suffix} Iyer";
+
+    before = datetime.now();
+    r1 = root spawn ImportPeople(rows=[{"name": name}], source="csv");
+    after = datetime.now();
+    result1 = r1.reports[0] as dict[str, any];
+    p = (result1["imported"] as list[dict[str, any]])[0]["person"] as Person;
+
+    existing_me = [root --> [?:Me]];
+    assert existing_me;
+    me = existing_me[0];
+    edge1 = ([edge me ->:Knows:-> p])[0];
+    assert edge1.last_contact != "", "a NEW Knows edge from ImportPeople must get last_contact=now";
+    lc_dt = datetime.fromisoformat(edge1.last_contact);
+    assert lc_dt >= before and lc_dt <= after, f"last_contact must be 'now' at import time, got {edge1.last_contact}";
+
+    # Re-import the same person: reused edge's last_contact is untouched (still
+    # whatever it was, never forced to "now" again on a plain enrichment pass).
+    original_last_contact = edge1.last_contact;
+    r2 = root spawn ImportPeople(rows=[{"name": name, "org": "Acme"}], source="csv");
+    result2 = r2.reports[0] as dict[str, any];
+    p_again = (result2["imported"] as list[dict[str, any]])[0]["person"] as Person;
+    assert jid(p_again) == jid(p);
+    edge2 = ([edge me ->:Knows:-> p_again])[0];
+    assert edge2.last_contact == original_last_contact, "reusing an existing Knows edge must not touch last_contact";
 }
 
 test "SOH-212 ImportPeople: 26 genuinely new rows all report is_new=true; the same rows re-imported report false" {

@@ -6,7 +6,7 @@ carries a random per-call suffix (`_uid()`) — this guarantees a name is always
 genuinely new, whether this is the first run ever or the hundredth.
 """
 
-import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction, hedge_fact_text, fact_source_kind, specific_follow_up, promise_is_only_a_want, default_how_met, second_person, attach_metat_for_new_people, is_role_only }
+import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction, hedge_fact_text, fact_source_kind, specific_follow_up, promise_is_only_a_want, default_how_met, second_person, attach_metat_for_new_people, is_role_only, _human_date }
 import from schema { Event, Fact, HasEvent, Intent, Knows, Me, Mentions, MetAt, Note, Person, Promise, Reported, PromiseTo }
 import uuid;
 import from datetime { datetime }
@@ -511,7 +511,7 @@ test "SOH-166 how_met: an explicit how_met labels NEW Knows edges only; the defa
     seed_note = _fresh_note(f"Met Omar{u} Haddad after the county accessibility panel downtown last night, great chat.");
     omar = resolve_person(f"Omar{u} Haddad", me, seed_note, r0)["person"] as Person;
     old_how = ([edge me ->:Knows:-> omar])[0].how_met;
-    assert old_how == f"from a debrief on {seed_note.captured_at[:10]}", f"default how_met is a human line, got {old_how}";
+    assert old_how == f"from a debrief on {_human_date(seed_note.captured_at[:10])}", f"default how_met is a human line, got {old_how}";
 
     note = _fresh_note(f"Coffee with Lena{u} Vogel and Omar{u} Haddad.");
     x = CaptureExtraction(
@@ -597,10 +597,14 @@ test "SOH-214 a 'promise' that is only the person's want becomes their need; the
 }
 
 test "SOH-214 default how_met is a human line, never the raw note" {
-    assert default_how_met("debrief", "2026-09-26T18:00:00") == "from a debrief on 2026-09-26";
-    assert default_how_met("paste", "2026-09-26T18:00:00") == "from a pasted note on 2026-09-26";
-    assert default_how_met("import", "2026-09-26T18:00:00") == "from an import on 2026-09-26";
-    assert default_how_met("about_me", "2026-09-26T18:00:00") == "from your about-me on 2026-09-26";
+    # SOH-226: month-name date, no year when it's the current year (the codebase's
+    # own hackathon year, 2026)...
+    assert default_how_met("debrief", "2026-09-26T18:00:00") == "from a debrief on Sep 26";
+    assert default_how_met("paste", "2026-09-26T18:00:00") == "from a pasted note on Sep 26";
+    assert default_how_met("import", "2026-09-26T18:00:00") == "from an import on Sep 26";
+    assert default_how_met("about_me", "2026-09-26T18:00:00") == "from your about-me on Sep 26";
+    # ...year kept otherwise
+    assert default_how_met("debrief", "2020-09-26T18:00:00") == "from a debrief on Sep 26, 2020";
 
     me = _fresh_me();
     u = _uid();
@@ -609,7 +613,7 @@ test "SOH-214 default how_met is a human line, never the raw note" {
     r = apply_extraction(note, me, x);
     p = (r["people"] as list[dict[str, any]])[0]["person"] as Person;
     k = ([edge me ->:Knows:-> p])[0];
-    assert k.how_met == f"from a pasted note on {note.captured_at[:10]}", k.how_met;
+    assert k.how_met == f"from a pasted note on {_human_date(note.captured_at[:10])}", k.how_met;
     assert "Whitfield" not in k.how_met;
 }
 

@@ -341,3 +341,14 @@ test "polish_reason: idempotent, empty-safe, collapses double spaces" {
     assert once == polish_reason(once), "polish_reason must be idempotent";
     assert "  " not in once;
 }
+
+test "polish_reason: SOH-226 judge pass 4 — strips 'Her intent/evidence explicitly ...' narrator preambles, rewrites a leftover 'intent' to 'want' only when the stripped noun was intent/intents, and leaves an unrelated 'intent' alone" {
+    assert polish_reason("Her intent explicitly mentions that she is looking for a cofounder.") == "She is looking for a cofounder.";
+    assert polish_reason("Her evidence explicitly states that he recently changed roles.") == "He recently changed roles.";
+    assert polish_reason("His profile explicitly indicates that he works in fintech.") == "He works in fintech.";
+    assert polish_reason("Their intents explicitly mentions that their main intent is to relocate.") == "Their main want is to relocate.";
+    # not one of the narrator preambles -> 'intent' is left alone
+    assert polish_reason("She mentioned no ill intent behind the comment.") == "She mentioned no ill intent behind the comment.";
+    once = polish_reason("Her intent explicitly mentions that her intent is strong.");
+    assert once == polish_reason(once), "polish_reason must be idempotent";
+}

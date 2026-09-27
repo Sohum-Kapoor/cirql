@@ -39,7 +39,7 @@ obj NeedMatches {
 
 sem NeedMatch.index = "The candidate's # number from the input, copied exactly.";
 sem NeedMatch.strength = "strong only when a listed offer/open_to intent or a fact shows this person can directly provide what the need asks for; medium when their role or a fact makes it plausible; weak otherwise. Sharing an employer, school, or job title with the need's domain is never more than weak on its own.";
-sem NeedMatch.why = "One sentence citing the specific evidence number(s) for this candidate. Never invent or mention a person's name — none were given to you. Speak as the product talking to the user in second person; never say 'the fact', 'the note', 'the author', 'the speaker', or 'the user'; never quote evidence in parentheses; one sentence, under 160 characters.";
+sem NeedMatch.why = "One sentence citing the specific evidence number(s) for this candidate. Never invent or mention a person's name — none were given to you. Speak as the product talking to the user in second person; never say 'the fact', 'the intent', 'the evidence', 'the profile', 'the note', 'the author', 'the speaker', or 'the user'; never quote evidence in parentheses; one sentence, under 160 characters.";
 sem NeedMatch.evidence_indices = "The 0-based evidence numbers from THIS candidate's own numbered evidence list that you relied on; empty if none. Never a number from another candidate's list.";
 sem NeedMatches.items = "One item per candidate; omit none.";
 
@@ -75,12 +75,19 @@ def _parse_naive_utc(ts: str) -> datetime | None {
 # ---------------------------------------------------------------- product copy polish
 
 """SOH-226: the model sometimes narrates its own input instead of writing
-product copy ("The fact confirms she is a firmware engineer", "Author's
+product copy ("The fact confirms she is a firmware engineer", "Her intent
+explicitly mentions...", "Her evidence explicitly states...", "Author's
 college roommate...", a trailing "(evidence: \"...\")"). `polish_reason`
 is a deterministic, idempotent cleanup applied to every reason/opener/title
 right before it is stored or reported, everywhere in this codebase (see
-`goals.sv.jac`, `gaps.sv.jac`, `person.sv.jac`, `agent.sv.jac`)."""
-glob _FACT_PREAMBLE_RE: str = r"(?i)^(the fact (confirms|notes|states|shows)( that)?|the note says)\s+";
+`goals.sv.jac`, `gaps.sv.jac`, `person.sv.jac`, `agent.sv.jac`). Judge pass 4
+(SOH-226): extended the ban list to catch the narrator's own vocabulary for
+what it was given (intent/intents/evidence/profile), not just "fact"/"note".
+When the stripped preamble's noun was "intent"/"intents", a leftover
+"intent" elsewhere in the same sentence is also rewritten to "want" — never
+outside a matched preamble, so an unrelated, legitimate use of the word
+("no ill intent") is left alone."""
+glob _FACT_PREAMBLE_RE: str = r"(?i)^(her|his|their|the)\s+(intent|intents|evidence|fact|facts|note|notes|profile)\s+(explicitly\s+)?(mentions|states|notes|confirms|shows|says|indicates)(\s+that)?\s+";
 glob _EVIDENCE_PAREN_RE: str = r"(?i)\s*\(evidence[^)]*\)\.?";
 
 def polish_reason(text: str) -> str {
@@ -88,7 +95,14 @@ def polish_reason(text: str) -> str {
     if not t {
         return t;
     }
-    t = re.sub(_FACT_PREAMBLE_RE, "", t).strip();
+    m = re.match(_FACT_PREAMBLE_RE, t);
+    if m {
+        noun = m.group(2).lower();
+        t = t[m.end():].strip();
+        if noun == "intent" or noun == "intents" {
+            t = re.sub(r"(?i)\bintent\b", "want", t);
+        }
+    }
     t = re.sub(r"(?i)\bauthor's\b", "your", t);
     t = re.sub(r"(?i)\bthe author\b", "you", t);
     t = re.sub(r"(?i)\bauthor\b", "you", t);
