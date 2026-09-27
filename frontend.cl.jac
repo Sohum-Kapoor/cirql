@@ -640,8 +640,19 @@ def:pub app -> JsxElement {
         return <PublicCard handle={public_handle} />;
     }
 
+    # Desktop shell (SOH-234): only the "home" view (Home / Inbox / People
+    # tabs) has a nav (bottom bar on phone, left rail at lg:); at lg: the
+    # column clears the ~14rem rail and widens — max-w-5xl for People (graph
+    # + list need room), max-w-3xl for Home/Inbox/Settings. Below lg: this
+    # adds nothing — same classes as before, pixel-identical phone.
+    desktop_wide: str = "lg:max-w-5xl" if tab == "people" else "lg:max-w-3xl";
+    main_class: str = (
+        "mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 pt-6 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pl-4 pr-4 lg:ml-56 lg:w-auto lg:pb-6 "
+        + desktop_wide
+    ) if view == "home" else "mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 pt-6 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pl-4 pr-4";
+
     return
-        <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 pt-6 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pl-4 pr-4">
+        <main className={main_class}>
             {if view == "auth" {
                 <AuthCard
                     key="auth"
