@@ -423,7 +423,7 @@ async def:pub decline_reply(reply_id: str) -> str {
 import from "@jac/runtime" { jacSpawn }
 import from .mocks.person {
     mock_person_detail, mock_brief, mock_list_promises, mock_complete_promise,
-    mock_draft_follow_up, mock_forget
+    mock_draft_follow_up, mock_forget, mock_update_person, mock_archive_person
 }
 sv import from ..reads { ListPromises, CompletePromise }
 sv import from ..drafts { DraftFollowUp }
@@ -517,6 +517,65 @@ async def:pub forget(node_id: str) -> dict {
     }
     result = root spawn Forget(id=node_id);
     out = _first_or_error(result.reports);
+    return out;
+}
+
+# ---------------------------------------------------------------- person sheet contact + archive (SOH-222)
+# UpdatePerson's contact-field extension and ArchivePerson are new/changed shapes
+# not on main yet (contracts/walkers.md appended, not yet built by A). Same
+# "may not be on main yet" pattern as PersonDetail/Brief above: call by name
+# through jacSpawn so this renders under `?mock=1` today and picks the live
+# walker up the moment it exists, with no client change.
+
+"""UpdatePerson(person_id, name, org, title, how_met, email, phone, location,
+links: list[str]) -> [Person] | [{ error: "not_found" }]. Only NON-EMPTY
+(stripped) args overwrite a field (same rule as the live 4-field form above);
+`links` overwrites only when the caller sent a non-empty list."""
+async def:pub update_person_contact(
+    person_id: str, name: str, org: str, title: str, how_met: str,
+    email: str, phone: str, location: str, links: list[str]
+) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(
+            mock_update_person(person_id, name, org, title, how_met, email, phone, location, links)
+        );
+        return out;
+    }
+    try {
+        data = await jacSpawn(
+            "UpdatePerson", "",
+            {
+                "person_id": person_id, "name": name, "org": org, "title": title, "how_met": how_met,
+                "email": email, "phone": phone, "location": location, "links": links
+            }
+        );
+        out = _first_or_error(data["reports"] if data else []);
+    } except Exception {
+        out = {"error": "failed"};
+    }
+    return out;
+}
+
+"""ArchivePerson(person_id) -> [Person] | [{ error: "not_found" }]. Soft delete:
+`Person.archived = true`, hidden from lists/rankings, restorable from Settings —
+unlike Forget, never retracts facts/intents/promises/edges."""
+async def:pub archive_person(person_id: str) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_archive_person(person_id));
+        return out;
+    }
+    try {
+        data = await jacSpawn("ArchivePerson", "", {"person_id": person_id});
+        out = _first_or_error(data["reports"] if data else []);
+    } except Exception {
+        out = {"error": "failed"};
+    }
     return out;
 }
 
