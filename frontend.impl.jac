@@ -53,6 +53,7 @@ impl app.logout -> None {
     password = "";
     step = 1;
     about = "";
+    onboard_name = "";
     about_error = "";
     onboard = {};
     card = {};

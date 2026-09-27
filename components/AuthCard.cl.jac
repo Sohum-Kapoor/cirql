@@ -75,7 +75,7 @@ def:pub AuthCard(
                 </CardContent>
             </Card>
             <p className="text-body-sm text-muted-foreground">
-                Your notes stay yours: export any time, delete in one tap, only a card you write is ever shared.
+                Your notes stay yours: export or delete them any time, and only a card you write is ever shared.
             </p>
             {show_status and <p role="status" className="text-body-sm text-muted-foreground">{show_status}</p>}
             <p className="text-caption text-muted-foreground">Each account's graph is isolated by construction.</p>

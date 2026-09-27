@@ -193,7 +193,7 @@ async def:pub list_people() -> list[Person] {
         return found;
     }
     result = root spawn ListPeople();
-    found = result.reports;
+    found = result.reports as list[Person];
     return found;
 }
 
