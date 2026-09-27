@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cirql — remember the people you meet</title>
+<meta name="description" content="Cirql remembers the people you meet, and helps you follow through on what matters to them.">
+<link rel="icon" href="/static/icon/icon-32.png">
+<link rel="apple-touch-icon" href="/static/icon/icon-180.png">
+<style>
+:root{
+  color-scheme:light dark;
+  --bg:#fafafa;
+  --card:#f5f6f6;
+  --ink:#18181b;
+  --ink-muted:#3c4047;
+  --muted:#62666d;
+  --border:#e4e5e9;
+  --border-strong:#d3d5da;
+  --primary:#5e6ad2;
+  --primary-hover:#4c57c2;
+  --primary-foreground:#ffffff;
+  --link:#4c57c2;
+  --radius:12px;
+}
+:root.dark{
+  --bg:#0e1018;
+  --card:#15171f;
+  --ink:#f4f5fa;
+  --ink-muted:#d0d6e0;
+  --muted:#9a9fb5;
+  --border:#23252a;
+  --border-strong:#34343a;
+  --primary:#5e6ad2;
+  --primary-hover:#828fff;
+  --primary-foreground:#ffffff;
+  --link:#828fff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light){
+    --bg:#0e1018;
+    --card:#15171f;
+    --ink:#f4f5fa;
+    --ink-muted:#d0d6e0;
+    --muted:#9a9fb5;
+    --border:#23252a;
+    --border-strong:#34343a;
+    --primary:#5e6ad2;
+    --primary-hover:#828fff;
+    --primary-foreground:#ffffff;
+    --link:#828fff;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font:16px/1.55 -apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;
+  overflow-x:hidden;
+}
+main{max-width:640px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--link)}
+.eyebrow{font-size:12px;letter-spacing:0.4px;text-transform:uppercase;color:var(--muted);font-weight:600;margin:0 0 6px}
+.muted{color:var(--muted)}
+.topbar{
+  max-width:640px;margin:0 auto;padding:16px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px}
+.brand img{width:24px;height:24px;border-radius:6px}
+.theme-btn{
+  border:1px solid var(--border-strong);
+  background:var(--card);
+  color:var(--ink);
+  border-radius:8px;
+  padding:6px 10px;
+  font-size:13px;
+  cursor:pointer;
+}
+
+.hero{padding:20px 0 8px;text-align:center}
+.hero img{width:72px;height:72px;border-radius:18px;margin:8px auto 16px;display:block}
+.hero h1{font-size:32px;line-height:1.15;letter-spacing:-0.6px;font-weight:600;margin:0 0 12px}
+.hero p{font-size:17px;line-height:1.5;color:var(--ink-muted);margin:0 auto 24px;max-width:480px}
+.hero-actions{display:flex;flex-direction:column;gap:10px;max-width:320px;margin:0 auto}
+
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  border-radius:var(--radius);
+  padding:12px 20px;
+  font-size:15px;
+  font-weight:500;
+  text-decoration:none;
+  border:1px solid transparent;
+  cursor:pointer;
+}
+.btn-primary{background:var(--primary);color:var(--primary-foreground)}
+.btn-primary:hover{background:var(--primary-hover)}
+.btn-secondary{background:var(--card);color:var(--ink);border-color:var(--border-strong)}
+
+section{padding:40px 0}
+h2{font-size:22px;letter-spacing:-0.3px;font-weight:600;margin:0 0 6px}
+section > p.lead{color:var(--muted);margin:0 0 20px;font-size:15px}
+
+.loop{display:grid;grid-template-columns:1fr;gap:14px}
+.step{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:16px;
+}
+.step-num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:22px;height:22px;border-radius:999px;
+  background:var(--primary);color:#fff;font-size:12px;font-weight:600;
+  margin-bottom:10px;
+}
+.step h3{margin:0 0 6px;font-size:16px}
+.step p{margin:0 0 12px;color:var(--ink-muted);font-size:14px;line-height:1.5}
+
+.mock{
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:var(--bg);
+  padding:10px;
+  display:flex;flex-direction:column;gap:6px;
+}
+.mock-row{
+  display:flex;align-items:center;gap:8px;
+  font-size:12px;color:var(--muted);
+}
+.chip{
+  border-radius:6px;padding:3px 8px;font-size:11px;font-weight:500;
+  background:var(--card);border:1px solid var(--border-strong);color:var(--ink-muted);
+}
+.chip-accent{background:var(--primary);color:#fff;border-color:var(--primary)}
+.dot{width:6px;height:6px;border-radius:999px;background:var(--primary);flex:none}
+.bar{height:6px;border-radius:999px;background:var(--border-strong);flex:1;overflow:hidden}
+.bar span{display:block;height:100%;background:var(--primary)}
+
+.honest ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.honest li{
+  display:flex;gap:10px;align-items:flex-start;
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px 16px;font-size:14px;color:var(--ink-muted);
+}
+.honest li b{color:var(--ink)}
+.check{flex:none;width:18px;height:18px;color:var(--primary)}
+
+.builtwith{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:18px;
+}
+.stats{display:flex;flex-wrap:wrap;gap:16px;margin:14px 0}
+.stat{min-width:76px}
+.stat b{display:block;font-size:20px;letter-spacing:-0.3px}
+.stat span{font-size:12px;color:var(--muted)}
+.builtwith p{color:var(--ink-muted);font-size:14px;margin:0 0 4px}
+
+footer{
+  border-top:1px solid var(--border);
+  padding:24px 0 0;
+  display:flex;flex-direction:column;gap:14px;
+  font-size:13px;color:var(--muted);
+}
+.foot-links{display:flex;flex-wrap:wrap;gap:16px}
+.foot-links a{color:var(--muted);text-decoration:none}
+.foot-links a:hover{color:var(--ink);text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">
+    <img src="/static/icon/icon-192.png" alt="" width="24" height="24">
+    Cirql
+  </div>
+  <button class="theme-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode">Theme</button>
+</div>
+
+<main>
+  <section class="hero">
+    <img src="/static/icon/icon-192.png" alt="Cirql icon">
+    <h1>Cirql</h1>
+    <p>Remember the people you meet, and follow through on what matters to them.</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="/">Open Cirql</a>
+      <a class="btn btn-secondary" href="#loop">How it works</a>
+    </div>
+  </section>
+
+  <section id="loop">
+    <p class="eyebrow">The loop</p>
+    <h2>Four steps, every time you meet someone</h2>
+    <p class="lead">No forms. Talk for thirty seconds; the rest happens for you.</p>
+    <div class="loop">
+      <div class="step">
+        <span class="step-num">1</span>
+        <h3>Capture</h3>
+        <p>A thirty-second voice debrief after you meet someone becomes the person, what they care about, what they want, and what you promised, each one pointing back at the words you actually said.</p>
+        <div class="mock">
+          <div class="mock-row"><span class="dot"></span> Maya Chen &middot; accessible robotics</div>
+          <div class="mock-row"><span class="chip">wants feedback</span><span class="chip">promise: send demo</span></div>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num">2</span>
+        <h3>Aim</h3>
+        <p>Set a goal, and your list of people reorders around it, each one with a plain reason, not a mystery number.</p>
+        <div class="mock">
+          <div class="mock-row"><span class="dot"></span> Priya Nair <span class="chip chip-accent">reason: climate VC</span></div>
+          <div class="mock-row"><span class="dot"></span> Alex Kim <span class="chip">reason: intro to Priya</span></div>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num">3</span>
+        <h3>Find the gap</h3>
+        <p>When a goal needs a kind of person you have no way to reach yet, Cirql tells you instead of leaving you to notice.</p>
+        <div class="mock">
+          <div class="mock-row"><span class="dot"></span> Goal needs: climate-tech VC</div>
+          <div class="mock-row"><span class="chip">no warm path yet</span></div>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num">4</span>
+        <h3>Ask your network</h3>
+        <p>Your ask goes out to your friends; each one answers using only their own circle, with a count and nothing more, until everyone involved says yes. Only a card you write yourself ever crosses over.</p>
+        <div class="mock">
+          <div class="mock-row"><span class="dot"></span> A friend's ask <span class="chip chip-accent">1 strong match</span></div>
+          <div class="bar"><span style="width:70%"></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="honest">
+    <p class="eyebrow">Why trust it</p>
+    <h2>What makes it honest</h2>
+    <ul>
+      <li><svg class="check" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>Every claim points back at what you said.</b> Tap a fact or a promise and you see the exact note it came from.</span></li>
+      <li><svg class="check" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>Nothing sends. You do.</b> Every intro, ask and reply is a draft until you tap approve.</span></li>
+      <li><svg class="check" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>Only a card you write crosses accounts,</b> granted read-only to one specific person. Each account is isolated by construction.</span></li>
+    </ul>
+    <p style="margin-top:14px"><a href="/static/privacy.html">Read the full privacy page &rarr;</a></p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Built at JacHacks 2026</p>
+    <h2>Built end to end in Jac</h2>
+    <div class="builtwith">
+      <p>Cirql was built in about a day at JacHacks UMich, almost entirely in Jac: the graph, the walkers that read and write it, the client screens, and the tests that check every claim.</p>
+      <div class="stats">
+        <div class="stat"><b>43</b><span>modules</span></div>
+        <div class="stat"><b>108</b><span>walkers</span></div>
+        <div class="stat"><b>41</b><span>test suites</span></div>
+        <div class="stat"><b>399</b><span>tests</span></div>
+        <div class="stat"><b>98.9%</b><span>Jac by line</span></div>
+      </div>
+      <p><a href="https://github.com/Sohum-Kapoor/cirql">See the source on GitHub &rarr;</a></p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="foot-links">
+    <a href="/">Open Cirql</a>
+    <a href="/static/privacy.html">Privacy</a>
+    <a href="https://github.com/Sohum-Kapoor/cirql">GitHub</a>
+  </div>
+  <div>Made by Sohum Kapoor and Jesse Chang.</div>
+</footer>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var saved = localStorage.getItem("cirql-site-theme");
+  if (saved === "dark" || saved === "light") { root.classList.add(saved); }
+  document.getElementById("theme-toggle").addEventListener("click", function () {
+    var next = root.classList.contains("dark") ? "light" : "dark";
+    root.classList.remove("dark", "light");
+    root.classList.add(next);
+    localStorage.setItem("cirql-site-theme", next);
+  });
+})();
+</script>
+</body>
+</html>
