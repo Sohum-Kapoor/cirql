@@ -9,7 +9,7 @@ export PATH="$PWD/.venv/bin:${CIRQL_VENV:-/Users/sohum/Downloads/cirql/.venv/bin
 fail=0
 echo "== jac check"
 if ! jac check main.jac $(ls *.sv.jac *.test.jac) 2>&1 | grep -E '^=+ .*(passed|failed)' ; then fail=1; fi
-jac check main.jac $(ls *.sv.jac *.test.jac) 2>&1 | grep -q ' failed' && fail=1
+jac check main.jac $(ls *.sv.jac *.test.jac) 2>&1 | grep -qE '^=+ .* failed' && fail=1
 echo "== jac test (one module at a time)"
 for m in $(ls *.sv.jac | sed 's/\.sv\.jac$//'); do
   [ -f "$m.test.jac" ] || continue
