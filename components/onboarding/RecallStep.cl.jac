@@ -47,11 +47,11 @@ def:pub RecallStep(
             <div className="flex flex-col gap-1">
                 <h2 className="text-card-title">First recall</h2>
                 {if goal_text {
-                    <p className="text-body-sm text-muted-foreground">
-                        {"For your goal: "}
-                        <span className="text-foreground">{goal_text}</span>
-                        {", here's who you already know."}
-                    </p>
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-eyebrow text-muted-foreground">For your goal</span>
+                        <span className="text-body-sm text-foreground">{goal_text}</span>
+                        <span className="text-caption text-muted-foreground">here's who you already know</span>
+                    </div>
                 } else {
                     <p className="text-body-sm text-muted-foreground">
                         Add a goal to see who can help.
