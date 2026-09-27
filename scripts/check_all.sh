@@ -8,8 +8,14 @@ cd "$(dirname "$0")/.."
 export PATH="$PWD/.venv/bin:${CIRQL_VENV:-/Users/sohum/Downloads/cirql/.venv/bin}:$PATH"
 fail=0
 echo "== jac check"
-if ! jac check main.jac $(ls *.sv.jac *.test.jac) 2>&1 | grep -E '^=+ .*(passed|failed)' ; then fail=1; fi
-jac check main.jac $(ls *.sv.jac *.test.jac) 2>&1 | grep -qE '^=+ .* failed' && fail=1
+# One run, judged once: two separate runs can disagree (the whole-tree check has an
+# intermittent E1053 type-alias artifact on EvidenceItem; see AGENTS.md gotchas).
+check_out=$(jac check main.jac $(ls *.sv.jac *.test.jac) 2>&1)
+echo "$check_out" | grep -E '^=+ .*(passed|failed)' || { echo "jac check produced no summary"; fail=1; }
+if echo "$check_out" | grep -qE '^=+ .* failed'; then
+  fail=1
+  echo "$check_out" | grep -E '\.jac FAILED' | sed 's/^/  /'
+fi
 echo "== jac test (one module at a time)"
 for m in $(ls *.sv.jac | sed 's/\.sv\.jac$//'); do
   [ -f "$m.test.jac" ] || continue
