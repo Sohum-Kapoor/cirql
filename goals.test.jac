@@ -18,8 +18,8 @@ though `jac test` runs against one shared, persisted root (jac-testing) and
 earlier tests' nodes are still hanging around.
 """
 
-import from goals { Candidate, EvidenceItem, RankedItem, compute_days_since_contact, gather_evidence, collect_candidates, materialize, fallback_rank, serve_cached, evidence_item_from_jid, collect_all_candidates, count_candidate_people, ranking_is_stale, annotate_ranking, RANK_CAP }
-import from schema { Me, Person, Goal, Fact, Intent, Note, Knows, Reported, FactAbout, IntentAbout, Mentions, AssertsIntent, RelevantTo }
+import from goals { Candidate, EvidenceItem, RankedItem, compute_days_since_contact, gather_evidence, collect_candidates, materialize, fallback_rank, serve_cached, evidence_item_from_jid, collect_all_candidates, count_candidate_people, ranking_is_stale, annotate_ranking, RANK_CAP, goal_texts_match, set_goal_for }
+import from schema { Me, Person, Goal, Fact, Intent, Note, Knows, Reported, FactAbout, IntentAbout, Mentions, AssertsIntent, RelevantTo, HasGoal }
 import from datetime { datetime }
 
 test "candidate collection: known, route (both sub-cases), cold" {
@@ -401,4 +401,52 @@ test "SOH-212 ranking_is_stale: a note captured after ranked_at makes it stale; 
     assert not ranking_is_stale("2026-09-26T10:00:00", [older]);
     assert ranking_is_stale("2026-09-26T10:00:00", [older, newer]);
     assert ranking_is_stale("", [older]);
+}
+
+# ---------------------------------------------------------------- SOH-225 SetGoal dedupe
+
+test "goal_texts_match: reordered/reworded phrasing of the same ask matches via Jaccard" {
+    a = "Land a summer 2027 climate-tech VC internship";
+    b = "land a climate-tech VC internship for summer 2027";
+    assert goal_texts_match(a, b);
+    assert goal_texts_match(b, a);
+}
+
+test "goal_texts_match: a genuinely different goal does not match" {
+    assert not goal_texts_match(
+        "Land a summer 2027 climate-tech VC internship",
+        "Find a mentor in accessible robotics"
+    );
+}
+
+test "goal_texts_match: a longer restatement that contains the shorter text matches" {
+    assert goal_texts_match(
+        "Raise a pre-seed round",
+        "Raise a pre-seed round from climate-tech investors"
+    );
+}
+
+test "set_goal_for: calling twice with near-duplicate text reuses the same goal, sets it active, creates nothing" {
+    me = (root ++> Me(name="setgoal-dedupe-test-me"))[0];
+
+    g1 = set_goal_for(me, "Land a summer 2027 climate-tech VC internship", datetime(2026, 9, 26, 9, 0, 0));
+    g2 = set_goal_for(me, "land a climate-tech VC internship for summer 2027", datetime(2026, 9, 26, 9, 5, 0));
+
+    assert jid(g1) == jid(g2), "a near-duplicate SetGoal call must reuse the existing goal, not create a second one";
+    assert g2.active;
+    goals = [me ->:HasGoal:->];
+    assert len(goals) == 1, f"expected exactly one goal, got {len(goals)}";
+}
+
+test "set_goal_for: a genuinely different goal creates a second goal and deactivates the first" {
+    me = (root ++> Me(name="setgoal-distinct-test-me"))[0];
+
+    g1 = set_goal_for(me, "Land a summer 2027 climate-tech VC internship", datetime(2026, 9, 26, 9, 0, 0));
+    g2 = set_goal_for(me, "Find a mentor in accessible robotics", datetime(2026, 9, 26, 9, 5, 0));
+
+    assert jid(g1) != jid(g2);
+    assert not g1.active;
+    assert g2.active;
+    goals = [me ->:HasGoal:->];
+    assert len(goals) == 2, f"expected two distinct goals, got {len(goals)}";
 }

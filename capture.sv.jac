@@ -91,7 +91,7 @@ sem XTie.from_name = "The name of the first person in a stated acquaintance.";
 sem XTie.to_name = "The name of the second person in a stated acquaintance.";
 sem XTie.span = "Verbatim substring of the note that states the two people know each other.";
 
-sem CaptureExtraction.people = "Every person in the note other than the author (who says 'I'); include people only mentioned as someone's acquaintance. When a person is referred to only by description, use the description as the name (e.g. 'the young man from the robotics thing who built the wheelchair sensor') and set named=false.";
+sem CaptureExtraction.people = "Every person in the note other than the author (who says 'I'); include people only mentioned as someone's acquaintance. When a person is referred to only by description, use the description as the name (e.g. 'the young man from the robotics thing who built the wheelchair sensor') and set named=false. A person needs a name or a distinguishing description (a place, a role plus context); a bare relation or role word ('her manager', 'a friend', 'the CEO', 'my roommate') is not a person - attach what was said about them as a fact on the named person it relates to, or drop it.";
 sem CaptureExtraction.facts = "Facts stated about any person in the note, including the author's notes-to-self about the relationship ('conflict of interest', 'keep in mind'), which are facts about that person with source_kind='self'. Hedged claims keep their hedge.";
 sem CaptureExtraction.intents = "Needs, offers, or openness stated about any person in the note.";
 sem CaptureExtraction.promises = "Promises the author (the note's 'I') made to any person in the note - only where the note shows the author's own commitment ('I said I'd send', 'I'll intro', 'promised', 'owe her', 'follow up'), with the concrete deliverable as the text and the due date if stated ('wants ROI deck by Fri. Follow up Thu.' -> text 'send the ROI deck', due 'Fri'). 'She wants intros to founders' with no commitment from the author is an Intent(need), not a Promise.";
@@ -122,6 +122,50 @@ def normalize_intent_kind(kind: str) -> str {
         return "offer";
     }
     return "open_to";
+}
+
+glob ROLE_ONLY_POSSESSIVES: list[str] = [
+    "his", "her", "their", "my", "our", "a", "an", "the", "this", "that", "some"
+];
+glob ROLE_ONLY_WORDS: list[str] = [
+    "manager", "boss", "friend", "colleague", "coworker", "co-worker",
+    "co-founder", "cofounder", "partner", "roommate", "teammate", "advisor",
+    "assistant", "ceo", "cto", "cfo", "founder", "investor", "professor",
+    "teacher", "dad", "mom", "father", "mother", "brother", "sister", "wife",
+    "husband", "girlfriend", "boyfriend", "son", "daughter", "cousin",
+    "neighbor", "neighbour"
+];
+
+"""SOH-225: a plain relation/role phrase ('her manager', 'a friend', 'the
+CEO', 'my roommate') or a bare role word alone ('manager') is not a person -
+it names a relation to someone, not someone. A name with a distinguishing
+description beyond the role word ('the tall girl from the climbing gym',
+'the young man from the robotics thing who built the wheelchair sensor')
+still passes."""
+def is_role_only(name: str) -> bool {
+    n = " ".join((name or "").strip().lower().split());
+    if n in ROLE_ONLY_WORDS {
+        return True;
+    }
+    parts = n.split(" ");
+    if len(parts) == 2 and parts[0] in ROLE_ONLY_POSSESSIVES and parts[1] in ROLE_ONLY_WORDS {
+        return True;
+    }
+    return False;
+}
+
+"""`is_role_only(name)`, and if true, records its normalized key in
+`skipped_role_names` (once per distinct name) - the running tally
+`apply_extraction` turns into the report's `skipped_people` count."""
+def mark_role_skip(name: str, skipped_role_names: list[str]) -> bool {
+    if not is_role_only(name) {
+        return False;
+    }
+    key = " ".join((name or "").strip().lower().split());
+    if key not in skipped_role_names {
+        skipped_role_names.append(key);
+    }
+    return True;
 }
 
 glob HEDGE_CUES: list[str] = [
@@ -412,6 +456,10 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = ""
     promises_report: list[dict[str, any]] = [];
     ties_report: list[dict[str, any]] = [];
 
+    # SOH-225: distinct role-only names skipped anywhere (person/fact/intent/
+    # promise/tie) - never creates a Person, so counted once per name.
+    skipped_role_names: list[str] = [];
+
     # Dedupe x.people by normalized name; never create a Person with an empty name.
     seen_names: list[str] = [];
     deduped_people: list[XPerson] = [];
@@ -445,6 +493,9 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = ""
         if len(key) == 0 {
             continue;
         }
+        if mark_role_skip(xp.name, skipped_role_names) {
+            continue;   # SOH-225: role-only description, never a person
+        }
         tie_target_only = key in tie_to_names and key not in primary_names;
         entry = resolve_person(
             xp.name, me, note, resolved, org=xp.org, title=xp.title,
@@ -459,6 +510,9 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = ""
     for xf in x.facts {
         if len(xf.about_name.strip()) == 0 {
             continue;
+        }
+        if mark_role_skip(xf.about_name, skipped_role_names) {
+            continue;   # SOH-225: fact about a role-only description, dropped
         }
         entry = resolve_person(xf.about_name, me, note, resolved, confirmed_if_new=False, named=xf.about_name.strip().lower() not in unnamed, how_met=how_met);
         p = entry["person"] as Person;
@@ -476,6 +530,9 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = ""
         if len(xi.about_name.strip()) == 0 {
             continue;
         }
+        if mark_role_skip(xi.about_name, skipped_role_names) {
+            continue;   # SOH-225: intent about a role-only description, dropped
+        }
         entry = resolve_person(xi.about_name, me, note, resolved, confirmed_if_new=False, named=xi.about_name.strip().lower() not in unnamed, how_met=how_met);
         p = entry["person"] as Person;
         span = safe_span(xi.span, note, xi.text);
@@ -492,6 +549,9 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = ""
     for xpr in x.promises {
         if len(xpr.to_name.strip()) == 0 {
             continue;
+        }
+        if mark_role_skip(xpr.to_name, skipped_role_names) {
+            continue;   # SOH-225: promise to a role-only description, dropped
         }
         entry = resolve_person(xpr.to_name, me, note, resolved, confirmed_if_new=False, named=xpr.to_name.strip().lower() not in unnamed, how_met=how_met);
         p = entry["person"] as Person;
@@ -521,6 +581,13 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = ""
             continue;
         }
         if xt.from_name.strip().lower() == xt.to_name.strip().lower() {
+            continue;
+        }
+        # SOH-225: a tie touching a role-only description is dropped (both
+        # ends are checked - and marked - even though `or` short-circuits).
+        from_role = mark_role_skip(xt.from_name, skipped_role_names);
+        to_role = mark_role_skip(xt.to_name, skipped_role_names);
+        if from_role or to_role {
             continue;
         }
         a_entry = resolve_person(xt.from_name, me, note, resolved, confirmed_if_new=False, how_met=how_met);
@@ -555,7 +622,8 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = ""
         "facts": facts_report,
         "intents": intents_report,
         "promises": promises_report,
-        "ties": ties_report
+        "ties": ties_report,
+        "skipped_people": len(skipped_role_names)
     };
 }
 
@@ -613,7 +681,8 @@ walker:priv Capture {
             "facts": [],
             "intents": [],
             "promises": [],
-            "ties": []
+            "ties": [],
+            "skipped_people": 0
         };
 
         try {

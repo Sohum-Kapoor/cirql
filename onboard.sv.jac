@@ -14,6 +14,7 @@ import from schema {
     Owns, HasInterest, HasGoal, HasIntent, AssertsIntent
 }
 import from freshness { default_expiry }
+import from goals { goal_texts_match }
 
 
 # ---------------------------------------------------------------- extraction
@@ -138,13 +139,44 @@ def find_by_topic(items: list[Interest], topic: str) -> Interest | None {
     return None;
 }
 
+"""SOH-225: near-duplicate match (`goals.goal_texts_match`), not exact text
+equality, so re-running onboarding (or a batch of extracted goals that
+restate the same ask) never creates a second Goal for the same outcome."""
 def find_goal_by_text(items: list[Goal], text: str) -> Goal | None {
     for g in items {
-        if g.text == text {
+        if goal_texts_match(g.text, text) {
             return g;
         }
     }
     return None;
+}
+
+"""SOH-225: get-or-create each of `goal_texts` as a Goal under `me`, deduping
+by `find_goal_by_text` both against pre-existing goals already in
+`existing_goals` and against duplicates within the same extraction batch —
+each newly-created goal is appended to `existing_goals` as we go, so a later
+near-duplicate in the same call matches it instead of creating a second
+Goal. Returns the Goals (existing or new) in extraction order, one per
+matched group. Kept as a plain def, testable directly on hand-built nodes."""
+def collect_goals(me: Me, existing_goals: list[Goal], goal_texts: list[str], now: str) -> list[Goal] {
+    goals: list[Goal] = [];
+    for g_text in goal_texts {
+        gt = g_text.strip();
+        if gt == "" {
+            continue;
+        }
+        found_g = find_goal_by_text(existing_goals, gt);
+        if found_g {
+            if found_g not in goals {
+                goals.append(found_g);
+            }
+        } else {
+            new_g = (me +>:HasGoal:+> Goal(text=gt, created_at=now))[0];
+            existing_goals.append(new_g);
+            goals.append(new_g);
+        }
+    }
+    return goals;
 }
 
 def find_intent(items: list[Intent], kind: str, text_lower: str) -> Intent | None {
@@ -278,22 +310,7 @@ walker:priv OnboardMe {
         }
 
         existing_goals = [me ->:HasGoal:->];
-        for g_text in goal_texts {
-            gt = g_text.strip();
-            if gt == "" {
-                continue;
-            }
-            found_g = find_goal_by_text(existing_goals, gt);
-            if found_g {
-                if found_g not in goals {
-                    goals.append(found_g);
-                }
-            } else {
-                new_g = (me +>:HasGoal:+> Goal(text=gt, created_at=now))[0];
-                existing_goals.append(new_g);
-                goals.append(new_g);
-            }
-        }
+        goals = collect_goals(me, existing_goals, goal_texts, now);
 
         existing_intents = [me ->:HasIntent:->];
         for n_text in needs {
