@@ -19,7 +19,7 @@ import from ..ui.tabs { Tabs, TabsList, TabsTrigger }
 import from .common { StatusChip, req_label }
 
 """A gap's `kind` never carries its own article ("climate-tech VC", "founder
-who has raised for hardware") — prefix "a"/"an" for the single-card sentence."""
+who has raised for hardware"). Prefix "a"/"an" for the single-card sentence."""
 def _a_or_an(kind: str) -> str {
     if not kind {
         return "";

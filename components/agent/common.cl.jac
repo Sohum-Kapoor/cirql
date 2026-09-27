@@ -68,7 +68,7 @@ def:pub resolved_label(kind: str, status: str) -> str {
         return "Dismissed";
     }
     if status == "snoozed" {
-        return "Snoozed — back on the next run";
+        return "Snoozed. Back on the next run";
     }
     return (DONE_LABEL[kind] or "Done") as str;
 }
