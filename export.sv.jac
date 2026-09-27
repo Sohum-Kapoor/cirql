@@ -446,11 +446,10 @@ def build_vcard(p: Person, ke: Knows | None) -> str {
     note_bits: list[str] = [];
     if ke is not None {
         if ke.how_met {
-            note_bits.append(f"Met via {ke.how_met}");
+            how = ke.how_met.strip();
+            note_bits.append(how[0].upper() + how[1:] if how else how);
         }
-        if ke.source_note {
-            note_bits.append(f"Source note: {ke.source_note}");
-        }
+        note_bits.append("From Cirql");
     }
     if note_bits {
         lines.append(f"NOTE:{vcard_escape('; '.join(note_bits))}");
