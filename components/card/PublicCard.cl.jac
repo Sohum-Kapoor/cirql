@@ -79,6 +79,8 @@ def:pub PublicCard(handle: str) -> JsxElement {
                     contact_pref={contact_pref}
                     updated_at={updated_at}
                     visibility="link"
+                    title="Cirql card"
+                    description="Shared by its owner with anyone who has the link. Read-only."
                 />
                 <div className="flex justify-center">
                     <Button asChild variant="outline">
