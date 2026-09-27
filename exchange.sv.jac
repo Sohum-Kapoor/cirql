@@ -33,10 +33,12 @@ import from schema {
     AssertsIntent, Card, Owns, FromCard, Exchange, IntroRequest, IntroReply,
     Posted, RepliedTo, ReplyPrivate, ClaimedIntro
 }
-import from cards { listed_cards, list_card, handle_taken }
+import from cards { listed_cards, list_card, handle_taken, get_card }
 import from scoring { score_against_need }
 import from onboard { handle_from_name, jid_suffix }
 import from identity { tokens_for, group_same_person }
+import from drafts { first_name }
+import from goals { goal_noun_phrase }
 
 
 # ---------------------------------------------------------------- LLM (ClaimReveal only)
@@ -352,10 +354,91 @@ def visible_to_me(req: IntroRequest) -> bool {
     return request_visible(req, friend_handles(me), list(me.blocked_handles));
 }
 
+# ---------------------------------------------------------------- need_key (SOH-229)
+
+glob NEED_KEY_STOPWORDS: list[str] = [
+    "a", "an", "the", "who", "someone", "that", "for", "in", "and", "with",
+    "of", "to", "is", "are", "or"
+];
+
+"""Char-scan tokenizer (same idiom as scoring.fallback_tokens): lowercased
+alphanumeric runs, punctuation dropped entirely."""
+def need_key_tokens(text: str) -> list[str] {
+    out: list[str] = [];
+    cur = "";
+    for ch in ((text or "").lower() + " ") {
+        if ch.isalnum() {
+            cur = cur + ch;
+        } else {
+            if cur {
+                out.append(cur);
+            }
+            cur = "";
+        }
+    }
+    return out;
+}
+
+"""A light stem: strip ONE trailing suffix (longest/most-specific first) so a
+plural/verb/agent-noun form collapses onto its root -- "interns" -> "intern",
+"invests" -> "invest", "investor" -> "invest". Guards against emptying a
+short word (never strips below 3 letters)."""
+def need_key_stem(t: str) -> str {
+    for suf in ["ers", "ing", "ors", "es", "or", "s"] {
+        if t.endswith(suf) and len(t) - len(suf) >= 3 {
+            return t[:-len(suf)];
+        }
+    }
+    return t;
+}
+
+"""need_key (SOH-229): lowercase, strip punctuation, drop stopwords,
+light-stem each remaining token, dedupe, sort, join with spaces -- a
+deterministic grouping key for similar asks. NOT a promise that any two
+differently-worded asks collapse: two of Jesse's live asks ("An investor in
+climate companies who hires summer interns." / "Someone who invests in
+climate startups and hires university interns.") converge on their shared
+stems (climate/hire/intern/invest) after this, even though "companies" vs
+"startups" and "summer" vs "university" are genuinely different words and
+keep their own tokens -- see exchange.test.jac for the overlap this
+actually achieves."""
+def need_key(need: str) -> str {
+    out: list[str] = [];
+    for tok in need_key_tokens(need) {
+        if tok in NEED_KEY_STOPWORDS {
+            continue;
+        }
+        s = need_key_stem(tok);
+        if s and s not in out {
+            out.append(s);
+        }
+    }
+    return " ".join(sorted(out));
+}
+
+"""SOH-229: the requester's own chosen first name, resolved ONLY through
+their published Card (cards.get_card -- same visibility=="link" + owner/read
+checks the public read uses; a handshake_only or missing card reports "").
+Never a name read off anyone's graph."""
+def requester_first_name(handle: str) -> str {
+    h = (handle or "").strip();
+    if not h {
+        return "";
+    }
+    found = get_card(h);
+    if not (found["found"] as bool) {
+        return "";
+    }
+    return first_name(str(found["name"]));
+}
+
 # ---------------------------------------------------------------- requester side
 
-"""SOH-223: PostRequest's body as a plain def (RunAgent approve reuses it)."""
-def post_request(need: str, about_line: str, ttl_days: int, audience: str) -> object {
+"""SOH-223: PostRequest's body as a plain def (RunAgent approve reuses it).
+SOH-229: `goal_text` is stored through `goals.goal_noun_phrase` (already
+imported everywhere it's needed) so it reads as a noun phrase, same as a
+Goal's own stored text."""
+def post_request(need: str, about_line: str, ttl_days: int, audience: str, goal_text: str) -> object {
     card = my_card();
     if card is None {
         return err("no_card");
@@ -363,6 +446,7 @@ def post_request(need: str, about_line: str, ttl_days: int, audience: str) -> ob
     c = card as Card;
     now = datetime.now();
     ex = get_exchange();
+    gt = goal_noun_phrase(goal_text.strip()) if goal_text.strip() else "";
     req = (ex +>:Posted:+> IntroRequest(
         need=need,
         from_handle=c.handle,
@@ -370,7 +454,8 @@ def post_request(need: str, about_line: str, ttl_days: int, audience: str) -> ob
         status="open",
         created_at=now.isoformat(),
         expires_at=(now + timedelta(days=ttl_days)).isoformat(),
-        audience=norm_audience(audience)
+        audience=norm_audience(audience),
+        goal_text=gt
     ))[0];
     grant(req, level=ConnectPerm);
     return req;
@@ -378,15 +463,17 @@ def post_request(need: str, about_line: str, ttl_days: int, audience: str) -> ob
 
 walker:priv PostRequest {
     """Post a need to the shared Exchange under the caller's Card handle.
-    `ttl_days` is a dev/test knob (default 7; 0 posts an already-expiring request)."""
+    `ttl_days` is a dev/test knob (default 7; 0 posts an already-expiring request).
+    `goal_text` (SOH-229) is the requester's goal as a noun phrase; optional."""
     has need: str;
     has about_line: str = "";
     has ttl_days: int = 7;
     has audience: str = "everyone";
+    has goal_text: str = "";
     has reports: list[object] = [];
 
     can go with Root entry {
-        report post_request(self.need, self.about_line, self.ttl_days, self.audience);
+        report post_request(self.need, self.about_line, self.ttl_days, self.audience, self.goal_text);
     }
 }
 
@@ -585,7 +672,15 @@ walker:priv ClaimReveal {
 # ---------------------------------------------------------------- friend side
 
 walker:priv ListIncomingRequests {
-    """Requests posted by others, not expired, not declined, not yet answered by me."""
+    """Requests posted by others, not expired, not declined, not yet answered by
+    me. Reports the same flat shape as the raw `IntroRequest` node always did
+    (`_jac_id`, `need`, `from_handle`, `about_line`, `status`, `created_at`,
+    `expires_at`, `audience`, `goal_text`) -- additive only, so `r["_jac_id"]`
+    keeps working -- PLUS two computed, non-persisted fields (SOH-229):
+    `from_name` (the requester's own first name, resolved ONLY through their
+    published, visibility=="link" Card via cards.get_card -- "" for a
+    handshake_only or missing card, never a name off anyone's graph) and
+    `need_key` (a deterministic grouping key, see exchange.need_key)."""
     has reports: list[object] = [];
 
     can go with Root entry {
@@ -616,7 +711,19 @@ walker:priv ListIncomingRequests {
             if jid(req) in answered {
                 continue;
             }
-            report req;
+            report {
+                "_jac_id": jid(req),
+                "need": req.need,
+                "from_handle": req.from_handle,
+                "about_line": req.about_line,
+                "status": req.status,
+                "created_at": req.created_at,
+                "expires_at": req.expires_at,
+                "audience": req.audience,
+                "goal_text": req.goal_text,
+                "from_name": requester_first_name(req.from_handle),
+                "need_key": need_key(req.need)
+            };
         }
     }
 }

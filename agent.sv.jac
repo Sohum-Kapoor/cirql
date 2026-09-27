@@ -34,7 +34,7 @@ import from drafts { gather_follow_up_evidence, fallback_draft, first_name }
 import from scoring { collect_candidates, fallback_tokens, polish_reason }
 import from exchange {
     all_requests, shared_replies, owner_root, visible_to_me, now_iso,
-    post_request, reply_to_request
+    post_request, reply_to_request, need_key, requester_first_name
 }
 
 glob AGENT_THROTTLE_MINUTES: int = 10;
@@ -607,12 +607,22 @@ def step_answer_ask(me: Me, now: datetime) -> list[dict[str, any]] {
         matches_note = f" (matches: {', '.join(matched)})" if matched else "";
         n = len(hits);
         word = "person" if n == 1 else "people";
+        # SOH-229: from_name comes ONLY from the requester's own published
+        # (visibility=="link") Card, never their identity elsewhere; falls
+        # back to "@<handle>" when they have no link-visible card.
+        from_name = requester_first_name(req.from_handle);
+        who = from_name if from_name else f"@{req.from_handle}";
+        need_phrase = _clip(goal_noun_phrase(req.need), 100);
+        nk = need_key(req.need);
         af = make_finding(
             "answer_ask",
-            f"Answer an ask: {_clip(req.need, 100)}",
+            f"{who} is looking for {need_phrase}",
             f"{req.from_handle} is looking for \"{_clip(req.need, 120)}\"; {n} {word} in your graph may fit: \"{_clip(quote, 160)}\"{matches_note}. Replying shares a count and a strength, no names.",
             ev, str(top["person_id"]), "", rid, "",
-            {"need": req.need, "from_handle": req.from_handle, "top_person_id": str(top["person_id"]), "matched": matched},
+            {
+                "need": req.need, "from_handle": req.from_handle, "top_person_id": str(top["person_id"]),
+                "matched": matched, "from_name": from_name, "need_key": nk, "goal_text": req.goal_text
+            },
             "ReplyToRequest", "", True
         );
         # One key per request: a dismissed ask stays dismissed even when the top candidate changes.
@@ -858,7 +868,16 @@ def approve(a: AgentAction, edited_draft: str, complete: bool) -> dict[str, any]
             need = edited_draft.strip();
         }
         about = str(pl["about_line"]) if "about_line" in pl else "";
-        posted = post_request(need, about, 7, "everyone");
+        # SOH-229: an ask_network action's own goal is exactly the requester's
+        # goal for this ask; carry its text through as-is (already a noun phrase).
+        goal_text = "";
+        if a.goal_id {
+            gn = my_node(a.goal_id);
+            if isinstance(gn, Goal) {
+                goal_text = (gn as Goal).text;
+            }
+        }
+        posted = post_request(need, about, 7, "everyone", goal_text);
         if isinstance(posted, dict) and "error" in posted {
             return posted;
         }

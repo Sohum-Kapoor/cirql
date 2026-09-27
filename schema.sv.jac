@@ -207,6 +207,7 @@ node IntroRequest {
     has created_at: str = "";
     has expires_at: str = "";
     has audience: str = "everyone";   # everyone | friends (SOH friend-gated exchange)
+    has goal_text: str = "";          # SOH-229: requester's goal as a noun phrase; "" when not tied to a goal
 }
 
 node IntroReply {
