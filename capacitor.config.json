@@ -7,6 +7,15 @@
     "iosScheme": "capacitor"
   },
   "ios": {
-    "contentInset": "always"
+    "contentInset": "always",
+    "backgroundColor": "#0E1018"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 300,
+      "launchAutoHide": true,
+      "backgroundColor": "#0E1018",
+      "showSpinner": false
+    }
   }
 }
