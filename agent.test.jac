@@ -157,6 +157,8 @@ test "agent: RunAgent proposes, dedups, respects dismiss, reopens snooze, approv
         assert str(an0["evidence"][0]["observed_at"]), an0;
         pd = _ag_by_kind(rows, "promise_due")[0];
         assert str(pd["action"]["draft"]);
+        pd_payload = json.loads(str(pd["action"]["payload_json"])) as dict[str, any];
+        assert "due" in pd_payload, pd_payload;
 
         # ---- second run: dedup, nothing new
         run2 = dict(_ag_run(cl, a, "RunAgent", {})[0]);
