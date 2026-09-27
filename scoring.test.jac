@@ -10,7 +10,7 @@ via curl (see the SOH-171 deliverable), not by a test.
 import from scoring {
     collect_candidates, build_prompt, normalize_strength, fallback_strength,
     order_by_strength, post_process, fallback_results, score_against_need,
-    NeedMatch, NeedMatches
+    NeedMatch, NeedMatches, polish_reason
 }
 import from schema {
     Me, Person, Fact, Intent, Card, Knows, FactAbout, IntentAbout, FromCard
@@ -323,4 +323,21 @@ test "score_against_need reports [] when the caller has no candidates" {
     me = (root ++> Me(name="No Candidates Me"))[0];
     results = score_against_need(me, "an intro to anyone", []);
     assert results == [];
+}
+
+# ---------------------------------------------------------------- SOH-226 polish_reason
+
+test "polish_reason: strips 'The fact confirms/notes' preamble, 'author', a trailing (evidence: ...), and ensures a terminal period" {
+    assert polish_reason("The fact confirms she is a firmware engineer at Boeing.") == "She is a firmware engineer at Boeing.";
+    assert polish_reason("The fact notes that she recently moved to Seattle.") == "She recently moved to Seattle.";
+    assert polish_reason("Author's college roommate introduced them at a hackathon.") == "Your college roommate introduced them at a hackathon.";
+    assert polish_reason("She's a strong potential collaborator (evidence: \"wants feedback on wheelchair sensors\").") == "She's a strong potential collaborator.";
+}
+
+test "polish_reason: idempotent, empty-safe, collapses double spaces" {
+    assert polish_reason("") == "";
+    assert polish_reason("already clean.") == "Already clean.";
+    once = polish_reason("The fact states  she  wants   an intro.");
+    assert once == polish_reason(once), "polish_reason must be idempotent";
+    assert "  " not in once;
 }

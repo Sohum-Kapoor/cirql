@@ -186,7 +186,7 @@ test "SOH-225 collect_goals: dedupes against a goal already on the root, and sti
 
     assert len(goals) == 2;
     assert jid(goals[0]) == jid(pre), "the near-duplicate must reuse the pre-existing goal, not create a new one";
-    assert goals[1].text == "Find a mentor in accessible robotics";
+    assert goals[1].text == "a mentor in accessible robotics", "SOH-226: new goal text is stored as a noun phrase (leading 'Find ' stripped, lowercased)";
     on_root = [me ->:HasGoal:->];
     assert len(on_root) == 2;
 }
@@ -217,7 +217,7 @@ test "SOH-212 collect_goals stores a goal with its trailing punctuation stripped
     goals = collect_goals(me, existing_goals, ["Identify promising Jac teams to follow after JacHacks. "], "2026-01-01T00:00:00");
 
     assert len(goals) == 1;
-    assert goals[0].text == "Identify promising Jac teams to follow after JacHacks", f"trailing '. ' leaked into the stored goal text: {goals[0].text!r}";
+    assert goals[0].text == "identify promising Jac teams to follow after JacHacks", f"trailing '. ' leaked into the stored goal text, or SOH-226's noun-phrase lowercasing regressed: {goals[0].text!r}";
 }
 
 test "SOH-212 month_day / onboarding_added_how_met: hand-written-style date, no leading zero" {

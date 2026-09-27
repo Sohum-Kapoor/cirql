@@ -16,6 +16,7 @@ LLM's answer back to a Person by `index`, and `why` can't name anyone because
 the model was never given a name to use.
 """
 
+import re;
 import from llm { llm }
 import from datetime { datetime }
 import from schema {
@@ -38,7 +39,7 @@ obj NeedMatches {
 
 sem NeedMatch.index = "The candidate's # number from the input, copied exactly.";
 sem NeedMatch.strength = "strong only when a listed offer/open_to intent or a fact shows this person can directly provide what the need asks for; medium when their role or a fact makes it plausible; weak otherwise. Sharing an employer, school, or job title with the need's domain is never more than weak on its own.";
-sem NeedMatch.why = "One sentence citing the specific evidence number(s) for this candidate. Never invent or mention a person's name — none were given to you.";
+sem NeedMatch.why = "One sentence citing the specific evidence number(s) for this candidate. Never invent or mention a person's name — none were given to you. Speak as the product talking to the user in second person; never say 'the fact', 'the note', 'the author', 'the speaker', or 'the user'; never quote evidence in parentheses; one sentence, under 160 characters.";
 sem NeedMatch.evidence_indices = "The 0-based evidence numbers from THIS candidate's own numbered evidence list that you relied on; empty if none. Never a number from another candidate's list.";
 sem NeedMatches.items = "One item per candidate; omit none.";
 
@@ -69,6 +70,38 @@ def _parse_naive_utc(ts: str) -> datetime | None {
         dt = dt.replace(tzinfo=None);
     }
     return dt;
+}
+
+# ---------------------------------------------------------------- product copy polish
+
+"""SOH-226: the model sometimes narrates its own input instead of writing
+product copy ("The fact confirms she is a firmware engineer", "Author's
+college roommate...", a trailing "(evidence: \"...\")"). `polish_reason`
+is a deterministic, idempotent cleanup applied to every reason/opener/title
+right before it is stored or reported, everywhere in this codebase (see
+`goals.sv.jac`, `gaps.sv.jac`, `person.sv.jac`, `agent.sv.jac`)."""
+glob _FACT_PREAMBLE_RE: str = r"(?i)^(the fact (confirms|notes|states|shows)( that)?|the note says)\s+";
+glob _EVIDENCE_PAREN_RE: str = r"(?i)\s*\(evidence[^)]*\)\.?";
+
+def polish_reason(text: str) -> str {
+    t: str = (text or "").strip();
+    if not t {
+        return t;
+    }
+    t = re.sub(_FACT_PREAMBLE_RE, "", t).strip();
+    t = re.sub(r"(?i)\bauthor's\b", "your", t);
+    t = re.sub(r"(?i)\bthe author\b", "you", t);
+    t = re.sub(r"(?i)\bauthor\b", "you", t);
+    t = re.sub(_EVIDENCE_PAREN_RE, "", t).strip();
+    t = re.sub(r" {2,}", " ", t);
+    if not t {
+        return t;
+    }
+    t = t[0].upper() + t[1:];
+    if t[-1] not in ".!?" {
+        t = t + ".";
+    }
+    return t;
 }
 
 # Deterministic exclusions first: proposed people, excluded card handles,
@@ -322,10 +355,18 @@ def score_against_need(me: Me, need: str, exclude_handles: list[str]) -> list[di
     text = build_prompt(candidates);
     try {
         matches = score_need(need, text);
-        return post_process(candidates, matches);
+        results = post_process(candidates, matches);
     } except Exception {
-        return fallback_results(candidates, need);
+        results = fallback_results(candidates, need);
     }
+    # SOH-226: polish every "why" (product copy, not model narration) at the
+    # one place every caller (ScoreAgainstNeed, exchange.sv.jac, reverse.sv.jac)
+    # goes through, so `post_process`/`fallback_results`'s own unit tests keep
+    # testing their placeholder text unpolished.
+    for r in results {
+        r["why"] = polish_reason(str(r["why"]));
+    }
+    return results;
 }
 
 # ---------------------------------------------------------------- walker

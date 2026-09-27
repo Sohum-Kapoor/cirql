@@ -323,6 +323,26 @@ test "agent tune: step_new_match proposes only on a real rank rise (medium -> st
     assert str(proposed[0]["person_id"]) == pid;
 }
 
+test "SOH-226: step_new_match's title/why are product copy - first name, quoted goal noun phrase, no raw sentence splice, no '(evidence: ...)'" {
+    me = (root ++> Me(name="Copy-test Me"))[0];
+    # a legacy goal stored before SOH-226 (raw "I am looking to..." ask) -
+    # `goal_noun_phrase` is applied defensively at read time too.
+    goal = (me +>:HasGoal:+> Goal(text="I am looking to find a technical cofounder", created_at="2026-01-01T00:00:00"))[0];
+    _nm_seed(goal, "Maya Chen", "strong", "2026-01-01T00:00:01");
+
+    findings = step_new_match([goal], None, {}, False);
+    assert len(findings) == 1, findings;
+    f = findings[0];
+    title = str(f["title"]);
+    why = str(f["why"]);
+
+    assert title == "Maya: strong match for 'find a technical cofounder'.", title;
+    assert "Maya Chen" not in title, "first name only after the first mention";
+    assert "I am looking to" not in title and "I'm looking to" not in title, "never splice the raw first-person goal sentence";
+    assert "(evidence" not in why.lower(), why;
+    assert not why.startswith("The fact"), why;
+}
+
 test "agent tune (review fix 5): prior={} from a run that saw zero RelevantTo edges still gets the first-run cap" {
     me = (root ++> Me(name="Tune-test ZeroPrior Me"))[0];
     goal = (me +>:HasGoal:+> Goal(text="Tune-test zeroprior goal", created_at="2026-01-01T00:00:00"))[0];

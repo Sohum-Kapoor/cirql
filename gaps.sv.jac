@@ -10,7 +10,7 @@ import re;
 import from llm { llm }
 import from datetime { datetime }
 import from schema { Me, Person, Goal, HasGoal, Knows, Reported, RelevantTo, FactAbout, IntentAbout }
-import from scoring { fallback_tokens }
+import from scoring { fallback_tokens, polish_reason }
 
 
 obj NeededKind {
@@ -20,8 +20,8 @@ obj NeededKind {
     has covered_by: list[int];
 }
 sem NeededKind.kind = "A kind of person this goal needs, as a short noun phrase such as 'climate-tech VC' or 'wheelchair user willing to test a prototype'; never a specific person.";
-sem NeededKind.why_needed = "One sentence on why the goal needs this kind of person. Never use the words 'score', 'scores', or 'scoring'.";
-sem NeededKind.suggested_need = "The request a friend's agent could act on, in plain words a non-native English speaker understands: one short sentence, everyday words, no jargon, 14 words or fewer, e.g. 'someone who invests in young climate companies and reads student emails'; no names. Never use the words 'score', 'scores', or 'scoring'.";
+sem NeededKind.why_needed = "One sentence on why the goal needs this kind of person. Never use the words 'score', 'scores', or 'scoring'. Speak as the product talking to the user in second person ('you need...'); never say 'the fact', 'the note', 'the author', 'the speaker', or 'the user'; never quote evidence in parentheses; one sentence, under 160 characters.";
+sem NeededKind.suggested_need = "The request a friend's agent could act on, in plain words a non-native English speaker understands: one short sentence, everyday words, no jargon, 14 words or fewer, e.g. 'someone who invests in young climate companies and reads student emails'; no names. Never use the words 'score', 'scores', or 'scoring'. Never 'the fact'/'the note'/'the author'/'the user'; never quote evidence in parentheses.";
 sem NeededKind.covered_by = "The # numbers of listed warm people who already are this kind of person or can directly provide it; empty if none.";
 
 obj GapExtraction {
@@ -168,8 +168,9 @@ def compute_gaps(x: GapExtraction, warm_count: int, known_people: list[dict[str,
         if covered {
             continue;
         }
-        why = strip_score_words(k.why_needed.strip());
-        need = strip_score_words(k.suggested_need.strip());
+        # SOH-226: product copy, not model narration ("The fact confirms...").
+        why = polish_reason(strip_score_words(k.why_needed.strip()));
+        need = polish_reason(strip_score_words(k.suggested_need.strip()));
         if not kind or not why or not need {
             continue;
         }

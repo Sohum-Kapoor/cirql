@@ -42,7 +42,7 @@ obj FollowUp {
     has draft: str;
     has evidence_indices: list[int];
 }
-sem FollowUp.draft = "A two-to-four sentence message to this person that mentions ONE specific thing from the numbered evidence (a fact, an open promise, or something they wanted), sounds like a real person, no flattery, no subject line, no sign-off placeholder.";
+sem FollowUp.draft = "A two-to-four sentence message to this person that mentions ONE specific thing from the numbered evidence (a fact, an open promise, or something they wanted), sounds like a real person, no flattery, no subject line, no sign-off placeholder. Never say 'the fact'/'the note'/'the author'/'the user' or narrate where the evidence came from — write the message itself, not a description of it; never quote evidence in parentheses.";
 sem FollowUp.evidence_indices = "Numbers of the evidence items the draft relies on.";
 
 def draft_follow_up(person_summary: str, evidence_text: str, intent: str) -> FollowUp by llm(temperature=0.5);

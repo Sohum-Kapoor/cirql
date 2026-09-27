@@ -26,12 +26,12 @@ import from schema {
     Note, Fact, Asserts, FactAbout, AssertsPromise, PromiseTo, Mentions
 }
 import from reads { my_node, receipt_for }
-import from goals { evidence_item_from_jid }
+import from goals { evidence_item_from_jid, goal_noun_phrase }
 import from gaps { warm_lines_for }
 import from paths { find_path }
 import from tend { tend_for }
-import from drafts { gather_follow_up_evidence, fallback_draft }
-import from scoring { collect_candidates, fallback_tokens }
+import from drafts { gather_follow_up_evidence, fallback_draft, first_name }
+import from scoring { collect_candidates, fallback_tokens, polish_reason }
 import from exchange {
     all_requests, shared_replies, owner_root, visible_to_me, now_iso,
     post_request, reply_to_request
@@ -72,8 +72,11 @@ def make_finding(
     person_id: str, goal_id: str, request_id: str, draft: str,
     payload: dict[str, any], source_walker: str, extra: str, propose: bool
 ) -> dict[str, any] {
+    # SOH-226: product copy, not model narration - polished once, here, so
+    # every step (`new_match`/`ask_network`/`route`/`promise_due`/`follow_up`/
+    # `reconnect`/`answer_ask`) gets the same cleanup without repeating it.
     return {
-        "kind": kind, "title": title, "why": why, "evidence": evidence,
+        "kind": kind, "title": polish_reason(title), "why": polish_reason(why), "evidence": evidence,
         "person_id": person_id, "goal_id": goal_id, "request_id": request_id,
         "draft": draft, "payload_json": json.dumps(payload),
         "source_walker": source_walker,
@@ -236,14 +239,16 @@ def step_new_match(goals: list[Goal], prior: dict[str, str] | None, current: dic
                     prev = (prior as dict[str, str])[key];
                 }
                 first = evidence_item_from_jid(ev[0]);
-                span = str(first["span"]) if first is not None else "";
                 observed_at = str(first["observed_at"]) if first is not None else "";
-                reason = e.reason or f"relevant to '{goal.text}'";
+                goal_phrase = goal_noun_phrase(goal.text);
+                reason = e.reason or f"Relevant to your goal, '{goal_phrase}'.";
                 raw.append({
                     "key": key, "rank": _rank(e.strength), "observed_at": observed_at,
                     "rose": _rank(e.strength) > _rank(prev),
-                    "title": f"{p.name} is a {e.strength} match for {goal.text}",
-                    "why": f"{reason} (evidence: \"{_clip(span, 160)}\")",
+                    # SOH-226: first name only + a noun-phrase goal, never the
+                    # raw first-person goal sentence spliced into a title.
+                    "title": f"{first_name(p.name)}: {e.strength} match for '{goal_phrase}'",
+                    "why": reason,
                     "evidence": ev, "person_id": pid, "goal_id": gid, "draft": e.opener,
                     "payload": {"strength": e.strength, "prev_strength": prev}
                 });
@@ -292,11 +297,14 @@ def step_ask_network(me: Me, gaps: list[Goal]) -> list[dict[str, any]] {
     out: list[dict[str, any]] = [];
     about = about_line_for(me);
     for goal in gaps {
-        need = _clip(goal.text, 140);
+        # SOH-226: `goal_noun_phrase` is a no-op on a goal already stored as
+        # a noun phrase (the common case, going forward) - defense-in-depth
+        # for goals stored before this fix landed.
+        need = _clip(goal_noun_phrase(goal.text), 140);
         out.append(make_finding(
             "ask_network",
             f"Ask the network: {need}",
-            f"Your goal \"{need}\" has no warm path in your graph yet (no strong or medium match you know or can reach).",
+            f"Your goal '{need}' has no warm path in your graph yet — no strong or medium match you know or can reach.",
             [jid(goal)], "", jid(goal), "", need,
             {"need": need, "about_line": about},
             "GapFinder", "", True
@@ -365,16 +373,19 @@ def step_route(me: Me, gaps: list[Goal]) -> list[dict[str, any]] {
         }
         where = f"at {target.org}" if target.org else (target.title or "who fits");
         at_org = f" at {target.org}" if target.org else "";
+        # SOH-226: quote the noun phrase rather than splicing a raw
+        # (possibly first-person) goal sentence into the draft's own grammar.
+        goal_phrase = _clip(goal_noun_phrase(goal.text), 120);
         draft = (
             f"Hi {connector.name}, you mentioned {target.name}{at_org}. "
-            f"I'm working on {goal.text}. Would you be open to introducing us? "
+            f"I'm looking for '{goal_phrase}'. Would you be open to introducing us? "
             "Happy to write a short note you can forward."
         );
         told = f"\"{_clip(span, 160)}\"" if span else "a note you captured";
         out.append(make_finding(
             "route",
             f"{connector.name} knows someone {where} — ask {connector.name}?",
-            f"{path['reason']} You were told: {told}. Your goal \"{_clip(goal.text, 120)}\" has no warm path yet.",
+            f"{path['reason']} You were told: {told}. Your goal '{goal_phrase}' has no warm path yet.",
             ev, jid(connector), jid(goal), "", draft,
             {"target_id": jid(target), "connector_id": jid(connector)},
             "PathFinder", jid(target), True

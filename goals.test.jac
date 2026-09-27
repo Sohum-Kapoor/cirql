@@ -18,7 +18,7 @@ though `jac test` runs against one shared, persisted root (jac-testing) and
 earlier tests' nodes are still hanging around.
 """
 
-import from goals { Candidate, EvidenceItem, RankedItem, compute_days_since_contact, gather_evidence, collect_candidates, materialize, fallback_rank, serve_cached, evidence_item_from_jid, collect_all_candidates, count_candidate_people, ranking_is_stale, annotate_ranking, RANK_CAP, goal_texts_match, set_goal_for }
+import from goals { Candidate, EvidenceItem, RankedItem, compute_days_since_contact, gather_evidence, collect_candidates, materialize, fallback_rank, serve_cached, evidence_item_from_jid, collect_all_candidates, count_candidate_people, ranking_is_stale, annotate_ranking, RANK_CAP, goal_texts_match, set_goal_for, goal_noun_phrase }
 import from schema { Me, Person, Goal, Fact, Intent, Note, Knows, Reported, FactAbout, IntentAbout, Mentions, AssertsIntent, RelevantTo, HasGoal }
 import from datetime { datetime }
 
@@ -254,7 +254,7 @@ test "materialize: dedupe by index, default entry for a missing index, evidence-
         by_name[person.name] = r;
     }
 
-    assert by_name["P0 Dup"]["reason"] == "first wins", "duplicate RankedItems for the same index: the first occurrence wins";
+    assert by_name["P0 Dup"]["reason"] == "First wins.", "duplicate RankedItems for the same index: the first occurrence wins (SOH-226: materialize polishes reason/opener before storing)";
     assert by_name["P0 Dup"]["strength"] == "strong";
 
     assert by_name["P1 NoEvidence"]["strength"] == "weak", "an out-of-range evidence index leaves no mapped evidence -> forced weak even though the ranker said strong";
@@ -403,7 +403,31 @@ test "SOH-212 ranking_is_stale: a note captured after ranked_at makes it stale; 
     assert ranking_is_stale("", [older]);
 }
 
+# ---------------------------------------------------------------- SOH-226 goal_noun_phrase
+
+test "goal_noun_phrase: strips a first-person prefix and lowercases the result" {
+    assert goal_noun_phrase("I am looking to find a technical cofounder") == "find a technical cofounder";
+    assert goal_noun_phrase("I'm looking to raise a pre-seed round") == "raise a pre-seed round";
+    assert goal_noun_phrase("Find a mentor in accessible robotics") == "a mentor in accessible robotics";
+    assert goal_noun_phrase("To land a summer internship") == "land a summer internship";
+}
+
+test "goal_noun_phrase: keeps a proper-noun/acronym start as-is" {
+    assert goal_noun_phrase("AI grants for climate startups") == "AI grants for climate startups";
+}
+
+test "goal_noun_phrase: empty-safe and leaves an already-lowercase noun phrase alone" {
+    assert goal_noun_phrase("") == "";
+    assert goal_noun_phrase("intros to climate-tech investors") == "intros to climate-tech investors";
+}
+
 # ---------------------------------------------------------------- SOH-225 SetGoal dedupe
+
+test "set_goal_for: a new goal's text is stored as a noun phrase (SOH-226), never the raw first-person ask" {
+    me = (root ++> Me(name="setgoal-noun-phrase-test-me"))[0];
+    g = set_goal_for(me, "I am looking to find a technical cofounder", datetime(2026, 9, 26, 9, 0, 0));
+    assert g.text == "find a technical cofounder", g.text;
+}
 
 test "goal_texts_match: reordered/reworded phrasing of the same ask matches via Jaccard" {
     a = "Land a summer 2027 climate-tech VC internship";

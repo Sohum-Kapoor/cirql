@@ -169,3 +169,19 @@ test "compute_gaps drops entries with any empty field" {
     assert len(gaps) == 1, f"expected only the fully-populated kind, got {gaps}";
     assert gaps[0]["kind"] == "fully valid kind";
 }
+
+test "compute_gaps (SOH-226): why_needed/suggested_need are polished, model narration stripped" {
+    dirty = NeededKind(
+        kind="climate-tech VC",
+        why_needed="The fact confirms the goal needs a climate-tech VC.",
+        suggested_need="an intro to a climate-tech VC (evidence: \"raising a seed round\")",
+        covered_by=[]
+    );
+    extraction = GapExtraction(kinds=[dirty]);
+
+    gaps = compute_gaps(extraction, 0);
+
+    assert len(gaps) == 1;
+    assert gaps[0]["why_needed"] == "The goal needs a climate-tech VC.";
+    assert gaps[0]["suggested_need"] == "An intro to a climate-tech VC.";
+}

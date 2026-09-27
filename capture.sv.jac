@@ -65,7 +65,7 @@ obj CaptureExtraction {
     has ties: list[XTie];
 }
 
-sem XPerson.name = "The person's name exactly as written in the note; the note's author is never a person here.";
+sem XPerson.name = "The person's name exactly as written in the note; the note's author is never a person here. A description used in place of a name (when `named` is false) is written from the reader's point of view ('your college roommate', 'the young man from the robotics thing') — never 'the author's X' or 'Author's X'.";
 sem XPerson.org = "The person's organization or company, if stated; empty string if not mentioned.";
 sem XPerson.title = "The person's job title or role, if stated; empty string if not mentioned.";
 sem XPerson.span = "The exact substring of the note that introduces or describes this person, copied verbatim.";
@@ -73,17 +73,17 @@ sem XPerson.named = "true when the note gives this person's name; false when the
 sem XPerson.distinct_from = "If the note says this is a different person from someone already mentioned or known ('not the X one', 'a different Maya'), that other person's name as written; empty string otherwise.";
 
 sem XFact.about_name = "The name of the person this fact is about.";
-sem XFact.text = "A short factual statement about the person. Refer to the person who wrote the note as 'you' (e.g. 'Gave you her card'); never 'the author', 'the speaker', 'the user', 'the writer'. Keep the speaker's uncertainty: if the note hedges a claim ('maybe', '??', 'not sure', 'I think', 'possibly', 'probably'), the fact text must carry the hedge ('Possibly works at Siemens in Detroit - you were unsure') and must never be stated flatly.";
+sem XFact.text = "A short factual statement about the person. Refer to the person who wrote the note as 'you' (e.g. 'Gave you her card'); never 'the author', 'the speaker', 'the user', 'the writer'. Keep the speaker's uncertainty: if the note hedges a claim ('maybe', '??', 'not sure', 'I think', 'possibly', 'probably'), the fact text must carry the hedge ('Possibly works at Siemens in Detroit - you were unsure') and must never be stated flatly. Write the statement itself, never a description of it — no 'The fact confirms/notes/states that...' or 'The note says...' preamble.";
 sem XFact.source_kind = "self when the fact is the author's own note-to-self about the relationship (e.g. 'there is a potential conflict of interest I should note', 'keep in mind ...'); reported otherwise.";
 sem XFact.span = "The exact substring of the note this fact came from, copied verbatim.";
 
 sem XIntent.about_name = "The name of the person this intent is about.";
 sem XIntent.kind = "need if they want something from others in general (not something the author will deliver - that is a Promise), offer if they can give something, open_to otherwise.";
-sem XIntent.text = "A short statement of the intent. Refer to the person who wrote the note as 'you'; never 'the author', 'the speaker', 'the user', 'the writer'.";
+sem XIntent.text = "A short statement of the intent. Refer to the person who wrote the note as 'you'; never 'the author', 'the speaker', 'the user', 'the writer'. Write the statement itself, never a description of it — no 'The fact confirms/notes/states that...' or 'The note says...' preamble.";
 sem XIntent.span = "The exact substring of the note this intent came from, copied verbatim.";
 
 sem XPromise.to_name = "The name of the person the author promised something to (or their description, exactly as used in `people`, when they are not named).";
-sem XPromise.text = "Refer to the person who wrote the note as 'you'; never 'the author', 'the speaker', 'the user', 'the writer'. What the note's writer committed to: the concrete deliverable ('send the ROI deck'). A Promise requires the SPEAKER's own commitment ('I said', 'I'll', 'I promised', 'will send', 'owe', 'told her I'd', or a note-to-self like 'follow up'); a bare 'she wants X' or 'looking for X' is that person's need (an Intent), never a Promise. A bare 'follow up' is a Promise only when nothing more specific was promised.";
+sem XPromise.text = "Refer to the person who wrote the note as 'you'; never 'the author', 'the speaker', 'the user', 'the writer'. What the note's writer committed to: the concrete deliverable ('send the ROI deck'). A Promise requires the SPEAKER's own commitment ('I said', 'I'll', 'I promised', 'will send', 'owe', 'told her I'd', or a note-to-self like 'follow up'); a bare 'she wants X' or 'looking for X' is that person's need (an Intent), never a Promise. A bare 'follow up' is a Promise only when nothing more specific was promised. Write the deliverable itself, never a description of it — no 'The fact confirms/notes/states that...' or 'The note says...' preamble.";
 sem XPromise.due = "When the promise is due, if stated; empty string if not mentioned.";
 sem XPromise.span = "The exact substring of the note this promise came from, copied verbatim.";
 
