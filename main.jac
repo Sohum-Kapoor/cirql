@@ -16,7 +16,7 @@ import from exchange { PostRequest, ListIncomingRequests, ReplyToRequest, ListMy
 import from reverse { WhoNeedsWhatIHave }
 import from cards { PublishCard, get_card, MyCard }
 import from reads { Receipt, ListPromises, CompletePromise, GraphView }
-import from imports { ImportPeople, ConfirmPerson, SkipPerson }
+import from imports { ImportPeople, ConfirmPerson, ConfirmPeople, SkipPerson }
 import from drafts { DraftFollowUp }
 import from recall { Recall }
 import from freshness { FreshnessSweep, ReconfirmFact, ReconfirmIntent }

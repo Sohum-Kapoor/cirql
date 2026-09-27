@@ -1,5 +1,9 @@
 """Imports — LinkedIn export / phone contacts / vCard rows become proposed
-people (SOH-180, server half of SOH-181).
+people (SOH-180, server half of SOH-181). SOH-235: `ConfirmPeople` adds a
+bulk "confirm all" — one call instead of `ConfirmPerson` once per row for a
+300-row import. It shares `ConfirmPerson`'s exact per-person rule via the
+extracted `confirm_one(me, p, how_met)`, so `ConfirmPerson`'s own behavior
+is unchanged.
 
 OWNER: Person A. See contracts/walkers.md for the exact report shapes.
 Rows are parsed CLIENT-side (B's job); this module only ever sees
@@ -36,6 +40,7 @@ Person node itself — the explicit edge deletes make the intent obvious even
 though the final `del p;` would cascade-delete any edges left over.
 """
 
+import from jaclang { JacRuntime as Jac }
 import from schema { Me, Person, Note, Knows, Mentions }
 import from identity { refresh_person_tokens }
 import from datetime { datetime }
@@ -198,7 +203,31 @@ walker:priv ImportPeople {
     }
 }
 
-# ---------------------------------------------------------------- ConfirmPerson / SkipPerson
+# ---------------------------------------------------------------- ConfirmPerson / ConfirmPeople / SkipPerson
+
+"""Shared per-person confirm logic — `ConfirmPerson` and `ConfirmPeople` both
+call this once `p` has been resolved to a `[me ->:Knows:->]` person of the
+caller. Sets `Person.status` and the matching `Knows` edge `status` both to
+"confirmed"; `how_met` is overwritten only when non-empty. Returns
+`{"ok": True}` on success, `{"ok": False}` when `p` is not actually one of
+`me`'s `Knows` neighbors (no matching edge) — the same "not_found" condition
+`ConfirmPerson` already reported, now centralized so behavior can't drift
+between the single and bulk walkers."""
+def confirm_one(me: Me, p: Person, how_met: str) -> dict[str, any] {
+    matched = [edge me ->:Knows:-> p];
+    if not matched {
+        return {"ok": False};
+    }
+    e = matched[0] as Knows;
+
+    p.status = "confirmed";
+    e.status = "confirmed";
+    if len(how_met.strip()) > 0 {
+        e.how_met = how_met;
+    }
+
+    return {"ok": True};
+}
 
 walker:priv ConfirmPerson {
     """Confirm a proposed person after the swipe: `Person.status` and the
@@ -218,33 +247,107 @@ walker:priv ConfirmPerson {
         me = existing_me[0];
 
         target: Person | None = None;
-        target_edge: Knows | None = None;
         for p in [me ->:Knows:->] {
             if jid(p) == self.person_id {
                 target = p;
-                matched = [edge me ->:Knows:-> p];
-                if matched {
-                    target_edge = matched[0];
-                }
                 break;
             }
         }
 
-        if target is None or target_edge is None {
+        if target is None {
             report {"error": "not_found"};
             disengage;
         }
 
         p = target as Person;
-        e = target_edge as Knows;
-
-        p.status = "confirmed";
-        e.status = "confirmed";
-        if len(self.how_met.strip()) > 0 {
-            e.how_met = self.how_met;
+        outcome = confirm_one(me, p, self.how_met);
+        if not (outcome["ok"] as bool) {
+            report {"error": "not_found"};
+            disengage;
         }
 
         report p;
+    }
+}
+
+walker:priv ConfirmPeople {
+    """Bulk confirm for the import "Confirm all" swipe (SOH-235) — one call
+    instead of `ConfirmPerson` once per row. Same per-person rule as
+    `ConfirmPerson` (via the shared `confirm_one`): `Person.status` and the
+    matching `Knows` edge `status` both become "confirmed"; `how_met` is
+    overwritten only when non-empty, applied identically to every id in the
+    batch. Reports exactly one dict:
+        { confirmed: list[str], not_found: list[str], count: int,
+          skipped_over_limit: int (present only when person_ids > 1000) }
+    `confirmed` preserves `person_ids` order and includes ids that were
+    already confirmed (re-confirming is idempotent, not an error). An id
+    that doesn't resolve, isn't readable, isn't owned by this root, or isn't
+    a `[me ->:Knows:->]` person of the caller lands in `not_found` — nothing
+    outside the caller's own graph is ever read or written (`jobj` never
+    authorizes; `Jac.check_read_access` plus an exact owner-root match is
+    the actual gate, same idiom as `reads.sv.jac`/`goals.sv.jac`). Ids past
+    the first 1000 are not processed at all; their count rides on
+    `skipped_over_limit`."""
+    has person_ids: list[str];
+    has how_met: str = "";
+    has reports: list[dict[str, any]] = [];
+
+    can run with Root entry {
+        existing_me = [root --> [?:Me]];
+        if not existing_me {
+            report {"confirmed": [], "not_found": self.person_ids, "count": 0};
+            disengage;
+        }
+        me = existing_me[0];
+
+        limit = 1000;
+        ids = self.person_ids;
+        over_limit = 0;
+        if len(ids) > limit {
+            over_limit = len(ids) - limit;
+            ids = ids[:limit];
+        }
+
+        confirmed: list[str] = [];
+        not_found: list[str] = [];
+
+        for pid in ids {
+            try {
+                resolved = jobj(pid);
+            } except Exception {
+                resolved = None;
+            }
+            if resolved is None {
+                not_found.append(pid);
+                continue;
+            }
+            if not Jac.check_read_access(getattr(resolved, "__jac__")) {  # jac:ignore[E1053]
+                not_found.append(pid);
+                continue;
+            }
+            owner = str(getattr(resolved, "__jac__").root).replace("-", "");
+            if owner != jid(root) {
+                not_found.append(pid);
+                continue;
+            }
+            if not isinstance(resolved, Person) {
+                not_found.append(pid);
+                continue;
+            }
+            p = resolved as Person;
+            outcome = confirm_one(me, p, self.how_met);
+            if not (outcome["ok"] as bool) {
+                not_found.append(pid);
+                continue;
+            }
+            confirmed.append(pid);
+        }
+
+        rep: dict[str, any] = {"confirmed": confirmed, "not_found": not_found, "count": len(confirmed)};
+        if over_limit > 0 {
+            rep["skipped_over_limit"] = over_limit;
+        }
+        report rep;
     }
 }
 

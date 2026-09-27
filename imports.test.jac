@@ -8,10 +8,11 @@ ever or the hundredth, and that two tests never collide on the same
 lowercase name.
 """
 
-import from imports { ImportPeople, ConfirmPerson, SkipPerson, row_str, source_display }
+import from imports { ImportPeople, ConfirmPerson, ConfirmPeople, SkipPerson, row_str, source_display }
 import from schema { Me, Person, Note, Knows, Mentions }
 import from datetime { datetime }
 import uuid;
+import os;
 
 def _uid() -> str {
     return uuid.uuid4().hex[:8];
@@ -285,4 +286,143 @@ test "SOH-212 ImportPeople: 26 genuinely new rows all report is_new=true; the sa
     reused = again["imported"] as list[dict[str, any]];
     assert len(reused) == 3;
     assert not any([e["is_new"] as bool for e in reused]), "a reused name is is_new=false";
+}
+
+# ---------------------------------------------------------------- ConfirmPeople (SOH-235)
+
+test "SOH-235 ConfirmPeople: bulk-confirms three proposed people in one call" {
+    suffix = _uid();
+    rows: list[dict[str, any]] = [];
+    for i in range(3) {
+        rows.append({"name": f"Bulk235 {suffix} {i}"});
+    }
+    imported_result = (root spawn ImportPeople(rows=rows, source="csv")).reports[0] as dict[str, any];
+    imported = imported_result["imported"] as list[dict[str, any]];
+    assert len(imported) == 3;
+    ids = [jid(e["person"] as Person) for e in imported];
+
+    result = (root spawn ConfirmPeople(person_ids=ids, how_met="met at JacHacks")).reports[0] as dict[str, any];
+    assert result["count"] == 3, f"expected count 3, got {result}";
+    assert result["confirmed"] == ids, "confirmed order must follow person_ids";
+    assert result["not_found"] == [];
+
+    for e in imported {
+        p = e["person"] as Person;
+        assert p.status == "confirmed";
+    }
+
+    existing_me = [root --> [?:Me]];
+    assert existing_me;
+    me = existing_me[0];
+    for e in imported {
+        p = e["person"] as Person;
+        ke = ([edge me ->:Knows:-> p])[0];
+        assert ke.status == "confirmed";
+        assert ke.how_met == "met at JacHacks";
+    }
+
+    # Re-confirming the same batch is idempotent: still counted as confirmed.
+    result2 = (root spawn ConfirmPeople(person_ids=ids)).reports[0] as dict[str, any];
+    assert result2["count"] == 3;
+    assert result2["confirmed"] == ids;
+}
+
+test "SOH-235 ConfirmPeople: a bogus id lands in not_found alongside real confirms" {
+    suffix = _uid();
+    name = f"Bulk235B {suffix} Solo";
+    r1 = (root spawn ImportPeople(rows=[{"name": name}], source="csv")).reports[0] as dict[str, any];
+    imported = r1["imported"] as list[dict[str, any]];
+    assert len(imported) == 1;
+    real_id = jid(imported[0]["person"] as Person);
+    bogus_id = "not-a-real-jid-at-all";
+
+    result = (root spawn ConfirmPeople(person_ids=[real_id, bogus_id])).reports[0] as dict[str, any];
+    assert result["count"] == 1, f"expected count 1, got {result}";
+    assert result["confirmed"] == [real_id];
+    assert result["not_found"] == [bogus_id];
+}
+
+# ---------------------------------------------------------------- ConfirmPeople isolation (two real roots)
+
+import from jaclang.runtimelib.testing { JacTestClient }
+import shutil;
+import tempfile;
+
+glob IMPORTS_REPO_ROOT = os.path.dirname(os.path.abspath(__file__));
+
+"""Copy imports.sv.jac's whole import chain (schema, identity, names) plus
+walkers.sv.jac (for `ListPeople`, used to check a person's status without
+crossing accounts) into a fresh temp dir next to a dot-free `app.jac` —
+`JacTestClient.from_file` can't target a dotted `*.sv.jac` module name
+directly (AGENTS.md gotcha). Same approach `person.test.jac`/`gate.test.jac`
+already use."""
+def _confirm_bulk_harness(tmp_dir: str) -> str {
+    for name in ["schema.sv.jac", "names.sv.jac", "identity.sv.jac", "imports.sv.jac", "walkers.sv.jac"] {
+        shutil.copyfile(os.path.join(IMPORTS_REPO_ROOT, name), os.path.join(tmp_dir, name));
+    }
+    harness_path = os.path.join(tmp_dir, "app.jac");
+    f = open(harness_path, "w");
+    f.write(
+        "import from imports { ImportPeople, ConfirmPeople }\n"
+        "import from walkers { ListPeople }\n"
+    );
+    f.close();
+    t = open(os.path.join(tmp_dir, "jac.toml"), "w");
+    t.write(
+        "[project]\n"
+        "name = \"imports-bulk-harness\"\n"
+        "version = \"0.1.0\"\n"
+        "entry-point = \"app.jac\"\n"
+        "\n"
+        "[plugins.scale.microservices]\n"
+        "enabled = false\n"
+    );
+    t.close();
+    return harness_path;
+}
+
+def _confirm_bulk_register(client: JacTestClient, email: str) -> str {
+    reg = client.register_user(email, "password123");
+    assert reg.ok, f"register {email} failed: {reg.status_code} {reg.text}";
+    return str((reg.data or {})["token"]);
+}
+
+def _confirm_bulk_call(client: JacTestClient, token: str, wname: str, body: dict[str, any]) -> list[any] {
+    client.set_auth_token(token);
+    resp = client.post(f"/walker/{wname}", json=body);
+    assert resp.ok, f"{wname} failed: {resp.status_code} {resp.text}";
+    return list(resp.data["reports"]);
+}
+
+test "SOH-235 isolation: an id from account B is not_found when confirmed via A's root; B's person stays proposed" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_confirm_bulk_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _confirm_bulk_register(cl, "confirm_bulk_a@example.com");
+        b = _confirm_bulk_register(cl, "confirm_bulk_b@example.com");
+
+        b_imported = _confirm_bulk_call(cl, b, "ImportPeople", {
+            "rows": [{"name": "Bulk235 Isolation Target"}], "source": "csv"
+        });
+        b_result = b_imported[0] as dict[str, any];
+        b_person_id = str(((b_result["imported"] as list[any])[0] as dict[str, any])["person"]["_jac_id"]);
+        print(f"[confirm bulk isolation] B seeded person_id={b_person_id}");
+
+        a_confirm = _confirm_bulk_call(cl, a, "ConfirmPeople", {"person_ids": [b_person_id]});
+        a_out = a_confirm[0] as dict[str, any];
+        print(f"[confirm bulk isolation] A's ConfirmPeople on B's person -> {a_out}");
+        assert a_out["count"] == 0, f"A must never confirm B's person: {a_out}";
+        assert a_out["confirmed"] == [];
+        assert a_out["not_found"] == [b_person_id];
+
+        b_people = _confirm_bulk_call(cl, b, "ListPeople", {});
+        b_row = b_people[0] as dict[str, any];
+        print(f"[confirm bulk isolation] B's own ListPeople after A's attempt -> {b_row}");
+        assert b_row["status"] == "proposed", "B's person must stay proposed after A's failed cross-root confirm";
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
 }
