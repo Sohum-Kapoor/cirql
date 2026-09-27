@@ -25,6 +25,7 @@ import from ..ui.skeleton { Skeleton }
 import from .CardPreview { CardPreview }
 import from ...lib.text { join_lines, split_lines }
 import from ..api_card { my_card, publish_card_full }
+import from ...lib.toast { toast }
 
 """Non-blank, trimmed lines only — an editor textarea with a trailing blank
 line (or all blank) should never turn into `[""]` on save."""
@@ -146,6 +147,7 @@ def:pub CardEditor() -> JsxElement {
             } else {
                 apply_card(card);
                 save_state = "Card saved · " + _visibility_label(visibility);
+                toast(save_state, "success");
             }
         } except Exception as err {
             save_error = "Couldn't save your card. " + str(err);
@@ -265,7 +267,6 @@ def:pub CardEditor() -> JsxElement {
                             <p role="alert" className="flex-1 text-body-sm text-destructive">{save_error}</p>
                             <Button size="sm" variant="outline" onClick={do_save}>Retry</Button>
                         </div>}
-                    {save_state and <p className="text-body-sm text-success-text">{save_state}</p>}
                 </CardContent>
                 <CardFooter>
                     <Button className="w-full" disabled={saving} onClick={do_save}>

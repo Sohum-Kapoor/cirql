@@ -10,6 +10,7 @@ import from react { useEffect }
 import from ..ui.badge { Badge }
 import from ..ui.button { Button }
 import from ...lib.utils { cn }
+import from ...lib.toast { toast }
 
 glob REQ_LABEL: dict[str, str] = {
          "open": "Asked",
@@ -99,6 +100,9 @@ def:pub DraftBlock(title: str, text: str, note: str = "") -> JsxElement {
             ok = False;
         }
         copied = ok;
+        if ok {
+            toast("Copied");
+        }
     }
 
     return
