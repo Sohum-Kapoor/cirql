@@ -17,8 +17,8 @@ import shutil;
 import tempfile;
 import sys;
 import json;
-import from agent { make_finding, _rank, _clip }
-import from schema { AgentAction }
+import from agent { make_finding, _rank, _clip, step_new_match }
+import from schema { AgentAction, Me, Person, Goal, HasGoal, RelevantTo, Note, Fact, Asserts, FactAbout }
 
 glob AG_REPO_ROOT = os.path.dirname(os.path.abspath(__file__));
 
@@ -35,7 +35,8 @@ def _ag_harness(tmp_dir: str) -> str {
     f = open(harness_path, "w");
     f.write(
         "import from agent { RunAgent, ListAgentActions, ResolveAgentAction, DevSeedAgent }\n"
-        "import from exchange { PostRequest, ListMyRequests, ListIncomingRequests, DevMakeCard }\n"
+        "import from exchange { PostRequest, ListMyRequests, ListIncomingRequests, DevMakeCard, DevSeedMatch }\n"
+        "import from walkers { DevAddPerson }\n"
     );
     f.close();
     t = open(os.path.join(tmp_dir, "jac.toml"), "w");
@@ -230,6 +231,120 @@ test "agent: RunAgent proposes, dedups, respects dismiss, reopens snooze, approv
         print(f"[agent] B run {b_run}");
     } finally {
         _ag_restore_scorer(orig);
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+# ---------------------------------------------------------------- SOH-223 tune
+#
+# `step_new_match` and `step_answer_ask`'s deterministic candidate filter are
+# exercised directly (same idiom `edits.test.jac` uses for `update_person_for`):
+# a hand-built `me`/`goal`/`Person` graph, never through `root spawn`, since a
+# walker's own `[root --> [?:Me]][0]` pick is ambiguous once more than one
+# test has left a `Me` on the shared persisted `jac-testing` root. Each test
+# below passes its OWN `goal` (or `me`) into the plain def, so results never
+# leak across tests even though the underlying root is shared.
+
+"""One RelevantTo(person, goal) pair with one resolvable Fact as evidence, so
+`step_new_match` can see it. Returns the person's jid."""
+def _nm_seed(goal: Goal, name: str, strength: str, observed_at: str) -> str {
+    note = (root ++> Note(text=f"{name} note", kind="debrief", captured_at=observed_at))[0];
+    fact = (note +>:Asserts(span=f"{name} span"):+> Fact(text=f"{name} is relevant", observed_at=observed_at))[0];
+    p = (root ++> Person(name=name))[0];
+    fact +>:FactAbout:+> p;
+    p +>:RelevantTo(reason=f"{name} matches", strength=strength, evidence=[jid(fact)]):+> goal;
+    return jid(p);
+}
+
+test "agent tune: step_new_match caps the first run at 3, strong before medium, newest evidence breaks ties" {
+    me = (root ++> Me(name="Tune-test FirstRun Me"))[0];
+    goal = (me +>:HasGoal:+> Goal(text="Tune-test firstrun goal", created_at="2026-01-01T00:00:00"))[0];
+
+    # 4 strong (oldest -> newest p1..p4) + 2 medium (p6 older than p5), all resolvable.
+    p1 = _nm_seed(goal, "Tune FR P1", "strong", "2026-01-01T00:00:01");
+    p2 = _nm_seed(goal, "Tune FR P2", "strong", "2026-01-01T00:00:02");
+    p3 = _nm_seed(goal, "Tune FR P3", "strong", "2026-01-01T00:00:03");
+    p4 = _nm_seed(goal, "Tune FR P4", "strong", "2026-01-01T00:00:04");
+    p5 = _nm_seed(goal, "Tune FR P5", "medium", "2026-01-01T00:00:06");
+    p6 = _nm_seed(goal, "Tune FR P6", "medium", "2026-01-01T00:00:05");
+
+    current1: dict[str, str] = {};
+    findings1 = step_new_match([goal], None, current1);
+    proposed1 = [f for f in findings1 if bool(f["propose"])];
+    proposed_pids1 = sorted([str(f["person_id"]) for f in proposed1]);
+    assert len(proposed1) == 3, findings1;
+    # newest 3 STRONG people win: p1 (oldest strong) and both mediums (p5, p6,
+    # despite newer evidence than p1) are excluded — strong ranks before medium.
+    assert proposed_pids1 == sorted([p2, p3, p4]), (proposed_pids1, [p1, p2, p3, p4, p5, p6]);
+    assert len(current1) == 6;   # every strength seen is remembered for next run, including the 3 not proposed
+
+    # ---- "second run" with nothing changed (same strengths read back as `prior`) -> nothing new
+    findings2 = step_new_match([goal], current1, {});
+    proposed2 = [f for f in findings2 if bool(f["propose"])];
+    assert len(proposed2) == 0, findings2;
+}
+
+test "agent tune: step_new_match proposes only on a real rank rise (medium -> strong)" {
+    me = (root ++> Me(name="Tune-test Rise Me"))[0];
+    goal = (me +>:HasGoal:+> Goal(text="Tune-test rise goal", created_at="2026-01-01T00:00:00"))[0];
+    pid = _nm_seed(goal, "Tune Rise P", "medium", "2026-01-01T00:00:00");
+    prior: dict[str, str] = {f"{pid}|{jid(goal)}": "medium"};
+
+    # unchanged (still medium) -> not proposed
+    unchanged = step_new_match([goal], prior, {});
+    assert len([f for f in unchanged if bool(f["propose"])]) == 0, unchanged;
+
+    # the stored strength rises to strong
+    people = [goal <-:RelevantTo:<-];
+    rel = [edge people[0] ->:RelevantTo:-> goal][0];
+    rel.strength = "strong";
+
+    risen = step_new_match([goal], prior, {});
+    proposed = [f for f in risen if bool(f["propose"])];
+    assert len(proposed) == 1, risen;
+    assert str(proposed[0]["person_id"]) == pid;
+}
+
+test "agent tune: answer_ask needs real token overlap; a real 2-token match names them in why" {
+    tmp_dir = tempfile.mkdtemp();
+    try {
+        cl = JacTestClient.from_file(_ag_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data_tune"));
+        a = _ag_reg(cl, "agent_tune_a2@example.com");
+        b = _ag_reg(cl, "agent_tune_b2@example.com");
+
+        _ag_run(cl, a, "DevMakeCard", {"handle": "tune2-alice", "name": "Alice"});
+        _ag_run(cl, b, "DevMakeCard", {"handle": "tune2-bob", "name": "Bob"});
+        seed = dict(_ag_run(cl, a, "DevSeedAgent", {"tag": "tune2"})[0]);
+        print(f"[agent-tune] seed {seed}");
+
+        posted = _ag_run(cl, b, "PostRequest", {
+            "need": "experienced nurses in Detroit", "about_line": "Building a clinic", "audience": "everyone"
+        });
+        req_id = str(posted[0]["_jac_id"]);
+
+        # ---- A's whole graph (climate/robotics) has no nurse/Detroit tokens -> 0 answer_ask
+        run1 = dict(_ag_run(cl, a, "RunAgent", {"reason": "tune-nomatch"})[0]);
+        print(f"[agent-tune] run1 {run1}");
+        rows1 = _ag_actions(cl, a, "open");
+        assert len(_ag_by_kind(rows1, "answer_ask")) == 0, rows1;
+
+        # ---- add one person whose OWN facts share >= 2 tokens with the need
+        _ag_run(cl, a, "DevAddPerson", {"name": "Tune Nurse"});
+        seedm = dict(_ag_run(cl, a, "DevSeedMatch", {
+            "name": "Tune Nurse", "fact": "nurse at Michigan Medicine, Detroit", "offer": ""
+        })[0]);
+        print(f"[agent-tune] seedm {seedm}");
+
+        run2 = dict(_ag_run(cl, a, "RunAgent", {"reason": "tune-match"})[0]);
+        print(f"[agent-tune] run2 {run2}");
+        rows2 = _ag_actions(cl, a, "open");
+        aa2 = _ag_by_kind(rows2, "answer_ask");
+        assert len(aa2) == 1, rows2;   # only the nurse candidate qualifies, capped list stays at 1
+        assert str(aa2[0]["action"]["request_id"]) == req_id;
+        why = str(aa2[0]["action"]["why"]);
+        assert "matches:" in why, why;
+        assert "nurse" in why.lower() and "detroit" in why.lower(), why;
+    } finally {
         shutil.rmtree(tmp_dir, ignore_errors=True);
     }
 }
