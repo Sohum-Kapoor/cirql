@@ -167,13 +167,13 @@ def agent_map_put(key: str, aid: str, value: any) -> None {
 
 def agent_err_text(code: str) -> str {
     if code == "not_found" {
-        return "That suggestion is gone — run the agent again.";
+        return "That suggestion is gone — check again.";
     }
     if code == "invalid_state" {
         return "That was already handled — nothing changed.";
     }
     if code == "not_live" {
-        return "Your agent isn't switched on yet.";
+        return "Cirql isn't switched on yet.";
     }
     if code == "not_visible" {
         return "That ask isn't visible to you anymore.";
@@ -540,7 +540,7 @@ def:pub app -> JsxElement {
                     onSignup={signup}
                 />
             } elif view == "loading" {
-                <p key="loading" role="status" data-theme-boot={BOOT_THEME} className="pt-10 text-body-sm text-muted-foreground">Loading your graph…</p>
+                <p key="loading" role="status" data-theme-boot={BOOT_THEME} className="pt-10 text-body-sm text-muted-foreground">Loading your people…</p>
             } elif view == "home" {
                 <div key="home" className="flex flex-col gap-3">
                 {post_capture_summary and

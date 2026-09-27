@@ -19,6 +19,21 @@ import from ...lib.utils { cn }
 
 glob _FALLBACK_PREFIXES: list[str] = ["Extraction unavailable", "Ranking unavailable", "No ranking returned"];
 
+"""Relevance label as user-facing copy. "known" carries no information (it's
+the default/no-path-needed case) so it renders nothing."""
+def _relevance_label(label: str) -> str {
+    if label == "known" {
+        return "";
+    }
+    if label == "cold" {
+        return "no path yet";
+    }
+    if label == "route" {
+        return "via a friend";
+    }
+    return label;
+}
+
 def:pub strength_variant(strength: str) -> str {
     if strength == "strong" {
         return "default";
@@ -102,6 +117,7 @@ def:pub RankRow(
         }
     }
     has_open: bool = open_key.startswith(pid + ":");
+    relevance_label: str = _relevance_label(row["label"] as str);
 
     # Row tap opens the person sheet; taps on the row's own buttons/links don't.
     def handle_row(e: MouseEvent) {
@@ -136,7 +152,7 @@ def:pub RankRow(
                 }}
                 <div className="flex shrink-0 gap-1">
                     <Badge variant={strength_variant(row["strength"] as str)}>{row["strength"] as str}</Badge>
-                    <Badge variant="outline">{row["label"] as str}</Badge>
+                    {relevance_label and <Badge variant="outline">{relevance_label}</Badge>}
                 </div>
             </div>
             <p className="text-body-sm text-ink-muted">{row["reason"] as str}</p>

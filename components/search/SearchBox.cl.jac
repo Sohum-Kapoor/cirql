@@ -1,12 +1,12 @@
 """SearchBox (SOH-222 A5): find a person, a fact, a want/offer, a promise, or a
-note across your own graph, and ask a plain-English question of it.
+note across your own people, and ask a plain-English question of it.
 
 An input with a 250ms debounce calls `Search(query, limit=25)` on every
 keystroke and renders the results grouped People -> Facts -> Wants/offers ->
 Promises -> Notes, each row with a kind badge, the matched text (query tokens
 highlighted), the person's name as a link (`on_open_person`), and a source
 chip quoting the `span` it came from. When the query looks like a question
-(ends in "?", or starts with who/what/when/.../how), an "Ask your graph" card
+(ends in "?", or starts with who/what/when/.../how), an "Ask your people" card
 also appears; Enter calls `Recall(question)` and renders its answer plus
 citation chips.
 
@@ -254,12 +254,12 @@ def:pub RecallCard(
     return
         <div className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
             <div className="flex items-baseline justify-between">
-                <h2 className="text-eyebrow text-muted-foreground">Ask your graph</h2>
+                <h2 className="text-eyebrow text-muted-foreground">Ask your people</h2>
                 {(not has_answer) and (not loading) and (not error) and
                     <span className="text-caption text-muted-foreground">Press Enter to ask</span>}
             </div>
             {if loading {
-                <div role="status" aria-label="Asking your graph" className="flex flex-col gap-2">
+                <div role="status" aria-label="Asking your people" className="flex flex-col gap-2">
                     <Skeleton className="h-4 w-3/4" />
                     <Skeleton className="h-3 w-1/2" />
                 </div>
@@ -347,7 +347,7 @@ def:pub SearchBox(
             total = (out["total"] or 0) as int;
             error = "";
         } except Exception as err {
-            error = "Couldn't search your graph. " + str(err);
+            error = "Couldn't search your people. " + str(err);
             results = [];
             total = 0;
         }
@@ -377,7 +377,7 @@ def:pub SearchBox(
             out = await recall(q);
             recall_answer = out;
         } except Exception as err {
-            recall_error = "Couldn't ask your graph. " + str(err);
+            recall_error = "Couldn't ask your people. " + str(err);
             recall_answer = {};
         }
         recall_loading = False;
@@ -473,7 +473,7 @@ def:pub SearchBox(
                     aria-controls="search-results-listbox"
                     aria-activedescendant={active_descendant}
                     aria-autocomplete="list"
-                    aria-label="Search your graph"
+                    aria-label="Search your people"
                     className="pl-9 pr-9"
                 />
                 {query and
@@ -502,7 +502,7 @@ def:pub SearchBox(
             {trimmed_query and
                 <div id="search-results-listbox" role="listbox" aria-label="Search results" className="flex flex-col gap-3">
                     {if loading and not searched {
-                        <div role="status" aria-label="Searching your graph" className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
+                        <div role="status" aria-label="Searching your people" className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
                             <Skeleton className="h-4 w-3/4" />
                             <Skeleton className="h-3 w-1/3" />
                         </div>

@@ -471,7 +471,7 @@ def:pub GraphView(
             out = await graph_view(goal_id);
         } except Exception as e {
             if reqRef.current == token {
-                error = "Couldn't load your graph. " + str(e);
+                error = "Couldn't load your people. " + str(e);
                 loading = False;
             }
             return;
@@ -518,9 +518,9 @@ def:pub GraphView(
     );
 
     return
-        <section aria-label="Your graph" className="flex flex-col gap-2 pb-24">
+        <section aria-label="Your people" className="flex flex-col gap-2 pb-24">
             <div className="flex items-center justify-between gap-2">
-                <h2 className="text-eyebrow text-muted-foreground">Your graph</h2>
+                <h2 className="text-eyebrow text-muted-foreground">Your people</h2>
                 <span className="text-caption tabular-nums text-muted-foreground">
                     {("Loading…" if loading else str(people) + (" person" if people == 1 else " people") + ("" if has_goal else " · no goal"))}
                 </span>
@@ -535,13 +535,13 @@ def:pub GraphView(
                 style={{"height": height} if height else {}}
             >
                 {if loading and not graph["nodes"] {
-                    <div role="status" aria-label="Loading your graph" className="flex h-full flex-col items-center justify-center gap-3">
+                    <div role="status" aria-label="Loading your people" className="flex h-full flex-col items-center justify-center gap-3">
                         <Skeleton className="size-10 rounded-full" />
                         <Skeleton className="h-3 w-40" />
                     </div>
                 } elif not loading and people == 0 and not error {
                     <div className="flex h-full flex-col items-center justify-center gap-1 pl-6 pr-6 text-center">
-                        <p className="text-body-sm">No people in your graph yet.</p>
+                        <p className="text-body-sm">No people yet.</p>
                         <p className="text-caption text-muted-foreground">Capture a conversation and the people in it show up here.</p>
                     </div>
                 } else {

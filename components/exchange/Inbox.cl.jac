@@ -28,7 +28,7 @@ import from ...lib.utils { cn }
 """The ask in one line. Only a friends-audience ask (SOH-218) is from a friend;
 an "everyone" ask can come from anyone on Cirql, so it doesn't claim friendship."""
 def:pub ask_line(req: dict) -> str {
-    who: str = "A friend's agent" if req["audience"] == "friends" else "An agent on the exchange";
+    who: str = "A friend" if req["audience"] == "friends" else "Someone on Cirql";
     return who + " is looking for " + ((req["need"] or "") as str) + ".";
 }
 
@@ -115,7 +115,7 @@ def:pub OtherAskRow(req: dict) -> JsxElement {
             </div>
             {req["about_line"] and <span className="text-caption text-muted-foreground">{req["about_line"] as str}</span>}
             <span className="text-caption text-muted-foreground">{"from @" + (req["from_handle"] as str)}</span>
-            <span className="text-caption text-ink-muted">Your agent found no match; nothing to approve.</span>
+            <span className="text-caption text-ink-muted">Cirql found no match; nothing to approve.</span>
         </li>;
 }
 
@@ -133,7 +133,7 @@ def:pub OtherAsksSection(other: list[dict]) -> JsxElement {
         return <span hidden={True} />;
     }
     return
-        <section aria-label="Other asks on the exchange" className="flex flex-col gap-2">
+        <section aria-label="Other asks" className="flex flex-col gap-2">
             <Button
                 type="button"
                 variant="ghost"
@@ -142,7 +142,7 @@ def:pub OtherAsksSection(other: list[dict]) -> JsxElement {
                 aria-expanded={open}
                 onClick={toggle}
             >
-                <span>{"Other asks on the exchange (" + str(len(other)) + ")"}</span>
+                <span>{"Other asks (" + str(len(other)) + ")"}</span>
                 {<ChevronDownIcon className="size-4" /> if open else <ChevronRightIcon className="size-4" />}
             </Button>
             {if open {
@@ -167,7 +167,7 @@ def:pub AsksSection(
     incoming: list[dict],
     friend: dict,
     onOpen: Callable[[str], None],
-    title: str = "Asks on the exchange"
+    title: str = "Asks"
 ) -> JsxElement {
     has auto: dict = {},
         checked_ids: list[str] = [],
@@ -262,7 +262,7 @@ def:pub AsksSection(
         <div className="flex flex-col gap-3">
             {auto_running and checking_now > 0 and
                 <p role="status" className="text-caption text-muted-foreground">
-                    {"Checking " + str(checking_now) + (" ask" if checking_now == 1 else " asks") + " against your graph…"}
+                    {"Checking " + str(checking_now) + (" ask" if checking_now == 1 else " asks") + " against your people…"}
                 </p>}
             {if len(needs) > 0 {
                 <section aria-label={title} className="flex flex-col gap-3">
@@ -348,7 +348,7 @@ def:pub ApprovalView(
                     {if status == "new" or status == "checking" {
                         if busy {
                             <div role="status" className="flex flex-col gap-2 rounded-md bg-secondary pt-3 pb-3 pl-3 pr-3">
-                                <span className="text-body-sm text-muted-foreground">Checking your graph on this phone…</span>
+                                <span className="text-body-sm text-muted-foreground">Checking your people on this phone…</span>
                                 <Skeleton className="h-3 w-2/3" />
                             </div>
                         } else {
@@ -365,7 +365,7 @@ def:pub ApprovalView(
                             <p className="text-body font-medium">{"You have " + match_phrase(reply) + " in your network."}</p>
                             <div className="flex flex-col gap-0.5">
                                 <span className="text-eyebrow text-muted-foreground">Why it fits</span>
-                                <p className="text-caption text-ink-muted">Cirql checked your graph on this phone; nothing leaves it until you approve.</p>
+                                <p className="text-caption text-ink-muted">Cirql checked your people on this phone; nothing leaves it until you approve.</p>
                             </div>
                         </div>
                     }}

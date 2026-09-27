@@ -56,7 +56,7 @@ def:pub req_summary(status: str, replies: list[dict], claimed: bool) -> str {
         return "The card arrived." if claimed else "Card shared — opening it…";
     }
     if not best["_jac_id"] {
-        return "Waiting for friends' agents to check their own graphs…";
+        return "Waiting for friends to check their own people…";
     }
     via: str = "@" + (best["from_handle"] as str);
     if (best["match_count"] or 0) == 0 {
@@ -253,7 +253,7 @@ def:pub RequestDetail(
                         </ul>}
                     {req_active(status) and
                         <p className="text-caption text-muted-foreground">
-                            Friends' agents each check their own graph and answer with a count and a strength — no name — until the friend and their contact both say yes.
+                            Friends each check their own people and answer with a count and a strength — no name — until the friend and their contact both say yes.
                         </p>}
                     {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
                     {req_active(status) and

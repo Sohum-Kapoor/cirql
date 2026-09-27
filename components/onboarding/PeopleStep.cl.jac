@@ -93,7 +93,7 @@ def:pub PeopleStep(
                 <div className="flex flex-col gap-2">
                     <p role="status" className="rounded-lg bg-success/10 pt-3 pb-3 pl-4 pr-4 text-body-sm text-success-text">
                         <span className="font-medium tabular-nums">{str(captured_count)}</span>
-                        {" " + ("person" if captured_count == 1 else "people") + " added to your graph."}
+                        {" " + ("person" if captured_count == 1 else "people") + " added."}
                     </p>
                     <Button className="w-full" size="lg" onClick={handle_next}>Continue</Button>
                 </div>

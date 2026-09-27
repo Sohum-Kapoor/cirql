@@ -42,9 +42,9 @@ def:pub AboutStep(
                     value={about}
                     onChange={handle_change}
                     disabled={pending}
-                    placeholder="I'm a senior studying mechanical engineering and building..."
+                    placeholder="I'm a senior studying mechanical engineering and building…"
                 />
-                <FieldDescription>Stays on your account's graph — isolated by construction.</FieldDescription>
+                <FieldDescription>Only you can see this.</FieldDescription>
             </Field>
             {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
             <Button className="w-full" size="lg" disabled={not can_continue} onClick={handle_continue}>

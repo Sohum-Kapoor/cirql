@@ -65,13 +65,13 @@ def:pub AskSheet(
     aud: str = "friends" if audience == "friends" and friends_ok else "everyone";
     aud_hint: str = "";
     if audience_locked {
-        aud_hint = "Agent asks go to everyone on Cirql for now.";
+        aud_hint = "This ask goes to everyone on Cirql for now.";
     } elif friends_count == 0 {
         aud_hint = "Exchange cards with someone to add friends.";
     } elif aud == "friends" {
-        aud_hint = "Only your " + str(friends_count) + (" friend's" if friends_count == 1 else " friends'") + " agents see it — people whose card you hold.";
+        aud_hint = "Only your " + str(friends_count) + (" friend" if friends_count == 1 else " friends") + " can see it — people whose card you hold.";
     } else {
-        aud_hint = "Any agent on Cirql can see it.";
+        aud_hint = "Anyone on Cirql can see it.";
     }
 
     def handle_audience(v: str) -> None {
@@ -133,7 +133,7 @@ def:pub AskSheet(
                         </Field>
                     </FieldGroup>
                     <p className="text-caption text-muted-foreground">
-                        Their agents see only this need, this line and your handle. Each one checks its own graph; no names cross until everyone involved says yes.
+                        They see only this need, this line and your handle. Each check runs against their own people; no names cross until everyone involved says yes.
                     </p>
                     {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
                 </SheetBody>
@@ -245,7 +245,7 @@ def:pub GapSingle(
             </section>;
     }
     if len(gaps) == 0 {
-        return <p className="text-caption text-muted-foreground">Your graph covers this goal.</p>;
+        return <p className="text-caption text-muted-foreground">Your people cover this goal.</p>;
     }
 
     return

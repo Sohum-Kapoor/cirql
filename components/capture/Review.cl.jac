@@ -351,7 +351,7 @@ def:pub IntentItem(
             onToggle={onToggle}
             corrected={bool(row["corrected"])}
             editing={st["editing"] as bool}
-            edit_label="Edit intent"
+            edit_label="Edit want"
             onEdit={onEdit}
             editor={<TextEditor
                 row_id={iid}
@@ -769,7 +769,7 @@ def:pub Review(
                 </h1>
                 {total > 0 and
                     <p className="text-body-sm text-muted-foreground">
-                        Saved to your graph. Tap source to see the words it came from, or the pencil to fix anything.
+                        Saved. Tap source to see the words it came from, or the pencil to fix anything.
                     </p>}
             </header>
             {if total == 0 and removed > 0 {
@@ -827,7 +827,7 @@ def:pub Review(
                 </ReviewSection>
             }}
             {if len(intents) > 0 {
-                <ReviewSection title="Intents" count={len(intents)}>
+                <ReviewSection title="Wants" count={len(intents)}>
                     {for row in intents {
                         <IntentItem
                             key={"i-" + _id_of(row["intent"])}

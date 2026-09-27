@@ -109,7 +109,7 @@ impl app.logout -> None {
     req_error = "";
     me_name = "";
     me_about = "";
-    status = "logged out";
+    status = "";
 }
 
 # ---------------------------------------------------------------- routing after login
@@ -1131,7 +1131,7 @@ impl app.load_actions -> None {
         found = await list_agent_actions("open", 30);
     } except Exception as e {
         AGENT["loaded"] = True;
-        AGENT["error"] = "Couldn't load your agent's suggestions.";
+        AGENT["error"] = "Couldn't load your suggestions.";
         publish_agent();
         return;
     }
@@ -1169,7 +1169,7 @@ impl app.run_agent_now(reason: str) -> None {
         out = {"error": "failed"};
     }
     if out["error"] {
-        AGENT["error"] = "Your agent couldn't finish that run — try again.";
+        AGENT["error"] = "Couldn't finish that check — try again.";
     } else {
         last: dict = {
             "ran_at": (out["ran_at"] or "") as str,

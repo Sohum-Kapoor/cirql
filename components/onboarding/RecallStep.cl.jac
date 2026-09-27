@@ -50,7 +50,7 @@ def:pub RecallStep(
                     <div className="flex flex-col gap-0.5">
                         <span className="text-eyebrow text-muted-foreground">For your goal</span>
                         <span className="text-body-sm text-foreground">{goal_text}</span>
-                        <span className="text-caption text-muted-foreground">here's who you already know</span>
+                        <span className="text-caption text-muted-foreground">Here's who you already know</span>
                     </div>
                 } else {
                     <p className="text-body-sm text-muted-foreground">
@@ -63,7 +63,7 @@ def:pub RecallStep(
                 <NewGoalForm draft={draft} busy={goal_busy} autoFocus={False} onDraft={set_draft} onSave={save_goal} />
             } elif pending {
                 <div className="flex flex-col gap-2">
-                    <span role="status" className="text-caption text-muted-foreground">Walking your graph…</span>
+                    <span role="status" className="text-caption text-muted-foreground">Reading your notes…</span>
                     <RankSkeleton />
                 </div>
             } elif len(rows) == 0 and not error {
