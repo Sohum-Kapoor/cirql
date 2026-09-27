@@ -31,7 +31,7 @@ obj OnboardExtraction {
 }
 sem OnboardExtraction.name = "The speaker's own name if they state it (e.g. 'I'm Sam, ...' -> 'Sam'), else empty.";
 sem OnboardExtraction.interests = "5 to 10 short topic phrases the person is into (e.g. 'accessible robotics'), lowercase, no duplicates.";
-sem OnboardExtraction.goals = "1 to 3 concrete outcomes the person is trying to achieve, phrased as the ask (e.g. 'Raise a pre-seed round from climate-tech investors', 'Land a summer 2027 VC internship'); never a description of what they do or build.";
+sem OnboardExtraction.goals = "1 to 3 concrete outcomes the person is trying to achieve in the coming months. A goal is any outcome the writer is working toward or wants to achieve, whether or not they call it a goal: raising a round, landing an internship or job, recruiting participants, finding a co-founder, getting feedback from a group. Phrase it as the ask (e.g. 'Raise a pre-seed from climate-tech investors', 'Land a summer 2027 VC internship'), not a description of what they build.";
 sem OnboardExtraction.needs = "What they are looking for from other people (intros, feedback, hires, funding), each one short phrase.";
 sem OnboardExtraction.offers = "What they can offer others (skills, access, resources), each one short phrase.";
 sem OnboardExtraction.headline = "A one-line headline for a contact card, under 80 characters.";
@@ -179,6 +179,34 @@ def collect_goals(me: Me, existing_goals: list[Goal], goal_texts: list[str], now
     return goals;
 }
 
+"""SOH-164: when extraction (after `collect_goals`/dedupe) found no goal at
+all but the person did surface at least one need, don't leave them with an
+empty Goals list — promote the `strongest_need` to an active Goal, get-or-
+create like any other goal (`find_goal_by_text` against `existing_goals`
+first). The need's Intent is untouched by this and is created/kept
+separately; the ask is reachable as both a Goal and an Intent. No-op (returns
+`goals` unchanged) when `goals` already has something or `needs` is empty."""
+def promote_strongest_need(me: Me, existing_goals: list[Goal], goals: list[Goal], needs: list[str], now: str) -> list[Goal] {
+    if goals or not needs {
+        return goals;
+    }
+    text = strongest_need(needs);
+    if text == "" {
+        return goals;
+    }
+    found_g = find_goal_by_text(existing_goals, text);
+    if found_g {
+        promoted = found_g;
+    } else {
+        promoted = (me +>:HasGoal:+> Goal(text=text, created_at=now))[0];
+        existing_goals.append(promoted);
+    }
+    if promoted not in goals {
+        goals.append(promoted);
+    }
+    return goals;
+}
+
 def find_intent(items: list[Intent], kind: str, text_lower: str) -> Intent | None {
     for i in items {
         if i.kind == kind and i.text.lower() == text_lower {
@@ -188,17 +216,68 @@ def find_intent(items: list[Intent], kind: str, text_lower: str) -> Intent | Non
     return None;
 }
 
+"""SOH-164: outcome-shaped words/phrases. Shared by `looks_like_goal` (an
+"I'm ..." ask still counts as a goal if it names one of these) and
+`strongest_need` (which need reads most like a goal when none was stated)."""
+glob GOAL_OUTCOME_KEYWORDS: list[str] = [
+    "raise", "land", "get", "find", "hire", "recruit", "close", "launch",
+    "ship", "intro", "internship", "job", "funding", "round", "feedback",
+    "participants", "co-founder", "customers", "pilot"
+];
+
+def has_outcome_keyword(text: str) -> bool {
+    t = text.lower();
+    for kw in GOAL_OUTCOME_KEYWORDS {
+        if kw in t {
+            return True;
+        }
+    }
+    return False;
+}
+
 """Reject candidates that describe what the person does/builds rather than
-asking for an outcome. Case-insensitive prefix check on the stripped text."""
+asking for an outcome. Case-insensitive prefix check on the stripped text —
+loosened (SOH-164) so an ask phrased like a need ("I'm raising a pre-seed
+round...") is not thrown out just because it starts with "I'm"/"we are": a
+bad-prefixed candidate still counts as a goal if it names an outcome
+(`has_outcome_keyword`)."""
 def looks_like_goal(text: str) -> bool {
     t = text.strip().lower();
     bad_prefixes = ["i am", "i'm", "i build", "i work", "we build", "we are"];
     for prefix in bad_prefixes {
         if t.startswith(prefix) {
-            return False;
+            return has_outcome_keyword(t);
         }
     }
     return True;
+}
+
+"""SOH-164: which need reads most like the outcome the person is actually
+after — the longest one that names an outcome (`has_outcome_keyword`), else
+just the first non-empty need. Empty string when `needs` is empty/blank."""
+def strongest_need(needs: list[str]) -> str {
+    best = "";
+    best_len = -1;
+    for n in needs {
+        nt = n.strip();
+        if nt == "" {
+            continue;
+        }
+        if has_outcome_keyword(nt) and len(nt) > best_len {
+            best = nt;
+            best_len = len(nt);
+        }
+    }
+    if best != "" {
+        return best;
+    }
+    for n in needs {
+        nt = n.strip();
+        if nt != "" {
+            return nt;
+        }
+    }
+    return "";
 }
 
 """Set the FIRST goal in `goals` (extraction order) active and every other
@@ -349,6 +428,12 @@ walker:priv OnboardMe {
                 intents.append(new_intent);
             }
         }
+
+        # SOH-164: no goal was stated but at least one need was — promote the
+        # strongest need to an active Goal rather than reporting an empty
+        # Goals list. No-op if `goals` already has something or there were
+        # no needs (both true when extraction failed, since `needs` stays []).
+        goals = promote_strongest_need(me, existing_goals, goals, needs, now);
 
         # Extraction failed: report the graph's existing state, not empty lists,
         # and leave goal activation untouched.
