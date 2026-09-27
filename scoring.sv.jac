@@ -82,8 +82,8 @@ def collect_candidates(me: Me, exclude_handles: list[str], now: datetime) -> lis
         if len(candidates) >= 40 {
             break;
         }
-        if p.status != "confirmed" {
-            continue;
+        if p.status != "confirmed" or p.archived {
+            continue;   # SOH-220: archived people never answer an Exchange need
         }
         edges = [edge me ->:Knows:-> p];
         if len(edges) == 0 {
