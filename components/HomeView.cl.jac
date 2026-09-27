@@ -179,7 +179,7 @@ def:pub HomeView(
     friend: dict = {},
     mock_mode: bool = False,
     as_friend: bool = False,
-    onAsk: Callable[[str, str, str], None] | None = None,
+    onAsk: Callable[[str, str, str, str], None] | None = None,
     friends_count: int = 0,
     onRetryGaps: Callable[[], None] | None = None,
     onOpenRequest: Callable[[str], None] | None = None,
@@ -319,9 +319,9 @@ def:pub HomeView(
         }
     }
 
-    def do_ask(need: str, about_line: str, audience: str) -> None {
+    def do_ask(need: str, about_line: str, audience: str, goal_text: str = "") -> None {
         if onAsk {
-            onAsk(need, about_line, audience);
+            onAsk(need, about_line, audience, goal_text);
         }
     }
 
@@ -635,6 +635,7 @@ def:pub HomeView(
                             default_about={default_about}
                             busy={ask_busy}
                             ask_error={ask_error}
+                            goals={goals}
                             onAsk={do_ask}
                             onRetry={do_retry_gaps}
                             friends_count={friends_count}
