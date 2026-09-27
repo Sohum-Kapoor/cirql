@@ -1,0 +1,44 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_tyrell_13",
+  "email": "pop.tyrell.13@example.com",
+  "name": "Tyrell Jackson",
+  "about_me": "I'm Tyrell, co-founder of CodeBridge, a free after-school coding program for teens in Southwest Detroit. We serve 80 students. I need volunteer mentors who can come in weekly and a funder for laptops.",
+  "goals": [
+    "Recruit ten weekly volunteer mentors for CodeBridge"
+  ],
+  "debriefs": [
+    {
+      "text": "Rosa Martinez, my co-founder and a community organizer in Southwest Detroit, handles families and space. She said the church hall is ours through June.",
+      "how_met": "co-founder"
+    },
+    {
+      "text": "Met Zoe Park, president of Women in Computing at Michigan. She offered to organize a monthly mentor carpool from Ann Arbor.",
+      "how_met": "campus outreach fair"
+    },
+    {
+      "text": "Talked to Kofi Asante, founder of TutorLoop, an edtech startup. He wants to pilot his tutoring app with our students and offered free licenses.",
+      "how_met": "edtech meetup"
+    },
+    {
+      "text": "Sam Delaney from engineering alumni relations said alumni in Detroit want volunteer opportunities. I promised to send him a one-page description.",
+      "how_met": "alumni volunteer fair"
+    }
+  ],
+  "card": {
+    "headline": "Co-founder, CodeBridge",
+    "about": "Free coding program for 80 Detroit teens.",
+    "looking_for": [
+      "weekly volunteer mentors",
+      "laptop funding"
+    ],
+    "can_offer": [
+      "youth education partnerships",
+      "community event space"
+    ]
+  },
+  "request": {
+    "need": "Volunteers who can mentor teens in coding one evening a week in Detroit",
+    "about_line": "Co-founder of a free after-school coding program for 80 Detroit teens"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_mira_24",
+  "email": "pop.mira.24@example.com",
+  "name": "Mira Joshi",
+  "about_me": "I'm Mira, CEO and co-founder of Clearpath Meds, a medication adherence app for patients after discharge. Arjun Shah is my CTO. We need a clinical pilot site before we raise.",
+  "goals": [
+    "Sign a hospital pilot site for Clearpath Meds"
+  ],
+  "debriefs": [
+    {
+      "text": "Arjun Shah, my co-founder and CTO, said the app is pilot-ready and he wants to hire one more engineer.",
+      "how_met": "co-founder"
+    },
+    {
+      "text": "Priyanka Desai, an angel who sold a telehealth company, offered to introduce me to a hospital contact.",
+      "how_met": "healthtech meetup"
+    },
+    {
+      "text": "Andre Williams, ED nurse, agreed to review our discharge workflow.",
+      "how_met": "healthtech meetup"
+    },
+    {
+      "text": "Talked to Esther Wu from Stryker business development. She said Stryker doesn't do pharma adherence but knows pharmacy directors.",
+      "how_met": "medtech conference"
+    },
+    {
+      "text": "Keisha Morrow at Maize Launch said healthtech teams can apply this cycle; deadline November 15.",
+      "how_met": "Maize Launch info session"
+    }
+  ],
+  "card": {
+    "headline": "CEO, Clearpath Meds",
+    "about": "Medication adherence after discharge.",
+    "looking_for": [
+      "hospital pilot site"
+    ],
+    "can_offer": [
+      "patient engagement expertise"
+    ]
+  },
+  "request": {
+    "need": "A hospital or clinic willing to pilot a post-discharge medication app",
+    "about_line": "CEO of a medication-adherence startup with a pilot-ready app"
+  }
+}

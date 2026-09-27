@@ -1,0 +1,42 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_chloe_20",
+  "email": "pop.chloe.20@example.com",
+  "name": "Chloe Martin",
+  "about_me": "I'm Chloe, a writer for A2 Signal, the local tech newsletter, edited by Nora Kim. I profile founders every week. I'm looking for interesting founders outside the usual software crowd.",
+  "goals": [
+    "Profile ten non-software founders this semester"
+  ],
+  "debriefs": [
+    {
+      "text": "Nora Kim, my editor, wants more Detroit coverage and more women founders.",
+      "how_met": "editor"
+    },
+    {
+      "text": "Met Marco Bellini, chef-owner of Olive & Ash, who's opening a Detroit location. Great profile candidate.",
+      "how_met": "restaurant opening"
+    },
+    {
+      "text": "Talked to Diego Ramirez from SoilSense, soil sensors for urban farms. He's raising a pre-seed.",
+      "how_met": "Eastern Market"
+    },
+    {
+      "text": "Isaac Feld from A2 Launchpad offered to send me their new cohort list.",
+      "how_met": "Launchpad demo day"
+    },
+    {
+      "text": "Julia Brennan runs Grown Together Detroit, the community garden network, and wants press for the spring planting day.",
+      "how_met": "Eastern Market"
+    }
+  ],
+  "card": {
+    "headline": "Writer, A2 Signal",
+    "about": "Weekly founder profiles.",
+    "looking_for": [
+      "non-software founders to profile"
+    ],
+    "can_offer": [
+      "press coverage"
+    ]
+  }
+}

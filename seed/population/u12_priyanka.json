@@ -1,0 +1,43 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_priyanka_12",
+  "email": "pop.priyanka.12@example.com",
+  "name": "Priyanka Desai",
+  "about_me": "I'm Priyanka, an angel investor in Ann Arbor. I founded and sold a telehealth scheduling company. I invest $25-50k in early healthtech and want deal flow from clinicians who are building.",
+  "goals": [
+    "Make three healthtech angel investments this year"
+  ],
+  "debriefs": [
+    {
+      "text": "Met Mira Joshi, CEO of Clearpath Meds, a medication adherence startup. They need a clinical pilot site before raising. I said I'd introduce her to a hospital contact.",
+      "how_met": "healthtech meetup"
+    },
+    {
+      "text": "Coffee with Ravi Menon, another Ann Arbor angel. He co-invests with me sometimes and said he's seen a nursing handoff app from an ICU nurse.",
+      "how_met": "coffee at Literati"
+    },
+    {
+      "text": "Carmen Diaz, a pediatric nurse practitioner, wants to start a telehealth service for rural families. She asked for advice on reimbursement.",
+      "how_met": "conference panel"
+    },
+    {
+      "text": "Talked to Esther Wu, business development at Stryker. She scouts medtech startups and said Stryker's venture arm likes clinician founders.",
+      "how_met": "medtech conference"
+    },
+    {
+      "text": "Bethany Kowalski, ED nurse manager at Michigan Medicine, runs the clinical innovation pilot program and says it can host startup pilots.",
+      "how_met": "hospital innovation day"
+    }
+  ],
+  "card": {
+    "headline": "Angel investor, healthtech",
+    "about": "Former telehealth founder writing early checks.",
+    "looking_for": [
+      "clinician founders"
+    ],
+    "can_offer": [
+      "reimbursement advice",
+      "healthtech investor intros"
+    ]
+  }
+}

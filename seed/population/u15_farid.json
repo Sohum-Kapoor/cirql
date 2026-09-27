@@ -1,0 +1,39 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_farid_15",
+  "email": "pop.farid.15@example.com",
+  "name": "Farid Karimi",
+  "about_me": "I'm Farid, a data scientist at Domino's HQ in Ann Arbor working on demand forecasting. I want to move into climate tech, especially grid or energy forecasting. I'd love to talk to anyone at a climate startup that needs forecasting.",
+  "goals": [
+    "Move into a climate-tech data science role"
+  ],
+  "debriefs": [
+    {
+      "text": "Mei Tanaka leads our forecasting team at Domino's. She said she'd be a reference and that she moved from energy forecasting herself.",
+      "how_met": "coworker"
+    },
+    {
+      "text": "Met Omar Haddad at Detroit Hardware Night. GridLeaf needs demand forecasting for their battery units and he's hiring after the seed round closes.",
+      "how_met": "Detroit Hardware Night"
+    },
+    {
+      "text": "Talked to Priya Rao, partner at Northwind Climate Fund, on a panel. She said their portfolio always needs data people and she'd share their jobs board.",
+      "how_met": "climate panel"
+    },
+    {
+      "text": "Prof. Farah Siddiqui from Public Health asked if I'd volunteer on their Detroit food-access study data. I said I'd look at it.",
+      "how_met": "volunteer fair"
+    }
+  ],
+  "card": {
+    "headline": "Data scientist, forecasting",
+    "about": "Demand forecasting, moving into energy.",
+    "looking_for": [
+      "climate-tech data roles"
+    ],
+    "can_offer": [
+      "forecasting models",
+      "data science mentoring"
+    ]
+  }
+}

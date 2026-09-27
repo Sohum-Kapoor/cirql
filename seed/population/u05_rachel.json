@@ -1,0 +1,47 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_rachel_05",
+  "email": "pop.rachel.05@example.com",
+  "name": "Rachel Adler",
+  "about_me": "I'm Rachel, an associate at Northwind Climate Fund in Detroit, working for Priya Rao. I source seed-stage climate hardware: batteries, grid, ag sensing. I'm looking for student founders at Michigan building real hardware.",
+  "goals": [
+    "Source five climate-hardware founders from Michigan this semester"
+  ],
+  "debriefs": [
+    {
+      "text": "Priya Rao, my partner, wants more student deal flow and said she'll take a meeting with any founder a known operator vouches for. She's especially interested in grid storage.",
+      "how_met": "colleague at Northwind"
+    },
+    {
+      "text": "Met Diego Ramirez at Detroit Hardware Night. He's the founder of SoilSense, soil-moisture sensors for urban farms, with 40 units in Detroit gardens. He's raising $600k pre-seed.",
+      "how_met": "Detroit Hardware Night"
+    },
+    {
+      "text": "Coffee with Keisha Morrow, who runs Maize Launch, the campus accelerator. Applications close November 15 and she wants more hardware teams. She offered to share the hardware applicants with us.",
+      "how_met": "coffee at Maize Launch"
+    },
+    {
+      "text": "Talked to Prof. Helena Brandt, mechanical engineering, who runs a battery research lab. She has two students thinking of spinning out a thermal-management startup. I promised to send her our founder FAQ.",
+      "how_met": "battery lab tour"
+    },
+    {
+      "text": "Met Grace Adeyemi, president of Michigan Venture Club. She's looking for funds to host on the Chicago VC trek. Said Northwind would be a great stop.",
+      "how_met": "Venture Club panel"
+    },
+    {
+      "text": "Omar Haddad from GridLeaf sent his updated deck. He's hiring a power electronics lead and Priya is still considering the round.",
+      "how_met": "follow-up call"
+    }
+  ],
+  "card": {
+    "headline": "Associate, Northwind Climate Fund",
+    "about": "Seed-stage climate hardware in Detroit.",
+    "looking_for": [
+      "student climate-hardware founders"
+    ],
+    "can_offer": [
+      "feedback on climate pitch decks",
+      "intros to climate operators"
+    ]
+  }
+}

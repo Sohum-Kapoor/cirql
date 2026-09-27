@@ -1,0 +1,38 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_ibrahim_21",
+  "email": "pop.ibrahim.21@example.com",
+  "name": "Ibrahim Yusuf",
+  "about_me": "I'm Ibrahim, a public health PhD student in Prof. Farah Siddiqui's lab studying food access in Detroit. I need grocery or delivery data partners. I can offer analysis help to community groups.",
+  "goals": [
+    "Get a data-sharing agreement for the food-access study"
+  ],
+  "debriefs": [
+    {
+      "text": "Prof. Farah Siddiqui, my advisor, wants the data agreement signed by February. She said Domino's once shared delivery data with a university.",
+      "how_met": "advisor meeting"
+    },
+    {
+      "text": "Met Julia Brennan from Grown Together Detroit. Her gardens supply two food pantries and she'll share distribution logs.",
+      "how_met": "community meeting"
+    },
+    {
+      "text": "Talked to Mei Tanaka, data scientist at Domino's. She said a data agreement would need legal review but she'd ask.",
+      "how_met": "Women in Computing talk"
+    },
+    {
+      "text": "Rosa Martinez, community organizer in Southwest Detroit, offered to help recruit families for interviews.",
+      "how_met": "community meeting"
+    }
+  ],
+  "card": {
+    "headline": "Public health PhD, food access",
+    "about": "Detroit food access research.",
+    "looking_for": [
+      "grocery/delivery data partners"
+    ],
+    "can_offer": [
+      "data analysis for community groups"
+    ]
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_jonah_11",
+  "email": "pop.jonah.11@example.com",
+  "name": "Jonah Fischer",
+  "about_me": "I'm Jonah, the recruiter at Routewise, a Detroit startup that routes delivery fleets. I'm hiring two embedded engineers and a summer intern class. I'm looking for strong student engineers and club leaders who can spread the word.",
+  "goals": [
+    "Hire two embedded engineers for Routewise"
+  ],
+  "debriefs": [
+    {
+      "text": "Ben Hartley, our engineering manager, wants someone who has shipped firmware on real vehicles. He said solar car people are ideal.",
+      "how_met": "coworker at Routewise"
+    },
+    {
+      "text": "Met Aisha Bello, lead of the Michigan Solar Car team, at the career fair. She said half her team is looking for internships and she'd forward our posting.",
+      "how_met": "engineering career fair"
+    },
+    {
+      "text": "Zoe Park from Women in Computing invited me to a resume night in November. I promised to bring two engineers.",
+      "how_met": "career fair"
+    },
+    {
+      "text": "Luis Romero at Lakeside Cold Storage is our newest pilot customer. He wants routing that knows loading-dock hours.",
+      "how_met": "customer kickoff"
+    }
+  ],
+  "card": {
+    "headline": "Recruiter, Routewise",
+    "about": "Hiring embedded engineers for delivery-fleet routing.",
+    "looking_for": [
+      "embedded engineers",
+      "student intern candidates"
+    ],
+    "can_offer": [
+      "interview prep",
+      "intern roles in Detroit"
+    ]
+  }
+}

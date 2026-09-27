@@ -1,0 +1,39 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_aaliyah_18",
+  "email": "pop.aaliyah.18@example.com",
+  "name": "Aaliyah Brooks",
+  "about_me": "I'm Aaliyah, strategy lead on the Michigan Solar Car team. We race across Australia next year and we lost our battery sponsor. I'm looking for a battery or energy company to sponsor us.",
+  "goals": [
+    "Sign a new battery sponsor for the solar car"
+  ],
+  "debriefs": [
+    {
+      "text": "Aisha Bello, our team lead, wants a sponsor signed by January so we can order cells. She said I own outreach with Avery.",
+      "how_met": "team meeting"
+    },
+    {
+      "text": "Talked to Omar Haddad from GridLeaf at Detroit Hardware Night. He can't give cash but offered to lend test equipment.",
+      "how_met": "Detroit Hardware Night"
+    },
+    {
+      "text": "Met Lucia Ferraro, Ford recruiter, who said Ford sponsors student teams through a separate foundation office.",
+      "how_met": "career fair"
+    },
+    {
+      "text": "Jonah Fischer, the recruiter at Routewise, wants our team's resumes and might sponsor a small amount in exchange.",
+      "how_met": "career fair"
+    }
+  ],
+  "card": {
+    "headline": "Strategy lead, Michigan Solar Car",
+    "about": "Racing across Australia; need a battery sponsor.",
+    "looking_for": [
+      "battery sponsors"
+    ],
+    "can_offer": [
+      "recruiting access to engineers",
+      "brand exposure"
+    ]
+  }
+}

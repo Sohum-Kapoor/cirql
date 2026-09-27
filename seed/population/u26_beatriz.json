@@ -1,0 +1,38 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_beatriz_26",
+  "email": "pop.beatriz.26@example.com",
+  "name": "Beatriz Souza",
+  "about_me": "I'm Beatriz, a sommelier who ran the wine program at Kestrel and now consults for restaurants. I want to start a small wine import business focused on Portuguese producers. Looking for a partner with logistics experience.",
+  "goals": [
+    "Launch a Portuguese wine import business"
+  ],
+  "debriefs": [
+    {
+      "text": "Tomasz Nowak, the chef-owner of Kestrel, said he'd be my first customer.",
+      "how_met": "former employer"
+    },
+    {
+      "text": "Marco Bellini of Olive & Ash wants a new wine list for his Detroit location. I promised to send him a proposal by Sunday.",
+      "how_met": "restaurant consult"
+    },
+    {
+      "text": "Luis Romero runs a cold-storage warehouse in Detroit and said they store wine for two importers.",
+      "how_met": "industry tasting"
+    },
+    {
+      "text": "Isaac Feld from A2 Launchpad said the incubator has a food and beverage founders group that meets monthly. He offered to add me to the list.",
+      "how_met": "Launchpad mixer"
+    }
+  ],
+  "card": {
+    "headline": "Sommelier and restaurant consultant",
+    "about": "Wine programs; building a Portuguese import business.",
+    "looking_for": [
+      "logistics partner"
+    ],
+    "can_offer": [
+      "wine program consulting"
+    ]
+  }
+}

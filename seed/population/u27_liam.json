@@ -1,0 +1,39 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_liam_27",
+  "email": "pop.liam.27@example.com",
+  "name": "Liam O'Connor",
+  "about_me": "I'm Liam, a software engineer at Ford on the Ford Pro team. On the side I'm building a map of reliable EV chargers. I'm looking for a PM co-builder and access to charging data.",
+  "goals": [
+    "Ship the EV charger reliability map beta"
+  ],
+  "debriefs": [
+    {
+      "text": "Lucia Ferraro, recruiter on my team, said Ford is hiring new-grad embedded engineers again.",
+      "how_met": "coworker"
+    },
+    {
+      "text": "Met Hye-jin Park, a Ross junior who wants EV product experience. She could run user interviews.",
+      "how_met": "coffee at Ross"
+    },
+    {
+      "text": "Nate Okonkwo, PM at Rivian on charging software, said Rivian has uptime data but can't share it.",
+      "how_met": "meetup"
+    },
+    {
+      "text": "Irene Kovacs at Detroit's Office of Mobility Innovation offered city charger data.",
+      "how_met": "mobility summit"
+    }
+  ],
+  "card": {
+    "headline": "Ford engineer, EV side project",
+    "about": "Mapping reliable EV chargers.",
+    "looking_for": [
+      "PM co-builder",
+      "charging data"
+    ],
+    "can_offer": [
+      "automotive software knowledge"
+    ]
+  }
+}

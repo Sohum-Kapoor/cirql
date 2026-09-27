@@ -1,0 +1,42 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_ethan_25",
+  "email": "pop.ethan.25@example.com",
+  "name": "Ethan Cole",
+  "about_me": "I'm Ethan, an analyst at Huron Ventures in Ann Arbor, working with Theo Vance. We invest in seed-stage software and mobility. I'm looking for Michigan student founders before they raise.",
+  "goals": [
+    "Meet 20 pre-seed Michigan founders this term"
+  ],
+  "debriefs": [
+    {
+      "text": "Theo Vance, our associate, is running the summer 2027 analyst hiring and wants candidates from the Venture Club.",
+      "how_met": "coworker"
+    },
+    {
+      "text": "Met Kofi Asante, founder of TutorLoop, raising a pre-seed for his tutoring app. He wants school district pilots.",
+      "how_met": "Maize Launch demo day"
+    },
+    {
+      "text": "Keisha Morrow at Maize Launch sends us her top teams before demo day.",
+      "how_met": "Maize Launch"
+    },
+    {
+      "text": "Olivia Grant, our talent partner, asked me to find embedded engineers for a portfolio company.",
+      "how_met": "coworker"
+    },
+    {
+      "text": "Talked to Chen Wei from GM, who might start a warehouse robotics company.",
+      "how_met": "mobility summit"
+    }
+  ],
+  "card": {
+    "headline": "Analyst, Huron Ventures",
+    "about": "Seed software and mobility.",
+    "looking_for": [
+      "pre-seed Michigan founders"
+    ],
+    "can_offer": [
+      "pitch feedback"
+    ]
+  }
+}

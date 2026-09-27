@@ -1,0 +1,38 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_andre_23",
+  "email": "pop.andre.23@example.com",
+  "name": "Andre Williams",
+  "about_me": "I'm Andre, an emergency department nurse at Michigan Medicine for twelve years. I advise a couple of health startups. I'm looking for paid clinical advisory work.",
+  "goals": [
+    "Land two paid clinical advisory roles"
+  ],
+  "debriefs": [
+    {
+      "text": "Nia Thompson, an ICU nurse, is building a shift-handoff app. I agreed to be her clinical advisor.",
+      "how_met": "coworker"
+    },
+    {
+      "text": "Colin O'Brien from Shiftly interviewed me about nurse staffing. I told him nurses need to see pay up front.",
+      "how_met": "user interview"
+    },
+    {
+      "text": "Bethany Kowalski, our nurse manager, said the pilot program needs nurse reviewers and might pay a stipend.",
+      "how_met": "staff meeting"
+    },
+    {
+      "text": "Mira Joshi, CEO of Clearpath Meds, asked if I'd review their discharge workflow. I promised to send her notes by next week.",
+      "how_met": "healthtech meetup"
+    }
+  ],
+  "card": {
+    "headline": "ED nurse and startup advisor",
+    "about": "Twelve years in emergency nursing.",
+    "looking_for": [
+      "paid clinical advisory roles"
+    ],
+    "can_offer": [
+      "clinical workflow feedback"
+    ]
+  }
+}

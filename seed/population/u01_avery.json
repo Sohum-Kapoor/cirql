@@ -1,0 +1,48 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_avery_01",
+  "email": "pop.avery.01@example.com",
+  "name": "Avery Collins",
+  "about_me": "I'm Avery, a CS junior at Michigan who builds firmware for the solar car team. I want a summer 2027 internship at a climate-tech seed fund, ideally one that backs hardware. If you know an investor who takes student intros, I'd love one.",
+  "goals": [
+    "Land a summer 2027 climate-tech VC internship"
+  ],
+  "debriefs": [
+    {
+      "text": "Met Grace Adeyemi at the Michigan Venture Club kickoff. She's a Ross MBA2 and president of the club, and she said she knows most of the Midwest seed funds. She's organizing a VC trek to Chicago in February and told me to apply. I promised to send her my resume by Friday.",
+      "how_met": "Michigan Venture Club kickoff"
+    },
+    {
+      "text": "Coffee with Theo Vance, an associate at Huron Ventures, the Ann Arbor seed fund. He said they're hiring one summer 2027 analyst but they're generalist, not climate. He mentioned he knows Priya Rao at Northwind Climate Fund from a Detroit panel.",
+      "how_met": "coffee at Comet"
+    },
+    {
+      "text": "Aisha Bello, our solar car team lead, said the team needs a new battery sponsor after the current one pulled out. She wants someone to own sponsor outreach. I told her I'd draft the sponsor deck this weekend.",
+      "how_met": "solar car team meeting"
+    },
+    {
+      "text": "Talked to Jamal Pierce at Detroit Hardware Night. He organizes it every month and is looking for student speakers for the spring series. He knows a lot of battery founders, including Omar Haddad from GridLeaf.",
+      "how_met": "Detroit Hardware Night"
+    },
+    {
+      "text": "Met Leah Goldberg at a founder dinner. She's a scout for Foundry Pines, a Bay Area seed fund, and lives in Ann Arbor. She said scouting is a good way into VC and offered to review my investment memo sample.",
+      "how_met": "founder dinner downtown"
+    }
+  ],
+  "card": {
+    "headline": "CS junior, solar car firmware",
+    "about": "Firmware for the Michigan solar car; want to learn how climate hardware gets funded.",
+    "looking_for": [
+      "climate-tech VC internship",
+      "battery sponsors for the solar car"
+    ],
+    "can_offer": [
+      "embedded C and firmware reviews",
+      "solar car shop tours"
+    ]
+  },
+  "request": {
+    "need": "A warm intro to a partner at a climate-tech seed fund who takes student interns",
+    "about_line": "CS junior who writes firmware for the solar car team"
+  }
+}

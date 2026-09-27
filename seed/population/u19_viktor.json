@@ -1,0 +1,40 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_viktor_19",
+  "email": "pop.viktor.19@example.com",
+  "name": "Viktor Petrov",
+  "about_me": "I'm Viktor, a senior software engineer at GM in Warren working on vehicle software. I mentor students and I want to start angel investing in mobility and robotics. Looking for founders and co-investors.",
+  "goals": [
+    "Make my first two angel investments in mobility"
+  ],
+  "debriefs": [
+    {
+      "text": "Chen Wei, my colleague in autonomy at GM, is thinking of leaving to start a warehouse robotics company. He wants co-founders.",
+      "how_met": "coworker at GM"
+    },
+    {
+      "text": "Met Wes Bradley at A2 Launchpad. He's an angel and former HR-tech founder who runs Friday office hours and offered to let me sit in to learn.",
+      "how_met": "A2 Launchpad office hours"
+    },
+    {
+      "text": "Talked to Ben Hartley, engineering manager at Routewise. They're raising a Series A soon.",
+      "how_met": "mobility summit"
+    },
+    {
+      "text": "Keisha Morrow from Maize Launch asked me to judge demo day in April.",
+      "how_met": "Maize Launch event"
+    }
+  ],
+  "card": {
+    "headline": "GM engineer, new angel",
+    "about": "Vehicle software engineer investing in mobility.",
+    "looking_for": [
+      "mobility founders",
+      "co-investors"
+    ],
+    "can_offer": [
+      "vehicle software expertise",
+      "mentoring"
+    ]
+  }
+}

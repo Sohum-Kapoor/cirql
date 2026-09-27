@@ -1,0 +1,38 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_rashad_29",
+  "email": "pop.rashad.29@example.com",
+  "name": "Rashad Coleman",
+  "about_me": "I'm Rashad, regional operations director for a Detroit food distributor. I oversee Luis Romero's cold-storage team. I want routing software that knows dock hours and I'm open to piloting startups.",
+  "goals": [
+    "Cut delivery miles 10% with a routing pilot"
+  ],
+  "debriefs": [
+    {
+      "text": "Luis Romero, our cold-storage operations manager, is running the Routewise pilot and says early results are good.",
+      "how_met": "direct report"
+    },
+    {
+      "text": "Ben Hartley from Routewise wants a case study after the pilot.",
+      "how_met": "pilot kickoff"
+    },
+    {
+      "text": "Samira Haddad, a transportation planner with Ann Arbor, asked for our delivery patterns on Main Street for the curb pilot.",
+      "how_met": "mobility summit"
+    },
+    {
+      "text": "Ravi Menon, the Ann Arbor angel, used to run a logistics software company and gave me pricing advice.",
+      "how_met": "industry dinner"
+    }
+  ],
+  "card": {
+    "headline": "Ops director, food distribution",
+    "about": "Delivery operations across Detroit.",
+    "looking_for": [
+      "routing pilots"
+    ],
+    "can_offer": [
+      "pilot sites for logistics startups"
+    ]
+  }
+}

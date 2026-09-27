@@ -1,0 +1,44 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_marco_06",
+  "email": "pop.marco.06@example.com",
+  "name": "Marco Bellini",
+  "about_me": "I'm Marco, chef and owner of Olive & Ash on Main Street in Ann Arbor. We're full most nights and I want to open a second location in Detroit. I'm looking for a restaurant lender or investor and for simple inventory software that my cooks will actually use.",
+  "goals": [
+    "Open a second Olive & Ash location in Detroit"
+  ],
+  "debriefs": [
+    {
+      "text": "Had a drink with Tomasz Nowak, chef-owner of Kestrel in Kerrytown. He's been looking for inventory software for a year and hates every tool. He knows Beatriz Souza, who used to run his wine program.",
+      "how_met": "after service at Kestrel"
+    },
+    {
+      "text": "Met Ravi Menon at a charity dinner we catered. He's an angel who sold a logistics software company, mostly invests in healthtech, but said he likes restaurants with real numbers.",
+      "how_met": "charity dinner we catered"
+    },
+    {
+      "text": "Isaac Feld from A2 Launchpad came in for lunch. He runs programs at the incubator and said they sometimes host food founders. He offered to connect me with a small-business lender.",
+      "how_met": "regular at the restaurant"
+    },
+    {
+      "text": "Talked to Irene Kovacs, program manager at Detroit's Office of Mobility Innovation, at a Corktown event. She mentioned the city is courting restaurants for a new Michigan Avenue corridor.",
+      "how_met": "Corktown block party"
+    }
+  ],
+  "card": {
+    "headline": "Chef-owner, Olive & Ash",
+    "about": "Mediterranean restaurant on Main Street, opening a Detroit location.",
+    "looking_for": [
+      "restaurant lender or investor",
+      "inventory software"
+    ],
+    "can_offer": [
+      "catering for events",
+      "kitchen operations advice"
+    ]
+  },
+  "request": {
+    "need": "A lender or investor who finances second restaurant locations",
+    "about_line": "Ann Arbor chef-owner with a full dining room planning a Detroit location"
+  }
+}

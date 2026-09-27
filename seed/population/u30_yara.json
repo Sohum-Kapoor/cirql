@@ -1,0 +1,43 @@
+{
+  "_comment": "Fictional persona for SOH-221 stress data. No real people.",
+  "username": "pop_yara_30",
+  "email": "pop.yara.30@example.com",
+  "name": "Yara Nasser",
+  "about_me": "I'm Yara, a pediatrics resident at Michigan Medicine interested in telehealth for rural families. I want a research mentor and a startup to partner with on a pilot.",
+  "goals": [
+    "Find a telehealth research mentor"
+  ],
+  "debriefs": [
+    {
+      "text": "Carmen Diaz, a pediatric nurse practitioner, is starting a telehealth service for rural families. We might collaborate on a pilot.",
+      "how_met": "clinic rotation"
+    },
+    {
+      "text": "Priyanka Desai, an angel who sold a telehealth company, offered to talk about what makes telehealth stick.",
+      "how_met": "healthtech meetup"
+    },
+    {
+      "text": "Prof. Farah Siddiqui in Public Health does rural access research and might co-mentor.",
+      "how_met": "grand rounds"
+    },
+    {
+      "text": "Bethany Kowalski runs the clinical innovation pilot program and said residents can propose pilots.",
+      "how_met": "hospital innovation day"
+    },
+    {
+      "text": "Met Arjun Shah, CTO of Clearpath Meds, who said their app could support pediatric dosing reminders.",
+      "how_met": "healthtech meetup"
+    }
+  ],
+  "card": {
+    "headline": "Pediatrics resident",
+    "about": "Rural telehealth for families.",
+    "looking_for": [
+      "research mentor",
+      "telehealth pilot partner"
+    ],
+    "can_offer": [
+      "clinical perspective"
+    ]
+  }
+}
