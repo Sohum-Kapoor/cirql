@@ -61,7 +61,7 @@ test "archived person drops out of active_people, Tend, GamePlan, ScoreAgainstNe
 # ---------------------------------------------------------------- upload path guard
 
 test "_upload_path_ok: flat uploads file or own root dir only; traversal and other roots refused" {
-    assert _upload_path_ok("uploads/abc.jpg", "r1");
+    assert not _upload_path_ok("uploads/abc.jpg", "r1");  # loose files under uploads/ are never deleted (review fix)
     assert _upload_path_ok("uploads/r1/a.webm", "r1");
     assert not _upload_path_ok("uploads/r2/a.webm", "r1");
     assert not _upload_path_ok("uploads/../main.jac", "r1");

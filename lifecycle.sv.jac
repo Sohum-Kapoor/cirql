@@ -78,9 +78,9 @@ def _upload_path_ok(ref: str, root_id: str) -> bool {
     }
     rel = os.path.relpath(full, base);
     parts = rel.split(os.sep);
-    if len(parts) == 1 {
-        return True;
-    }
+    # Only files inside the caller's own uploads/<root>/ folder. Loose files
+    # directly under uploads/ (badge photos) are left alone: another account
+    # could reference the same name.
     return len(parts) == 2 and parts[0].replace("-", "") == root_id;
 }
 
@@ -358,7 +358,11 @@ def import_notes(st: ImportState, data: dict[str, any], root_id: str) {
 def import_people(st: ImportState, data: dict[str, any], me: Me) {
     by_key: dict[str, Person] = {};
     by_token: dict[str, Person] = {};
+    me_root = jid(root);
     for p in [me ->:Knows:->] {
+        if p.archived or owner_root(p) != me_root {
+            continue;  # never map an import onto an archived or foreign person
+        }
         by_key[person_key(p.name, p.org)] = p;
         for t in p.identity_tokens {
             by_token[t] = p;
@@ -412,6 +416,9 @@ got in `import_people` (a reused person keeps the edge the caller already
 had). last_contact is copied verbatim as display data; nothing reads it."""
 def import_knows(st: ImportState, data: dict[str, any], me: Me) {
     for row in dlist(data, "knows") {
+        if not st.take() {
+            break;  # edge budget: take() already records the truncation
+        }
         p = mapped_person(st, dstr(row, "to"));
         if p is None {
             st.skipped += 1;
@@ -444,6 +451,9 @@ def import_knows(st: ImportState, data: dict[str, any], me: Me) {
 """Reported ties need both people and a mapped source note (provenance)."""
 def import_reported(st: ImportState, data: dict[str, any]) {
     for row in dlist(data, "reported") {
+        if not st.take() {
+            break;  # edge budget: take() already records the truncation
+        }
         a = mapped_person(st, dstr(row, "from"));
         b = mapped_person(st, dstr(row, "to"));
         src = mapped_note(st, dstr(row, "source_note"));
@@ -613,6 +623,9 @@ def import_circles(st: ImportState, data: dict[str, any], me: Me) {
         }
     }
     for row in dlist(data, "in_circle") {
+        if not st.take() {
+            break;  # edge budget: take() already records the truncation
+        }
         pairs.append({"person": dstr(row, "person"), "circle": dstr(row, "circle")});
     }
     for pr in pairs {
