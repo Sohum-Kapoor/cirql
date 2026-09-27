@@ -675,3 +675,201 @@ async def:pub delete_my_data(confirm: str) -> dict {
     out = _first_or_error(data["reports"] if data else []);
     return out;
 }
+# ---------------------------------------------------------------- Circles + Events (SOH-222 A4)
+# CreateCircle/RenameCircle/DeleteCircle/AddToCircle/RemoveFromCircle/ListCircles and
+# CreateEvent/ListEvents/AddToEvent/RemoveFromEvent/EventPeople/UpdateEvent live on a
+# parallel server branch (not on main yet) — call by name via `jacSpawn` (see
+# `person_detail` above) until they land, then flip to `sv import` + `root spawn`.
+# `list_people_scoped` reuses the same walker `list_people()` calls once its
+# circle_id/event_id/include_archived params land on `ListPeople`; it also goes
+# through jacSpawn for now so an unmatched arity here can't break the typed
+# `sv import` of `ListPeople` used by `list_people()` above.
+import from .mocks.circles {
+    mock_create_circle, mock_rename_circle, mock_delete_circle, mock_add_to_circle,
+    mock_remove_from_circle, mock_list_circles, mock_create_event, mock_update_event,
+    mock_list_events, mock_add_to_event, mock_remove_from_event, mock_event_people,
+    mock_list_people_scoped
+}
+
+"""CreateCircle(name) -> Circle | { error: "exists" }."""
+async def:pub create_circle(name: str) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_create_circle(name));
+        return out;
+    }
+    data = await jacSpawn("CreateCircle", "", {"name": name});
+    out = _first_or_error(data["reports"] if data else []);
+    return out;
+}
+
+"""RenameCircle(circle_id, name) -> Circle | { error: "not_found" }."""
+async def:pub rename_circle(circle_id: str, name: str) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_rename_circle(circle_id, name));
+        return out;
+    }
+    data = await jacSpawn("RenameCircle", "", {"circle_id": circle_id, "name": name});
+    out = _first_or_error(data["reports"] if data else []);
+    return out;
+}
+
+"""DeleteCircle(circle_id) -> { ok: true } | { error: "not_found" }. The circle
+label only — people in it are untouched."""
+async def:pub delete_circle(circle_id: str) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_delete_circle(circle_id));
+        return out;
+    }
+    data = await jacSpawn("DeleteCircle", "", {"circle_id": circle_id});
+    out = _first_or_error(data["reports"] if data else []);
+    return out;
+}
+
+"""AddToCircle(person_id, circle_id) -> { ok: true } | { error: "not_found" }."""
+async def:pub add_to_circle(person_id: str, circle_id: str) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_add_to_circle(person_id, circle_id));
+        return out;
+    }
+    data = await jacSpawn("AddToCircle", "", {"person_id": person_id, "circle_id": circle_id});
+    out = _first_or_error(data["reports"] if data else []);
+    return out;
+}
+
+"""RemoveFromCircle(person_id, circle_id) -> { ok: true } | { error }."""
+async def:pub remove_from_circle(person_id: str, circle_id: str) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_remove_from_circle(person_id, circle_id));
+        return out;
+    }
+    data = await jacSpawn("RemoveFromCircle", "", {"person_id": person_id, "circle_id": circle_id});
+    out = _first_or_error(data["reports"] if data else []);
+    return out;
+}
+
+"""ListCircles() -> [{ circle: Circle, count: int }]."""
+async def:pub list_circles() -> list[dict] {
+    rows: list[dict] = [];
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        rows = mock_list_circles();
+        return rows;
+    }
+    data = await jacSpawn("ListCircles", "", {});
+    rows = (data["reports"] if data else []) as list[dict];
+    return rows;
+}
+
+"""CreateEvent(name, date="", location="") -> Event."""
+async def:pub create_event(name: str, date: str = "", location: str = "") -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_create_event(name, date, location));
+        return out;
+    }
+    data = await jacSpawn("CreateEvent", "", {"name": name, "date": date, "location": location});
+    out = _first_or_error(data["reports"] if data else []);
+    return out;
+}
+
+"""UpdateEvent(event_id, name, date, location) -> Event | { error: "not_found" }."""
+async def:pub update_event(event_id: str, name: str, date: str, location: str) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_update_event(event_id, name, date, location));
+        return out;
+    }
+    data = await jacSpawn("UpdateEvent", "", {"event_id": event_id, "name": name, "date": date, "location": location});
+    out = _first_or_error(data["reports"] if data else []);
+    return out;
+}
+
+"""ListEvents() -> [{ event: Event, count: int }]. The caller sorts newest-date-first."""
+async def:pub list_events() -> list[dict] {
+    rows: list[dict] = [];
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        rows = mock_list_events();
+        return rows;
+    }
+    data = await jacSpawn("ListEvents", "", {});
+    rows = (data["reports"] if data else []) as list[dict];
+    return rows;
+}
+
+"""AddToEvent(person_id, event_id) -> { ok: true } | { error: "not_found" }."""
+async def:pub add_to_event(person_id: str, event_id: str) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_add_to_event(person_id, event_id));
+        return out;
+    }
+    data = await jacSpawn("AddToEvent", "", {"person_id": person_id, "event_id": event_id});
+    out = _first_or_error(data["reports"] if data else []);
+    return out;
+}
+
+"""RemoveFromEvent(person_id, event_id) -> { ok: true } | { error }."""
+async def:pub remove_from_event(person_id: str, event_id: str) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_remove_from_event(person_id, event_id));
+        return out;
+    }
+    data = await jacSpawn("RemoveFromEvent", "", {"person_id": person_id, "event_id": event_id});
+    out = _first_or_error(data["reports"] if data else []);
+    return out;
+}
+
+"""EventPeople(event_id) -> [Person] — who I met there."""
+async def:pub event_people(event_id: str) -> list[dict] {
+    rows: list[dict] = [];
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        rows = mock_event_people(event_id);
+        return rows;
+    }
+    data = await jacSpawn("EventPeople", "", {"event_id": event_id});
+    rows = (data["reports"] if data else []) as list[dict];
+    return rows;
+}
+
+"""ListPeople(circle_id="", event_id="", include_archived=False) -> [Person], scoped."""
+async def:pub list_people_scoped(circle_id: str = "", event_id: str = "", include_archived: bool = False) -> list[dict] {
+    rows: list[dict] = [];
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        rows = mock_list_people_scoped(circle_id, event_id, include_archived);
+        return rows;
+    }
+    data = await jacSpawn("ListPeople", "", {"circle_id": circle_id, "event_id": event_id, "include_archived": include_archived});
+    rows = (data["reports"] if data else []) as list[dict];
+    return rows;
+}
