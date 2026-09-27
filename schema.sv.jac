@@ -197,7 +197,7 @@ node IntroRequest {
     has status: str = "open";        # open | replied | approved | opted_in | revealed | declined | expired
     has created_at: str = "";
     has expires_at: str = "";
-    has audience: str = "friends";   # friends | everyone (SOH friend-gated exchange)
+    has audience: str = "everyone";   # everyone | friends (SOH friend-gated exchange)
 }
 
 node IntroReply {

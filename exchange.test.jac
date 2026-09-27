@@ -687,10 +687,10 @@ test "exchange SOH-218: request_visible gates on audience, friendship and blocks
     assert request_visible(fr, ["pal"], []);
     assert not request_visible(fr, [], []);
     assert request_visible(ev, [], []);
-    assert not request_visible(odd, [], []);
+    assert request_visible(odd, [], []);  # unknown audience normalises to everyone
     assert not request_visible(ev, [], ["stranger"]);
     assert not request_visible(fr, ["pal"], ["pal"]);
-    assert norm_audience("Everyone") == "everyone" and norm_audience("x") == "friends" and norm_audience("") == "friends";
+    assert norm_audience("Everyone") == "everyone" and norm_audience("Friends") == "friends" and norm_audience("x") == "everyone" and norm_audience("") == "everyone";
 }
 
 test "exchange SOH-218: friends-only requests reach friends only; blocks hide both sides" {
@@ -723,12 +723,12 @@ test "exchange SOH-218: friends-only requests reach friends only; blocks hide bo
         assert [str(f["handle"]) for f in _run(cl, a, "ListFriends", {})] == [b_handle];
         assert _run(cl, c, "ListFriends", {}) == [];
 
-        # Default audience is friends; junk normalizes to friends.
-        fr = _run(cl, a, "PostRequest", {"need": "a seed investor", "about_line": ""})[0];
+        # Default audience is everyone (demo safety); friends must be explicit; junk normalizes to everyone.
+        fr = _run(cl, a, "PostRequest", {"need": "a seed investor", "about_line": "", "audience": "friends"})[0];
         assert str(fr["audience"]) == "friends", fr;
         fr_id = str(fr["_jac_id"]);
         junk = _run(cl, a, "PostRequest", {"need": "a designer", "about_line": "", "audience": "bogus"})[0];
-        assert str(junk["audience"]) == "friends", junk;
+        assert str(junk["audience"]) == "everyone", junk;
         ev = _run(cl, a, "PostRequest", {"need": "a mentor", "about_line": "", "audience": "everyone"})[0];
         assert str(ev["audience"]) == "everyone", ev;
         ev_id = str(ev["_jac_id"]);
