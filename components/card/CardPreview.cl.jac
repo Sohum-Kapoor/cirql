@@ -1,11 +1,14 @@
 """CardPreview (SOH-179): "What a friend sees" — renders EXACTLY the fields
 `get_card` returns, nothing else. OWNER: Person B.
 
-Deliberately does NOT take a raw Card: `visibility`, `_jac_id`/`id`, and
-anything else off the Card node never reach this component, mirroring the
-public `get_card` read (contracts/walkers.md, SOH-178) byte for byte — this
-is the honest preview of what an outside viewer with the link gets, not a
-mirror of the owner's own editor state.
+Deliberately does NOT take a raw Card: `_jac_id`/`id` and anything else off
+the Card node never reach this component, mirroring the public `get_card`
+read (contracts/walkers.md, SOH-178) byte for byte — this is the honest
+preview of what an outside viewer with the link gets, not a mirror of the
+owner's own editor state. `visibility` is the one exception: it never
+changes which fields render, only the caption above them, so the caller
+isn't told "anyone with the link" when the card is actually
+`handshake_only` (SOH-212).
 """
 
 import from ..ui.card { Card, CardHeader, CardTitle, CardDescription, CardContent }
@@ -15,15 +18,16 @@ import from ...lib.text { short_date }
 def:pub CardPreview(
     name: str, handle: str, headline: str, about: str,
     looking_for: list[str], can_offer: list[str], links: list[str],
-    contact_pref: str, updated_at: str
+    contact_pref: str, updated_at: str, visibility: str = "link"
 ) -> JsxElement {
     updated: str = short_date(updated_at);
+    caption: str = "Exactly what opens for someone you handed this card to. Nobody else can read it." if visibility == "handshake_only" else "Exactly what opens when someone with your handle or link looks you up.";
 
     return
         <Card className="border-dashed">
             <CardHeader>
                 <CardTitle>What a friend sees</CardTitle>
-                <CardDescription>Exactly what opens when someone with your handle or link looks you up.</CardDescription>
+                <CardDescription>{caption}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
                 <div className="flex flex-col gap-0.5">

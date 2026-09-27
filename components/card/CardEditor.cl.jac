@@ -187,6 +187,8 @@ def:pub CardEditor() -> JsxElement {
                     <div className="flex flex-col gap-1.5">
                         <Label htmlFor="card-name">Name</Label>
                         <Input id="card-name" value={name} onChange={edit_name} placeholder="How your name shows up on the card" />
+                        {name == "me" and
+                            <p className="text-caption text-muted-foreground">Set your name: friends see this on your card.</p>}
                     </div>
 
                     <div className="flex flex-col gap-1.5">
@@ -270,6 +272,7 @@ def:pub CardEditor() -> JsxElement {
                 links={preview_links}
                 contact_pref={contact_pref}
                 updated_at={updated_at}
+                visibility={visibility}
             />
         </div>;
 }

@@ -396,10 +396,13 @@ def:pub ImportedRow(
 
 # ---------------------------------------------------------------- screen
 
-def:pub ImportPeople(on_open_person: Callable[[str], None]) -> JsxElement {
+def:pub ImportPeople(
+    on_open_person: Callable[[str], None],
+    onDone: Callable[[], None] | None = None
+) -> JsxElement {
     has step: str = "paste",
         paste_text: str = "",
-        how_met_default: str = "from my contacts",
+        how_met_default: str = "",
         parsed_rows: list[dict] = [],
         source: str = "paste",
         parse_error: str = "",
@@ -500,11 +503,13 @@ def:pub ImportPeople(on_open_person: Callable[[str], None]) -> JsxElement {
     async def do_import() -> None {
         import_busy = True;
         import_error = "";
+        typed_how_met: str = how_met_default.strip();
+        how_met_value: str = typed_how_met if typed_how_met != "" else "from my contacts";
         rows_out: list[dict] = [];
         for row in parsed_rows {
             r: dict = {**row};
             if not (r["how_met"] or "") {
-                r["how_met"] = how_met_default;
+                r["how_met"] = how_met_value;
             }
             rows_out.append(r);
         }
@@ -612,6 +617,14 @@ def:pub ImportPeople(on_open_person: Callable[[str], None]) -> JsxElement {
         row_busy_id = "";
     }
 
+    def handle_done(e: MouseEvent) {
+        if onDone {
+            onDone();
+        } else {
+            start_over(e);
+        }
+    }
+
     imported_rows: list[dict] = (result["imported"] or []) as list[dict];
     skipped_rows: list[dict] = (result["skipped"] or []) as list[dict];
     pending_count: int = 0;
@@ -715,7 +728,7 @@ def:pub ImportPeople(on_open_person: Callable[[str], None]) -> JsxElement {
             } else {
                 <div key="import-sort" className="flex flex-col gap-4">
                     <div className="flex items-center justify-between gap-2">
-                        <h2 className="text-eyebrow text-muted-foreground">Sort your people</h2>
+                        <h2 className="text-eyebrow text-muted-foreground">Confirm your people</h2>
                         <span className="text-caption tabular-nums text-muted-foreground">{str(pending_count) + " left"}</span>
                     </div>
                     {if len(imported_rows) == 0 {
@@ -760,9 +773,20 @@ def:pub ImportPeople(on_open_person: Callable[[str], None]) -> JsxElement {
                                 }}
                             </ul>
                         </section>}
-                    <Button variant="ghost" className="h-11 self-start text-muted-foreground" onClick={start_over}>
-                        Import more
-                    </Button>
+                    {if pending_count == 0 {
+                        <Button className="h-11 self-start" onClick={handle_done}>
+                            Done
+                        </Button>
+                    } else {
+                        <div className="flex items-center gap-2">
+                            <Button variant="ghost" className="h-11 text-muted-foreground" onClick={start_over}>
+                                Import more
+                            </Button>
+                            <Button variant="outline" className="h-11" onClick={handle_done}>
+                                Done
+                            </Button>
+                        </div>
+                    }}
                 </div>
             }}
         </div>;

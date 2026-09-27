@@ -13,11 +13,19 @@ import from ..ui.button { buttonVariants }
 import from ..ui.icons { ChevronRightIcon }
 import from ...lib.utils { cn }
 
-"""Today, "YYYY-MM-DD" — local, display only."""
+def _pad2(n: int) -> str {
+    s: str = str(n);
+    return "0" + s if len(s) < 2 else s;
+}
+
+"""Today, "YYYY-MM-DD" — local (not UTC — `toISOString()` rolls over to the
+next day for anyone west of UTC in the evening), display only."""
 def _today_str() -> str {
     d: any = new(Date);  # jac:ignore[W2001,E1053]
-    iso: str = String(d.toISOString());  # jac:ignore[W2001]
-    return iso[0:10];
+    y: int = int(d.getFullYear());  # jac:ignore[W2001]
+    m: int = int(d.getMonth()) + 1;  # jac:ignore[W2001]
+    day: int = int(d.getDate());  # jac:ignore[W2001]
+    return str(y) + "-" + _pad2(m) + "-" + _pad2(day);
 }
 
 """The page's <title> ("Cirql"), falling back if it's ever empty."""
