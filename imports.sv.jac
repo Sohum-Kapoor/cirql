@@ -31,6 +31,7 @@ though the final `del p;` would cascade-delete any edges left over.
 """
 
 import from schema { Me, Person, Note, Knows, Mentions }
+import from identity { refresh_person_tokens }
 import from datetime { datetime }
 
 # ---------------------------------------------------------------- row helpers
@@ -154,6 +155,7 @@ walker:priv ImportPeople {
             }
 
             note +>:Mentions(span=name):+> p;
+            refresh_person_tokens(p);  # SOH-215
             imported.append({"person": p, "is_new": is_new});
         }
 
