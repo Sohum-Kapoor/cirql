@@ -26,7 +26,7 @@ Written 2026-09-26 20:00 after five persona walkthroughs (SOH-208), two adversar
 
 ## B. Makes it stick
 
-Circles and Events (SOH-217, building) · weekly Digest (SOH-219, building) · offline capture queue (client) · Apple Contacts import (Capacitor plugin) · iOS share extension for articles → Serendipity · push notifications for promises due and incoming asks · triage swipe for proposed people and merges (SOH-181) · an ambiguity inbox for "Sara? Sarah?" · interaction cadence per person (from notes, never decay) · quick-add widget · persona-found copy fixes.
+Promises owed to you (a `direction` on Promise; "he said he'd send his deck" is an offer Intent today, by design, so Today lists only what you owe) · Circles and Events (SOH-217, building) · weekly Digest (SOH-219, building) · offline capture queue (client) · Apple Contacts import (Capacitor plugin) · iOS share extension for articles → Serendipity · push notifications for promises due and incoming asks · triage swipe for proposed people and merges (SOH-181) · an ambiguity inbox for "Sara? Sarah?" · interaction cadence per person (from notes, never decay) · quick-add widget · persona-found copy fixes.
 
 ## C. Later
 

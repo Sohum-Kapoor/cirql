@@ -11,10 +11,10 @@ Written 2026-09-26 22:00, after the product wave. Status words: **done** (on mai
 | Purpose strings for microphone, camera, photo library | done (SOH-226 plist) | voice capture, badge photo |
 | Export-compliance flag | done | `ITSAppUsesNonExemptEncryption = false` |
 | Sign in works without a third-party account | done | username + password on our own server |
-| Account deletion from inside the app (Guideline 5.1.1(v)) | partial | "Delete my data" wipes the graph, card listing and uploads; the login identity itself is not deleted (jac-scale exposes no user-delete endpoint). Needs a `DeleteAccount` that also removes the auth user. |
+| Account deletion from inside the app (Guideline 5.1.1(v)) | done (SOH-226) | `DeleteAccount` wipes the graph, card listing and uploads, then rotates the caller's users row so the login stops working. |
 | Works without network | missing | every screen needs the server; an offline capture queue is roadmap |
-| No crashes on first launch, no placeholder content | partial | three personas hit "For your goal: —" on the first screen after signup (B fixing) |
-| Privacy policy URL | missing | the text exists in "How Cirql works" and `docs/SUBMISSION.md`; needs a hosted page |
+| No crashes on first launch, no placeholder content | done | the "For your goal: —" first screen was fixed by B (PR #77); the final Amara pass hit none |
+| Privacy policy URL | done | `assets/privacy.html`, served unauthenticated at `/static/privacy.html`, linked from "How Cirql works" |
 
 ## Privacy nutrition label (what we would declare)
 
@@ -29,7 +29,7 @@ Written 2026-09-26 22:00, after the product wave. Status words: **done** (on mai
 |---|---|---|
 | Every list has loading, empty and error states | done for A's components (SOH-226 audit); B's screens: partial | |
 | Destructive actions confirm | done | Forget, archive, delete note, delete circle, delete my data |
-| Accessibility: labels on icon buttons, focus order, 44 px targets | partial | person sheet and A's components fixed; login form label, onboarding textarea label pending (B) |
+| Accessibility: labels on icon buttons, focus order, 44 px targets | done | final Amara pass: labels everywhere, person sheet focus-trapped, graph has a text list of ties (PR #88) |
 | Dark and light mode | done | persisted appearance setting |
 | Phone width without horizontal scroll | done on every screen tested at 375 px | six sub-tabs fit at 360 px |
 | Large graphs (500 people) | partial | ranking caps at 60 with a `truncated` flag; lists are not virtualised |
@@ -37,8 +37,8 @@ Written 2026-09-26 22:00, after the product wave. Status words: **done** (on mai
 
 ## What would make it a real release (in order)
 
-1. `DeleteAccount` that removes the auth identity as well as the graph.
-2. A hosted privacy page and support address; the "How Cirql works" text is the draft.
+1. A support address on the privacy page (the page exists; the address does not).
+2. Promises owed **to** you: today a Promise is only what you committed to, so "he said he'd send his deck" lands as an offer Intent by design; a direction field and a "they owe you" list in Today.
 3. Offline capture queue with replay.
 4. Push notifications for promises due and incoming asks (needs APNs setup).
 5. Phone contacts import through the Capacitor Contacts plugin.
