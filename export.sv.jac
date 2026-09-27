@@ -436,8 +436,11 @@ def build_vcard(p: Person, ke: Knows | None) -> str {
         lines.append(f"TEL:{vcard_escape(p.phone)}");
     }
     for link in p.links {
-        if link {
-            lines.append(f"URL:{vcard_escape(link)}");
+        # URL is a URI value (RFC 6350 §6.7.8): no text escaping, or ';' and ','
+        # in a real link would break; only raw line breaks are removed.
+        clean_link = link.replace("\r", "").replace("\n", "").strip();
+        if clean_link {
+            lines.append(f"URL:{clean_link}");
         }
     }
     if p.location {

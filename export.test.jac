@@ -235,6 +235,10 @@ test "build_vcard: a person with every field produces the expected lines, CRLF-t
     assert "URL:https://priya.example.com" in lines;
     assert "URL:https://github.com/priyashah" in lines;
     assert "ADR:;;;Ann Arbor;;;" in lines;
+    # URL is a URI value: ';' and ',' stay raw (RFC 6350 §6.7.8), line breaks are dropped.
+    p_url = Person(name="Vcard-url Sam", links=["https://x.example/a;b,c?d=1\r\n"]);
+    vc_url = build_vcard(p_url, None);
+    assert "URL:https://x.example/a;b,c?d=1" in vc_url.split("\r\n");
     assert "NOTE:Met at the summit\\; From Cirql" in lines;
     assert lines[len(lines) - 2] == "END:VCARD";
     assert vc.endswith("\r\n");
