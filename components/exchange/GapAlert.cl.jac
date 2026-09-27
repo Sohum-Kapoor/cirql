@@ -3,7 +3,9 @@
 One card per GapFinder item: "No warm path to {kind}", why_needed, and *Ask my
 network*. A gap names a KIND of person, never a person. The sheet prefills the
 need with `suggested_need` and the one-line about with the user's card headline;
-both are editable. Posting goes through the shell (PostRequest). A gap whose
+both are editable. *Who sees it* (SOH-218): Everyone (default) or Friends
+(handles of Cards you hold; disabled with a hint when ListFriends is empty).
+Posting goes through the shell (PostRequest with that audience). A gap whose
 suggested need was already asked shows the request's status instead of the button.
 """
 
@@ -13,6 +15,7 @@ import from ..ui.textarea { Textarea }
 import from ..ui.skeleton { Skeleton }
 import from ..ui.field { Field, FieldLabel, FieldGroup }
 import from ..ui.sheet { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetBody, SheetFooter }
+import from ..ui.tabs { Tabs, TabsList, TabsTrigger }
 import from .common { StatusChip, req_label }
 
 def:pub GapSkeleton() -> JsxElement {
@@ -34,8 +37,36 @@ def:pub AskSheet(
     onNeed: Callable[[str], None],
     onAbout: Callable[[str], None],
     onPost: Callable[[], None],
-    onOpenChange: Callable[[bool], None]
+    onOpenChange: Callable[[bool], None],
+    about_locked: bool = False,
+    audience: str = "everyone",
+    onAudience: Callable[[str], None] | None = None,
+    friends_count: int = 0,
+    audience_locked: bool = False
 ) -> JsxElement {
+    # about_locked / audience_locked (SOH-224): an agent's ask_network card posts
+    # through ResolveAgentAction, which takes only the need (no about line, no
+    # audience yet), so both show read-only and the ask goes to everyone.
+    # audience (SOH-218): "everyone" | "friends"; Friends needs >= 1 friend.
+    friends_ok: bool = friends_count > 0 and not audience_locked;
+    aud: str = "friends" if audience == "friends" and friends_ok else "everyone";
+    aud_hint: str = "";
+    if audience_locked {
+        aud_hint = "Agent asks go to everyone on Cirql for now.";
+    } elif friends_count == 0 {
+        aud_hint = "Exchange cards with someone to add friends.";
+    } elif aud == "friends" {
+        aud_hint = "Only your " + str(friends_count) + (" friend's" if friends_count == 1 else " friends'") + " agents see it — people whose card you hold.";
+    } else {
+        aud_hint = "Any agent on Cirql can see it.";
+    }
+
+    def handle_audience(v: str) -> None {
+        if onAudience and (v == "everyone" or friends_ok) {
+            onAudience(v);
+        }
+    }
+
     def handle_need(e: ChangeEvent) {
         onNeed(e.target.value);
     }
@@ -72,12 +103,24 @@ def:pub AskSheet(
                                 value={about_line}
                                 placeholder="e.g. Student founder building thermal batteries"
                                 disabled={busy}
+                                readOnly={about_locked}
+                                aria-readonly={about_locked}
                                 onChange={handle_about}
                             />
                         </Field>
+                        <Field>
+                            <span id="ask-audience-label" className="text-body-sm leading-snug font-medium text-foreground">Who sees it</span>
+                            <Tabs value={aud} onValueChange={handle_audience} className="gap-1.5">
+                                <TabsList aria-labelledby="ask-audience-label" className="w-full">
+                                    <TabsTrigger value="everyone" disabled={busy}>Everyone</TabsTrigger>
+                                    <TabsTrigger value="friends" disabled={busy or not friends_ok}>Friends</TabsTrigger>
+                                </TabsList>
+                            </Tabs>
+                            <span data-audience-hint="" className="text-caption text-muted-foreground">{aud_hint}</span>
+                        </Field>
                     </FieldGroup>
                     <p className="text-caption text-muted-foreground">
-                        Friends' agents see only this need, this line and your handle. Each one checks its own graph; no names cross until everyone involved says yes.
+                        Their agents see only this need, this line and your handle. Each one checks its own graph; no names cross until everyone involved says yes.
                     </p>
                     {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
                 </SheetBody>
@@ -123,24 +166,27 @@ def:pub GapAlerts(
     default_about: str,
     busy: bool,
     ask_error: str,
-    onAsk: Callable[[str, str], None],
-    onRetry: Callable[[], None]
+    onAsk: Callable[[str, str, str], None],
+    onRetry: Callable[[], None],
+    friends_count: int = 0
 ) -> JsxElement {
     has open_idx: int = -1,
         posted: bool = False,
         need: str = "",
-        about_line: str = "";
+        about_line: str = "",
+        audience: str = "everyone";
 
     def open_sheet(i: int) -> None {
         open_idx = i;
         posted = False;
         need = gaps[i]["suggested_need"] as str;
         about_line = default_about;
+        audience = "everyone";
     }
 
     def post() -> None {
         posted = True;
-        onAsk(need.strip(), about_line.strip());
+        onAsk(need.strip(), about_line.strip(), "friends" if audience == "friends" and friends_count > 0 else "everyone");
     }
 
     def set_open(v: bool) -> None {
@@ -201,6 +247,9 @@ def:pub GapAlerts(
                 onAbout={lambda v: str { about_line = v; }}
                 onPost={post}
                 onOpenChange={set_open}
+                audience={audience}
+                onAudience={lambda v: str { audience = v; }}
+                friends_count={friends_count}
             />
         </section>;
 }

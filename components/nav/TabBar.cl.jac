@@ -1,4 +1,5 @@
-"""Bottom tab bar — Home · Asks · People + the Capture action (SOH-213). OWNER: Person B.
+"""Bottom tab bar — Home · Inbox · People + the Capture action (SOH-213; the Asks
+tab became Inbox in SOH-224: agent suggestions + friends' asks + your asks). OWNER: Person B.
 
 Fixed to the bottom, safe-area aware (`padding-bottom: env(safe-area-inset-bottom)`).
 Linear style: hairline top border, ink-subtle icons, the active tab in ink with a
@@ -41,7 +42,7 @@ def:pub HomeIcon(className: str = "") -> JsxElement {
         );
 }
 
-def:pub AsksIcon(className: str = "") -> JsxElement {
+def:pub InboxIcon(className: str = "") -> JsxElement {
     return
         _svg(
             className,
@@ -108,7 +109,7 @@ def:pub TabBar(
     tab: str,
     onTab: Callable[[str], None],
     onCapture: Callable[[], None],
-    asks_badge: int = 0
+    inbox_badge: int = 0
 ) -> JsxElement {
     def handle_capture(e: MouseEvent) {
         onCapture();
@@ -123,8 +124,8 @@ def:pub TabBar(
                 <TabButton value="home" label="Home" active={tab == "home"} badge={0} onPick={onTab}>
                     <HomeIcon />
                 </TabButton>
-                <TabButton value="asks" label="Asks" active={tab == "asks"} badge={asks_badge} onPick={onTab}>
-                    <AsksIcon />
+                <TabButton value="inbox" label="Inbox" active={tab == "inbox"} badge={inbox_badge} onPick={onTab}>
+                    <InboxIcon />
                 </TabButton>
                 <TabButton value="people" label="People" active={tab == "people"} badge={0} onPick={onTab}>
                     <PeopleIcon />
