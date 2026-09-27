@@ -64,6 +64,7 @@ import from .components.exchange.common { Poller, req_active }
 import from .components.exchange.Requests { RequestDetail }
 import from .components.exchange.Inbox { ApprovalView, asks_needing_you }
 import from .components.ui.toaster { Toaster }
+import from .components.card.PublicCard { PublicCard }
 import from .lib.text { join_lines, today_month_day, join_with }
 
 sv import from walkers { GetMe }
@@ -335,6 +336,22 @@ def empty_rows() -> list[dict] {
     return [{"name": "", "how": ""} for _ in range(5)];
 }
 
+"""The `<handle>` in `/card/<handle>` — "" when the current URL isn't a
+public card link. `jac start`'s SPA fallback serves this app's HTML for
+`/card/anything` (verified SOH-228), so a QR/shared link lands here without
+a router: this is a plain string read off the URL, not `useParams()`."""
+def _public_card_handle() -> str {
+    path: str = str(window.location.pathname);  # jac:ignore[E1053]
+    if not path.startswith("/card/") {
+        return "";
+    }
+    rest: str = path[6:];
+    if "/" in rest {
+        rest = rest[:rest.index("/")];
+    }
+    return rest;
+}
+
 def:pub app -> JsxElement {
     has view: str = "auth",
         open_person_id: str = "",
@@ -394,8 +411,18 @@ def:pub app -> JsxElement {
         seen_reveals: list[str] = [],
         agent_view: dict = empty_agent();
 
+    # Public, no-login `/card/<handle>` (SOH-228): a QR or shared link lands
+    # here straight off `window.location.pathname` — before auth/onboarding/
+    # home even considers rendering. `public_handle` is a plain local (not a
+    # `has` field: it is derived from the URL, never changes without a full
+    # page load, and `jac-cl-components` treats anything computable from
+    # outside state as a local, not reactive state). Every hook below still
+    # runs unconditionally every render (rules-of-hooks); only their BODIES
+    # (the GetMe fetch) and the final render branch on it.
+    public_handle: str = _public_card_handle();
+
     can with entry {
-        if jacIsLoggedIn() {
+        if not public_handle and jacIsLoggedIn() {
             enter();
         }
     }
@@ -525,6 +552,13 @@ def:pub app -> JsxElement {
     poll_home_on: bool = view == "home";
     poll_home_ms: int = 5000 if tab == "inbox" else 15000;
     poll_req_on: bool = view == "request" and mine_wants_poll(ex_mine, ex_claims);
+
+    # Public card (SOH-228): every `has`/effect above has already run this
+    # render (rules-of-hooks), so it's safe to branch the render here — no
+    # login, no auth/onboarding/home switch.
+    if public_handle {
+        return <PublicCard handle={public_handle} />;
+    }
 
     return
         <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 pt-6 pb-10 pl-4 pr-4">
