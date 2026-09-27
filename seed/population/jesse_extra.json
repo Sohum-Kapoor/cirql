@@ -1,0 +1,73 @@
+{
+  "_comment": "SOH-221 capture-only extras for Jesse's account: 10 debriefs, exactly 20 intended new people. Run with POP_CAPTURE_ONLY=1 POP_FILES=jesse_extra.json; credentials via POP_LOGIN/POP_PASSWORD env only, never in this file. Fictional people; ties to existing people: Sohum Kapoor, Amanveer Gadiya, Matthew Whittaker. Ambiguity probes: 'Shaun' vs Shaun Zhang, 'Dr. Lee' (dentist) vs Prof. Daniel Lee.",
+  "_intended": {
+    "relevant": [
+      "Rina Castellano",
+      "Devika Sen",
+      "Daniel Lee",
+      "Kendra Obi",
+      "Hugo Serrano",
+      "Anika Voss",
+      "Jordan Ellis"
+    ],
+    "route": [
+      "Leo Marchetti",
+      "Omari Wells",
+      "Priscilla Nguyen",
+      "Ivan Petrossian",
+      "Beatrice Kolb"
+    ],
+    "irrelevant": [
+      "Pete Horvath",
+      "Lee (dentist, Dr. Lee)",
+      "Lorraine Becker",
+      "Reggie Dawson",
+      "Shaun (climbing gym)",
+      "Tobias Grun",
+      "Marisol Vega",
+      "Hailey Brooks"
+    ]
+  },
+  "debriefs": [
+    {
+      "text": "Coffee with Rina Castellano, the university recruiter at Lumen Labs, an AI startup in Detroit. She said they're hiring four summer 2027 machine learning interns and the application opens December 1. She knows Sohum Kapoor from a hackathon they both judged. I promised to send her my resume by Friday.",
+      "how_met": "coffee at Comet"
+    },
+    {
+      "text": "Met Devika Sen, an associate at Huron Ventures, the Ann Arbor seed fund, at the Venture Club mixer. She's looking for a summer analyst who can build market maps and said to email her in January. Leo Marchetti, a senior who interned at Huron last summer, knows her well and offered to put in a word for me.",
+      "how_met": "Venture Club mixer"
+    },
+    {
+      "text": "Went to office hours with Prof. Daniel Lee, who runs an AI lab in CSE. He said the lab takes two undergrad research assistants every summer and wants people who have shipped something. Omari Wells, the EECS 445 TA, works in his lab and said he'd mention me to him.",
+      "how_met": "CSE office hours"
+    },
+    {
+      "text": "Talked to Kendra Obi, an engagement manager at a consulting firm's Detroit office, after the Ross case night. She said summer 2027 business analyst applications open in January and she'd refer strong candidates. I promised to send her my case prep notes. Priscilla Nguyen, a family friend, used to work at Bain in Chicago and offered to ask their campus recruiting team about summer roles.",
+      "how_met": "Ross case night"
+    },
+    {
+      "text": "Met Hugo Serrano, founder of Ferrule AI, a seed-stage startup building AI tools for machine shops. He's offering a paid two-week trial project to students who might become summer interns. My roommate Ivan Petrossian knows Hugo from their old robotics team.",
+      "how_met": "startup demo night"
+    },
+    {
+      "text": "Chatted with Anika Voss, a product manager at Google's Ann Arbor office, at the alumni panel. She offered to refer me for the summer software engineering internship once I have a project to point to. Jordan Ellis, who runs the Startup Summer fellowship that places students at Detroit startups, was on the same panel; the deadline is February 1 and he knows Amanveer Gadiya.",
+      "how_met": "alumni panel"
+    },
+    {
+      "text": "My neighbor Beatrice Kolb works in HR at GM and said she can forward my resume to the GM tech internship team. Our landlord Pete Horvath came by to fix the heater and complained about the parking permits.",
+      "how_met": "apartment building"
+    },
+    {
+      "text": "Dentist appointment with Dr. Lee at Kerrytown Dental; she said my next cleaning is in March. Afterwards I got coffee from Lorraine Becker, the barista at Comet who is getting into pottery. Picked up my bike from Reggie Dawson at the bike co-op, who replaced the chain.",
+      "how_met": "errands around Kerrytown"
+    },
+    {
+      "text": "Went bouldering and met Shaun from the climbing gym, he's a nursing student who has been climbing for ten years. Tobias Grun, my usual belay partner, knows Shaun from the Tuesday league.",
+      "how_met": "climbing gym"
+    },
+    {
+      "text": "My roommate's cousin Marisol Vega is visiting from Texas and wants restaurant recommendations. I said I'd send her my list of Ann Arbor restaurants. Also played intramural soccer; Hailey Brooks is our captain and she knows Matthew Whittaker from her dorm.",
+      "how_met": "intramural soccer"
+    }
+  ]
+}
