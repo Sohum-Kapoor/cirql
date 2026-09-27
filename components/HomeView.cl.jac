@@ -22,6 +22,7 @@ on the list alone — the header and picker stay put.
 
 import from .ui.button { Button, buttonVariants }
 import from .ui.skeleton { Skeleton }
+import from .ui.badge { Badge }
 import from .ui.dropdown_menu {
     DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
     DropdownMenuSeparator
@@ -56,6 +57,7 @@ lambda handlers inside a JSX `for` miscompile.)"""
 def:pub PeopleRow(person: any, onOpen: Callable[[str], None]) -> JsxElement {
     pid: str = (person["_jac_id"] or "") as str;
     sub: str = join_with([s for s in [person["title"], person["org"]] if s], ", ");
+    unconfirmed: bool = ((person["status"] or "") as str) == "proposed";
 
     def handle(e: MouseEvent) {
         if pid {
@@ -71,7 +73,10 @@ def:pub PeopleRow(person: any, onOpen: Callable[[str], None]) -> JsxElement {
                 className="flex min-h-11 w-full items-center justify-between gap-2 pt-2.5 pb-2.5 pl-4 pr-3 text-left outline-none transition-colors hover:bg-secondary focus-visible:bg-secondary"
             >
                 <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-body-sm">{person["name"]}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-body-sm">{person["name"]}</span>
+                        {unconfirmed and <Badge variant="outline" className="shrink-0">unconfirmed</Badge>}
+                    </span>
                     {sub and <span className="truncate text-caption text-muted-foreground">{sub}</span>}
                 </span>
                 <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
@@ -195,6 +200,14 @@ def:pub HomeView(
 
     def set_view_tab(v: str) -> None {
         view_tab = v;
+    }
+
+    # Import (SOH-181): Done switches the People sub-tab back to the list and
+    # refreshes it — same refresh path as the header's "Refresh" menu item —
+    # so a just-imported/confirmed person shows up without a manual refresh.
+    def import_done() -> None {
+        view_tab = "list";
+        onRefresh();
     }
 
     def handle_refresh(e: any) {
@@ -417,7 +430,7 @@ def:pub HomeView(
                         <Timeline on_open_person={open_person} />
                     </TabsContent>
                     <TabsContent value="import">
-                        <ImportPeople on_open_person={open_person} />
+                        <ImportPeople on_open_person={open_person} onDone={import_done} onChanged={onRefresh} />
                     </TabsContent>
                 </Tabs>
                 </div>
