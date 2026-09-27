@@ -17,7 +17,10 @@ import shutil;
 import tempfile;
 import sys;
 import json;
-import from agent { make_finding, _rank, _clip, step_new_match }
+import from agent {
+    make_finding, _rank, _clip, step_new_match, _answer_ask_hits,
+    _answer_ask_match_tokens, _first_resolvable_hit
+}
 import from schema { AgentAction, Me, Person, Goal, HasGoal, RelevantTo, Note, Fact, Asserts, FactAbout }
 
 glob AG_REPO_ROOT = os.path.dirname(os.path.abspath(__file__));
@@ -269,7 +272,7 @@ test "agent tune: step_new_match caps the first run at 3, strong before medium, 
     p6 = _nm_seed(goal, "Tune FR P6", "medium", "2026-01-01T00:00:05");
 
     current1: dict[str, str] = {};
-    findings1 = step_new_match([goal], None, current1);
+    findings1 = step_new_match([goal], None, current1, False);
     proposed1 = [f for f in findings1 if bool(f["propose"])];
     proposed_pids1 = sorted([str(f["person_id"]) for f in proposed1]);
     assert len(proposed1) == 3, findings1;
@@ -279,7 +282,7 @@ test "agent tune: step_new_match caps the first run at 3, strong before medium, 
     assert len(current1) == 6;   # every strength seen is remembered for next run, including the 3 not proposed
 
     # ---- "second run" with nothing changed (same strengths read back as `prior`) -> nothing new
-    findings2 = step_new_match([goal], current1, {});
+    findings2 = step_new_match([goal], current1, {}, True);
     proposed2 = [f for f in findings2 if bool(f["propose"])];
     assert len(proposed2) == 0, findings2;
 }
@@ -291,7 +294,7 @@ test "agent tune: step_new_match proposes only on a real rank rise (medium -> st
     prior: dict[str, str] = {f"{pid}|{jid(goal)}": "medium"};
 
     # unchanged (still medium) -> not proposed
-    unchanged = step_new_match([goal], prior, {});
+    unchanged = step_new_match([goal], prior, {}, True);
     assert len([f for f in unchanged if bool(f["propose"])]) == 0, unchanged;
 
     # the stored strength rises to strong
@@ -299,10 +302,33 @@ test "agent tune: step_new_match proposes only on a real rank rise (medium -> st
     rel = [edge people[0] ->:RelevantTo:-> goal][0];
     rel.strength = "strong";
 
-    risen = step_new_match([goal], prior, {});
+    risen = step_new_match([goal], prior, {}, True);
     proposed = [f for f in risen if bool(f["propose"])];
     assert len(proposed) == 1, risen;
     assert str(proposed[0]["person_id"]) == pid;
+}
+
+test "agent tune (review fix 5): prior={} from a run that saw zero RelevantTo edges still gets the first-run cap" {
+    me = (root ++> Me(name="Tune-test ZeroPrior Me"))[0];
+    goal = (me +>:HasGoal:+> Goal(text="Tune-test zeroprior goal", created_at="2026-01-01T00:00:00"))[0];
+
+    p1 = _nm_seed(goal, "Tune ZP P1", "strong", "2026-01-01T00:00:01");
+    p2 = _nm_seed(goal, "Tune ZP P2", "strong", "2026-01-01T00:00:02");
+    p3 = _nm_seed(goal, "Tune ZP P3", "strong", "2026-01-01T00:00:03");
+    p4 = _nm_seed(goal, "Tune ZP P4", "strong", "2026-01-01T00:00:04");
+
+    # prior={} (not None) simulates an earlier AgentRun whose `current` came
+    # back empty (e.g. no RelevantTo edges existed yet at the time) — the
+    # account has NOT actually had a new_match action proposed yet.
+    capped = step_new_match([goal], {}, {}, False);
+    proposed_capped = [f for f in capped if bool(f["propose"])];
+    assert len(proposed_capped) == 3, capped;   # still capped: nothing has ever been proposed
+
+    # once the account HAS seen a new_match proposal before, the same prior={}
+    # is read as a real rise-from-empty and every match is proposed, uncapped.
+    uncapped = step_new_match([goal], {}, {}, True);
+    proposed_uncapped = [f for f in uncapped if bool(f["propose"])];
+    assert len(proposed_uncapped) == 4, uncapped;
 }
 
 test "agent tune: answer_ask needs real token overlap; a real 2-token match names them in why" {
@@ -347,4 +373,62 @@ test "agent tune: answer_ask needs real token overlap; a real 2-token match name
     } finally {
         shutil.rmtree(tmp_dir, ignore_errors=True);
     }
+}
+
+test "agent tune (review fix 2): two prefix-only matches (no exact token anywhere) still surface the candidate" {
+    p = (root ++> Person(name="Tune Prefix P2"))[0];
+    note = (root ++> Note(text="prefix test note 2", kind="debrief", captured_at="2026-01-01T00:00:00"))[0];
+    fact = (note +>:Asserts(span="works as a nurse in a hospital"):+> Fact(text="works as a nurse in a hospital", observed_at="2026-01-01T00:00:00"))[0];
+    fact +>:FactAbout:+> p;
+    cand = {"person": p, "evidence": [{"kind": "fact", "text": fact.text, "jid": jid(fact)}]};
+
+    # "nurses" only PREFIX-matches the fact's "nurse" and "hospitalization"
+    # only prefix-matches "hospital" -- there is no EXACT token shared
+    # anywhere. scoring.fallback_results' exact-token pre-filter (the old
+    # code's first gate) would have excluded this candidate before
+    # `_answer_ask_match_tokens` ever saw it.
+    hits = _answer_ask_hits([cand], "nurses hospitalization");
+    assert len(hits) == 1, hits;
+    matched = sorted(hits[0]["matched"] as list[str]);
+    assert matched == ["hospitalization", "nurses"], matched;
+    assert jid(fact) in (hits[0]["evidence_ids"] as list[str]);
+}
+
+test "agent tune (review fix 3): a need's own plural/singular pair (nurse/nurses) counts as ONE token, not two" {
+    p = (root ++> Person(name="Tune Dedup P"))[0];
+    note = (root ++> Note(text="dedup test note", kind="debrief", captured_at="2026-01-01T00:00:00"))[0];
+    fact = (note +>:Asserts(span="works as a nurse"):+> Fact(text="works as a nurse", observed_at="2026-01-01T00:00:00"))[0];
+    fact +>:FactAbout:+> p;
+    cand = {"person": p, "evidence": [{"kind": "fact", "text": fact.text, "jid": jid(fact)}]};
+
+    # "nurse" and "nurses" are the same `_tok_match` family; only ONE real
+    # signal ("nurse" in the candidate's own fact) backs both, so this must
+    # NOT count as 2 distinct matches.
+    matched = _answer_ask_match_tokens("nurse nurses", cand);
+    assert len(matched) == 1, matched;
+
+    hits = _answer_ask_hits([cand], "nurse nurses");
+    assert len(hits) == 0, hits;   # still below the 2-distinct-token bar
+}
+
+test "agent tune (review fix 4): a bad evidence id on the top hit falls through to the next resolvable hit" {
+    note = (root ++> Note(text="resolvable hit test note", kind="debrief", captured_at="2026-01-01T00:00:00"))[0];
+    fact = (note +>:Asserts(span="a real fact"):+> Fact(text="a real fact", observed_at="2026-01-01T00:00:00"))[0];
+
+    bad_hit = {"person_id": "p_bad", "evidence_ids": ["not_a_real_id"], "matched": ["x", "y"]};
+    good_hit = {"person_id": "p_good", "evidence_ids": [jid(fact)], "matched": ["a", "b"]};
+
+    # top hit's evidence id doesn't resolve to anything -> the OLD code
+    # (`top = hits[0]`) would have yielded no action for the whole request;
+    # the fixed code falls through to the next hit whose evidence resolves.
+    picked = _first_resolvable_hit([bad_hit, good_hit]);
+    assert picked is not None, picked;
+    chosen = picked as dict[str, any];
+    hit = chosen["hit"] as dict[str, any];
+    assert str(hit["person_id"]) == "p_good", hit;
+    ev = chosen["evidence"] as list[str];
+    assert ev == [jid(fact)], ev;
+
+    # every hit's evidence fails to resolve -> None, not an exception
+    assert _first_resolvable_hit([bad_hit]) is None;
 }
