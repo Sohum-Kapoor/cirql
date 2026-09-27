@@ -1047,3 +1047,22 @@ async def:pub resolve_agent_action(action_id: str, decision: str, edited_draft: 
     out = _first_or_error(result.reports);
     return out;
 }
+
+# ---------------------------------------------------------------- Delete account (SOH-226, App Store 5.1.1(v))
+import from .mocks.data { mock_delete_account }
+
+"""DeleteAccount(confirm) -> { ok, deleted: {...counts}, identity_removed, identity_disabled } | { error }.
+`ok` is true only when the graph was wiped AND the login was disabled; a wiped graph whose
+login could not be disabled comes back `ok: false, identity_disabled: false`."""
+async def:pub delete_account(confirm: str) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_DELAY_MS);
+        out = mock_delete_account(confirm);
+        return out;
+    }
+    data = await jacSpawn("DeleteAccount", "", {"confirm": confirm});
+    out = _first_or_error(data["reports"] if data else []);
+    return out;
+}

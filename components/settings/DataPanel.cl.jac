@@ -22,7 +22,7 @@ import from ..ui.alert_dialog {
     AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle,
     AlertDialogDescription, AlertDialogAction, AlertDialogCancel
 }
-import from ..api { export_graph, export_contacts, list_archived, restore_person, delete_my_data }
+import from ..api { export_graph, export_contacts, list_archived, restore_person, delete_my_data, delete_account }
 import from ...lib.text { join_with }
 import from ...lib.utils { cn }
 
@@ -146,7 +146,11 @@ def:pub ArchivedRow(person: dict, busy: bool, onRestore: Callable[[str], None]) 
 }
 
 def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
-    has export_busy: bool = False,
+    has account_open: bool = False,
+        account_text: str = "",
+        account_busy: bool = False,
+        account_error: str = "",
+        export_busy: bool = False,
         export_error: str = "",
         export_counts: dict = {},
         contacts_busy: bool = False,
@@ -237,6 +241,45 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
 
     def edit_delete_text(e: ChangeEvent) {
         delete_text = e.target.value;
+    }
+
+    def ask_account(e: MouseEvent) {
+        account_text = "";
+        account_error = "";
+        account_open = True;
+    }
+
+    def set_account_open(v: bool) {
+        account_open = v;
+    }
+
+    def edit_account_text(e: ChangeEvent) {
+        account_text = e.target.value;
+    }
+
+    async def do_delete_account(e: MouseEvent) -> None {
+        e.preventDefault();
+        if account_text != "DELETE" {
+            return;
+        }
+        account_busy = True;
+        account_error = "";
+        try {
+            reply: dict = await delete_account("DELETE");
+            if reply["error"] {
+                account_error = "Couldn't delete your account right now. Try again.";
+            } elif not reply["ok"] and reply["deleted"] and not reply["identity_disabled"] {
+                account_error = "Your data was removed, but the login could not be disabled. Try again; if it keeps failing, write to us from the privacy page.";
+            } elif not reply["ok"] {
+                account_error = "Couldn't delete your account right now. Try again.";
+            } else {
+                account_open = False;
+                onDeleted();
+            }
+        } except Exception as err {
+            account_error = "Couldn't delete your account right now. " + str(err);
+        }
+        account_busy = False;
     }
 
     async def do_delete(e: MouseEvent) -> None {
@@ -346,6 +389,53 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                     <Button variant="destructive" className="w-full focus-visible:ring-inset" onClick={ask_delete}>Delete my data</Button>
                 </CardContent>
             </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Delete account</CardTitle>
+                    <CardDescription>
+                        Removes your graph and disables this login. Your username is freed up; nothing
+                        is kept on the server.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-2">
+                    <Button variant="destructive" className="w-full focus-visible:ring-inset" onClick={ask_account}>Delete account</Button>
+                </CardContent>
+            </Card>
+
+            <AlertDialog open={account_open} onOpenChange={set_account_open}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Removes everything in your graph and disables this login. You will be
+                            signed out. Export first if you want a copy. Type DELETE to confirm.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="account-confirm">Type DELETE to confirm</Label>
+                        <Input
+                            id="account-confirm"
+                            value={account_text}
+                            onChange={edit_account_text}
+                            placeholder="DELETE"
+                            autoComplete="off"
+                            disabled={account_busy}
+                        />
+                    </div>
+                    {account_error and <p role="alert" className="text-body-sm text-destructive">{account_error}</p>}
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={account_busy}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            variant="destructive"
+                            disabled={account_busy or account_text != "DELETE"}
+                            onClick={do_delete_account}
+                        >
+                            {"Deleting…" if account_busy else "Delete account"}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             <AlertDialog open={delete_open} onOpenChange={set_delete_open}>
                 <AlertDialogContent>
