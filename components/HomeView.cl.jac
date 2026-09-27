@@ -49,6 +49,8 @@ import from .circles.Circles { Circles }
 import from .events.Events { Events }
 import from .notes.Timeline { Timeline }
 import from .people.ImportPeople { ImportPeople }
+import from .people.Deck { Deck }
+import from .ui.sheet { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetBody }
 import from ..lib.text { join_with, humanize_iso_dates }
 import from ..lib.utils { cn }
 import from .agent.common { since_iso }
@@ -207,6 +209,7 @@ def:pub HomeView(
         view_tab: str = "list",
         more_choice: str = "circles",
         show_import: bool = False,
+        show_deck: bool = False,
         quiet_only: bool = False,
         expanded_goal: str = "";
 
@@ -269,6 +272,19 @@ def:pub HomeView(
 
     def open_import(e: MouseEvent) {
         show_import = True;
+    }
+
+    """SOH-231: the Today trickle row -> the "meet your people" deck."""
+    def open_deck_row(e: MouseEvent) {
+        show_deck = True;
+    }
+
+    def close_deck() {
+        show_deck = False;
+    }
+
+    def deck_open_change(v: bool) -> None {
+        show_deck = v;
     }
 
     def toggle_quiet(e: MouseEvent) {
@@ -385,6 +401,7 @@ def:pub HomeView(
     }
 
     known: list[Person] = [p for p in people if ((p["_jac_id"] or "") as str) not in forgotten_ids];
+    proposed_count: int = len([p for p in known if ((p["status"] or "") as str) == "proposed"]);
     quiet_known: list[Person] = [p for p in known if is_quiet_person(p)];
     quiet_count: int = len(quiet_known);
     shown_known: list[Person] = quiet_known if quiet_only else known;
@@ -417,6 +434,17 @@ def:pub HomeView(
             </header>
             <AppearanceSheet open={appearance_open} onOpenChange={set_appearance} onDeleted={onLogout} />
             <PersonSheet person_id={sheet_person_id} open={sheet_open} on_close={close_person} on_forgotten={person_forgotten} />
+            <Sheet open={show_deck} onOpenChange={deck_open_change}>
+                <SheetContent aria-label="Meet your people">
+                    <SheetHeader>
+                        <SheetTitle className="sr-only">Meet your people</SheetTitle>
+                        <SheetDescription className="sr-only">People from your import you haven't placed yet</SheetDescription>
+                    </SheetHeader>
+                    <SheetBody>
+                        <Deck onClose={close_deck} onChanged={onRefresh} />
+                    </SheetBody>
+                </SheetContent>
+            </Sheet>
             {if tab == "inbox" {
                 <div key="tab-inbox" className="flex flex-col gap-6">
                     <AgentInbox
@@ -557,6 +585,15 @@ def:pub HomeView(
                         onCapture={onCapture}
                         refresh_key={today_key}
                     />
+                    {proposed_count > 0 and
+                        <button
+                            type="button"
+                            onClick={open_deck_row}
+                            className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-dashed border-border-strong pt-3 pb-3 pl-4 pr-4 text-left text-body-sm text-muted-foreground"
+                        >
+                            <span>{str(proposed_count) + " people from your import you haven't placed yet"}</span>
+                            <ChevronRightIcon className="size-4 shrink-0" />
+                        </button>}
                     {if not goals_loaded {
                         <div role="status" aria-label="Loading your goals" className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
                             <Skeleton className="h-3 w-12" />

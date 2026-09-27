@@ -25,6 +25,7 @@ import from ..ui.label { Label }
 import from ..ui.badge { Badge }
 import from ..ui.icons { CheckIcon, XIcon, ChevronLeftIcon }
 import from ..api_import { import_people, confirm_person, skip_person }
+import from .Deck { Deck }
 import from ...lib.text { join_with, linkedin_how_met }
 import from ...lib.toast { toast }
 
@@ -839,7 +840,7 @@ def:pub ImportPeople(
         confirm_all_busy = False;
     }
 
-    def start_over(e: MouseEvent) {
+    def reset_import() {
         step = "paste";
         paste_text = "";
         parsed_rows = [];
@@ -858,12 +859,33 @@ def:pub ImportPeople(
         row_busy_ref.current = {};
     }
 
-    def handle_done(e: MouseEvent) {
+    def start_over(e: MouseEvent) {
+        reset_import();
+    }
+
+    """The old "Done" behavior — back to the list (or wherever the caller
+    sends "Done" to), skipping the deck entirely."""
+    def go_to_list() {
         if onDone {
             onDone();
         } else {
-            start_over(e);
+            reset_import();
         }
+    }
+
+    def handle_skip_to_list(e: MouseEvent) {
+        go_to_list();
+    }
+
+    """SOH-231: "Done" now opens the deck over this batch's people instead of
+    jumping straight to the list; "Skip to list" (`handle_skip_to_list`) is
+    the old behavior for anyone who wants out immediately."""
+    def handle_done(e: MouseEvent) {
+        step = "deck";
+    }
+
+    def close_deck() {
+        go_to_list();
     }
 
     # SOH-232: the sort step's outer div below carries `pb-20` — the fixed
@@ -872,6 +894,7 @@ def:pub ImportPeople(
     # directly on top of "Import more"/"Done" whenever this step's content
     # is short enough not to scroll.
     imported_rows: list[dict] = (result["imported"] or []) as list[dict];
+    imported_person_ids: list[str] = [_pid_of(entry) for entry in imported_rows if _pid_of(entry)];
     skipped_rows: list[dict] = (result["skipped"] or []) as list[dict];
     pending_count: int = 0;
     for entry in imported_rows {
@@ -979,7 +1002,7 @@ def:pub ImportPeople(
                         {"Importing…" if import_busy else "Import " + str(len(parsed_rows)) + " people"}
                     </Button>
                 </div>
-            } else {
+            } elif step == "sort" {
                 <div key="import-sort" className="flex flex-col gap-4 pb-20">
                     <div className="flex items-center justify-between gap-2">
                         <h2 className="text-eyebrow text-muted-foreground">Confirm your people</h2>
@@ -1041,6 +1064,13 @@ def:pub ImportPeople(
                             </Button>
                         </div>
                     }}
+                    <Button variant="link" size="inline" className="self-start text-muted-foreground" onClick={handle_skip_to_list}>
+                        Skip to list
+                    </Button>
+                </div>
+            } else {
+                <div key="import-deck" className="flex flex-col gap-4">
+                    <Deck onClose={close_deck} person_ids={imported_person_ids} onChanged={onChanged} />
                 </div>
             }}
         </div>;
