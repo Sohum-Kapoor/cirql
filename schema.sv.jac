@@ -289,12 +289,12 @@ node AgentAction {
     has request_id: str = "";
     has draft: str = "";
     has payload_json: str = "";
-    has status: str = "open";        # open | approved | dismissed | snoozed
+    has status: str = "open";        # open | approved | dismissed | snoozed | stale
     has created_at: str = "";
     has resolved_at: str = "";
     has source_walker: str = "";
     has dedup_key: str = "";
-    has approval_source: str = "";   # "" | in_app
+    has approval_source: str = "";   # "" | in_app | agent:warm_path_found
 }
 
 node AgentRun {
