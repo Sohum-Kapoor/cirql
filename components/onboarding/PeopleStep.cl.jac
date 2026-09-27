@@ -1,14 +1,21 @@
-"""Onboarding step 3 — bring five people; Continue sends one paste to Capture. OWNER: Person B.
+"""Onboarding step 3 — bring five people; one Continue sends the paste to
+Capture. OWNER: Person B.
 
-Stateless: the shell owns `rows` ([{name, how}] x5), the Capture call, and the
-returned people count (`captured_count`, -1 until Capture returns).
+Stateless: the shell owns `rows` ([{name, how}] x5) and the Capture call.
+One Continue: click runs the capture, shows a pending status + skeleton, and
+the shell advances to step 4 automatically on success (SOH-232). On failure
+the button becomes Retry and the error stays visible. Skip for now is shown
+only before the first capture attempt.
 """
 
 import from "..ui.button" { Button }
 import from "..ui.input" { Input }
+import from "..ui.skeleton" { Skeleton }
 
-"""One (name, how you know them) row. Named handlers, not lambdas: a lambda
-inside a `for` slot compiles its body as a slot child push."""
+"""One (name, how you know them) row: two inputs, no nested card — the flat
+list's own `divide-y` draws the hairline between rows (SOH-232). Named
+handlers, not lambdas: a lambda inside a `for` slot compiles its body as a
+slot child push."""
 def:pub PersonRow(
     index: int,
     name: str,
@@ -25,33 +32,31 @@ def:pub PersonRow(
     }
 
     return
-        <div className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-3 pr-3 shadow-edge">
+        <li className="grid grid-cols-2 gap-2 pt-3 pb-3">
             <Input
                 aria-label={"Person " + str(index + 1) + " name"}
                 value={name}
                 disabled={disabled}
-                placeholder={"Name" if index > 0 else "Name, e.g. Maya Chen"}
+                placeholder={"Name" if index > 0 else "e.g. Maya Chen"}
                 onChange={handle_name}
             />
             <Input
                 aria-label={"How you know person " + str(index + 1)}
                 value={how}
                 disabled={disabled}
-                placeholder={"How you know them" if index > 0 else "How you know them, e.g. worked together at Stripe"}
+                placeholder={"How you know them" if index > 0 else "e.g. college roommate"}
                 onChange={handle_how}
             />
-        </div>;
+        </li>;
 }
 
 def:pub PeopleStep(
     rows: list[dict],
     pending: bool,
     error: str,
-    captured_count: int,
     onRowChange: Callable[[int, str, str], None],
     onCapture: Callable[[], None],
-    onSkip: Callable[[], None],
-    onNext: Callable[[], None]
+    onSkip: Callable[[], None]
 ) -> JsxElement {
     def handle_capture(e: MouseEvent) {
         onCapture();
@@ -61,12 +66,9 @@ def:pub PeopleStep(
         onSkip();
     }
 
-    def handle_next(e: MouseEvent) {
-        onNext();
-    }
-
     filled: int = len([r for r in rows if (r["name"] as str).strip()]);
-    captured: bool = captured_count >= 0;
+    started: bool = pending or len(error) > 0;
+    label: str = "Adding your people…" if pending else ("Retry" if error else "Continue");
 
     return
         <div className="flex flex-col gap-4">
@@ -76,34 +78,33 @@ def:pub PeopleStep(
                     Who do you already know? A name and one line on how you know them is enough.
                 </p>
             </div>
-            <div className="flex flex-col gap-2">
+            <ul className="flex flex-col divide-y divide-border">
                 {for (i, r) in enumerate(rows) {
                     <PersonRow
                         key={str(i)}
                         index={i}
                         name={r["name"] as str}
                         how={r["how"] as str}
-                        disabled={pending or captured}
+                        disabled={pending}
                         onRowChange={onRowChange}
                     />
                 }}
-            </div>
+            </ul>
             {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
-            {if captured {
+            {pending and
                 <div className="flex flex-col gap-2">
-                    <p role="status" className="rounded-lg bg-success/10 pt-3 pb-3 pl-4 pr-4 text-body-sm text-success-text">
-                        <span className="font-medium tabular-nums">{str(captured_count)}</span>
-                        {" " + ("person" if captured_count == 1 else "people") + " added."}
-                    </p>
-                    <Button className="w-full" size="lg" onClick={handle_next}>Continue</Button>
-                </div>
-            } else {
-                <div className="flex flex-col gap-2">
-                    <Button className="w-full" size="lg" disabled={filled == 0 or pending} onClick={handle_capture}>
-                        {"Capturing…" if pending else "Continue"}
-                    </Button>
-                    <Button className="w-full" size="lg" variant="ghost" disabled={pending} onClick={handle_skip}>Skip for now</Button>
-                </div>
-            }}
+                    <span role="status" className="text-caption text-muted-foreground">Adding your people…</span>
+                    <div className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
+                        <Skeleton className="h-4 w-2/3" />
+                        <Skeleton className="h-3.5 w-full" />
+                    </div>
+                </div>}
+            <div className="flex flex-col gap-2">
+                <Button className="w-full" size="lg" disabled={filled == 0 or pending} onClick={handle_capture}>
+                    {label}
+                </Button>
+                {not started and
+                    <Button className="w-full" size="lg" variant="ghost" onClick={handle_skip}>Skip for now</Button>}
+            </div>
         </div>;
 }

@@ -337,6 +337,43 @@ def empty_rows() -> list[dict] {
     return [{"name": "", "how": ""} for _ in range(5)];
 }
 
+# Onboarding progress (SOH-232): this tab's sessionStorage remembers the step
+# and typed values so a reload or re-login mid-onboarding resumes instead of
+# dropping the user on Home (Me can already exist after step 1). Cleared on
+# `finish` and `logout`. `lib/session.cl.jac`'s helpers don't have an
+# onboarding key, so this is its own small guarded read/write, same idiom.
+glob ONBOARD_KEY: str = "cirql.onboarding";
+
+def load_onboard_progress() -> dict {
+    out: dict = {};
+    try {
+        v: any = sessionStorage.getItem(ONBOARD_KEY);  # jac:ignore[W2001]
+        if v {
+            out = JSON.parse(v as str) as dict;  # jac:ignore[W2001]
+        }
+    } except Exception as e {
+        out = {};
+    }
+    return out or {};
+}
+
+def save_onboard_progress(step: int, name: str, about: str, card: dict, rows: list[dict]) -> None {
+    snap: dict = {"step": step, "name": name, "about": about, "card": card, "rows": rows};
+    try {
+        sessionStorage.setItem(ONBOARD_KEY, JSON.stringify(snap));  # jac:ignore[W2001]
+    } except Exception as e {
+        return;
+    }
+}
+
+def clear_onboard_progress() -> None {
+    try {
+        sessionStorage.removeItem(ONBOARD_KEY);  # jac:ignore[W2001]
+    } except Exception as e {
+        return;
+    }
+}
+
 """The `<handle>` in `/card/<handle>` — "" when the current URL isn't a
 public card link. `jac start`'s SPA fallback serves this app's HTML for
 `/card/anything` (verified SOH-228), so a QR/shared link lands here without
@@ -359,7 +396,8 @@ def:pub app -> JsxElement {
         email: str = "",
         password: str = "",
         status: str = "",
-        auth_pending: bool = False,
+        login_pending: bool = False,
+        signup_pending: bool = False,
         people: list[Person] = [],
         step: int = 1,
         onboard_name: str = "",
@@ -371,7 +409,6 @@ def:pub app -> JsxElement {
         rows: list[dict] = empty_rows(),
         capture_pending: bool = False,
         capture_error: str = "",
-        captured_count: int = -1,
         rank_rows: list[dict] = [],
         rank_pending: bool = False,
         rank_error: str = "",
@@ -441,7 +478,6 @@ def:pub app -> JsxElement {
     def set_row(i: int, field: str, value: str) -> None;
     async def submit_people -> None;
     def skip_people -> None;
-    def people_next -> None;
     async def start_recall(known_goal_id: str = "") -> None;
     async def recall_add_goal(text: str) -> None;
     def finish -> None;
@@ -567,6 +603,19 @@ def:pub app -> JsxElement {
         t: any = setTimeout(lambda { post_capture = {}; }, 4000);  # jac:ignore[W2001]
         return lambda { clearTimeout(t); };  # jac:ignore[W2001,E1053]
     }, [post_capture_summary]);
+    # Onboarding (SOH-232): scroll to the top on every step change (there is no
+    # separate scroll container — `main` itself is the page's only scroller)
+    # and persist the step + typed values so a reload resumes in place.
+    onboard_card_key: str = JSON.stringify(card);  # jac:ignore[W2001]
+    onboard_rows_key: str = JSON.stringify(rows);  # jac:ignore[W2001]
+    useEffect(lambda {
+        if view == "onboarding" {
+            window.scrollTo(0, 0);  # jac:ignore[W2001,E1053]
+            document.documentElement.scrollTop = 0;  # jac:ignore[W2001,E1053]
+            save_onboard_progress(step, onboard_name, about, card, rows);
+        }
+        return lambda { };
+    }, [view, step, onboard_name, about, onboard_card_key, onboard_rows_key]);
     poll_home_on: bool = view == "home";
     poll_home_ms: int = 5000 if tab == "inbox" else 15000;
     poll_req_on: bool = view == "request" and mine_wants_poll(ex_mine, ex_claims);
@@ -585,7 +634,8 @@ def:pub app -> JsxElement {
                     key="auth"
                     email={email}
                     password={password}
-                    pending={auth_pending}
+                    login_pending={login_pending}
+                    signup_pending={signup_pending}
                     status={status}
                     onEmailChange={lambda v: str { email = v; }}
                     onPasswordChange={lambda v: str { password = v; }}
@@ -708,7 +758,7 @@ def:pub app -> JsxElement {
                     onOpenPerson={lambda pid: str { capture_done(); post_capture = {}; open_person_id = pid; }}
                 />
             } else {
-                <StepIndicator key="indicator" step={step} total={4} label={STEP_LABELS[step - 1]} />
+                <StepIndicator key="indicator" step={step} total={4} labels={STEP_LABELS} />
                 if step == 1 {
                     <AboutStep
                         key="step-1"
@@ -740,11 +790,9 @@ def:pub app -> JsxElement {
                         rows={rows}
                         pending={capture_pending}
                         error={capture_error}
-                        captured_count={captured_count}
                         onRowChange={set_row}
                         onCapture={submit_people}
                         onSkip={skip_people}
-                        onNext={people_next}
                     />
                 } else {
                     <RecallStep
