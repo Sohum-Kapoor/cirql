@@ -474,7 +474,7 @@ def:pub app -> JsxElement {
     def open_request(rid: str) -> None;
     async def cancel_request(rid: str) -> None;
     async def claim(reply_id: str) -> None;
-    def open_ask(rid: str) -> None;
+    def open_ask(rid: str, auto_check: bool = True) -> None;
     async def friend_check(rid: str) -> None;
     async def friend_approve(rid: str) -> None;
     async def friend_opt_in(rid: str) -> None;

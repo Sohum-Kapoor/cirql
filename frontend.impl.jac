@@ -915,8 +915,16 @@ impl app.claim(reply_id: str) -> None {
     }
 }
 
-"""Friend opens an ask: the approval card; the first open runs ReplyToRequest."""
-impl app.open_ask(rid: str) -> None {
+"""Friend opens an ask: the approval card; the first open runs ReplyToRequest.
+
+`auto_check` (SOH-229): False from `answer_ask_action`'s already-answered
+fallback, where the reply is known to already exist server-side but its data
+never made it back to this device (dismiss doesn't carry it; the mapped
+ReplyToRequest failing "invalid_state" doesn't either) -- checking again would
+only hit the same wall and surface an error the user didn't cause. Every other
+caller (a plain "Needs your OK" open) keeps the default and auto-checks as
+before."""
+impl app.open_ask(rid: str, auto_check: bool = True) -> None {
     ent: dict = friend_get(rid);
     if not ent["request"] {
         for r in EX["incoming"] as list[dict] {
@@ -929,7 +937,7 @@ impl app.open_ask(rid: str) -> None {
     }
     open_ask_id = rid;
     view = "ask";
-    if ent["request"] and not (ent["reply"] or {})["_jac_id"] and not ent["busy"] {
+    if auto_check and ent["request"] and not (ent["reply"] or {})["_jac_id"] and not ent["busy"] {
         friend_check(rid);
     }
 }
@@ -1342,10 +1350,22 @@ impl app.post_ask_action(aid: str, need: str, about_line: str) -> None {
     load_mine();
 }
 
-"""answer_ask Approve (SOH-223 amendment): resolve FIRST — the walker runs
-ReplyToRequest and returns { step: "replied", reply } — then open the existing
+"""answer_ask Approve (SOH-223 amendment): resolve FIRST, the walker runs
+ReplyToRequest and returns { step: "replied", reply }, then open the existing
 friend reply flow on that reply (so the client never calls ReplyToRequest twice).
-On an error the card stays with an inline message and nothing opens."""
+On an error the card stays with an inline message and nothing opens.
+
+SOH-229 race: the shell's own auto-check (start_auto_checks -> pick_unchecked ->
+friend_check) can answer this same request before this tap lands (it is not
+filtered by an answer_ask card that has not been created yet). Two defenses:
+if `friend[rid]` already carries a reply, resolve through the dismiss path
+instead of approve (ResolveAgentAction takes no "how this was resolved" note, so
+there is no way to tell it "already answered"; dismiss is the only decision that
+never calls ReplyToRequest, so it always succeeds); if it comes back
+"invalid_state" anyway (the rarer case, the race lands between this tap and its
+own round trip), treat that the same as success rather than show it. Either way
+the card resolves as if approved (that is what actually happened for the
+person), and the approval view opens on the reply that already exists."""
 impl app.answer_ask_action(aid: str, rid: str) -> None {
     row: dict = agent_row(aid);
     act: dict = (row["action"] or {}) as dict;
@@ -1355,21 +1375,23 @@ impl app.answer_ask_action(aid: str, rid: str) -> None {
     agent_map_put("pending", aid, True);
     agent_map_put("errors", aid, "");
     publish_agent();
+    already: dict = friend_get(rid);
+    has_reply: bool = ((already["reply"] or {})["_jac_id"] or "") as str != "";
     out: dict = {};
     try {
-        out = await resolve_agent_action(aid, "approve", "");
+        out = await resolve_agent_action(aid, "dismiss" if has_reply else "approve", "");
     } except Exception as e {
         out = {"error": "failed"};
     }
     agent_map_put("pending", aid, False);
     code: str = resolve_error(out);
-    if code {
+    already_handled: bool = has_reply or code == "invalid_state";
+    if code and not already_handled {
         agent_map_put("errors", aid, agent_err_text(code));
         publish_agent();
         return;
     }
-    srv: dict = (out["action"] or {}) as dict;
-    agent_patch(aid, ((srv["status"] or "approved") as str), "");
+    agent_patch(aid, "approved", "");
     publish_agent();
     reply: dict = ((out["result"] or {})["reply"] or {}) as dict;
     ent: dict = friend_get(rid);
@@ -1388,5 +1410,11 @@ impl app.answer_ask_action(aid: str, rid: str) -> None {
     }
     friend_put(rid, ent);
     publish_ex();
-    open_ask(rid);
+    # SOH-229: only let the approval view auto-check again when it actually has
+    # reply data to show for a "not yet checked" state; the already-handled
+    # fallback above has neither (dismiss never returns one; a mapped
+    # ReplyToRequest failing "invalid_state" doesn't either). Auto-checking
+    # then would just hit the same wall and show an error the tap didn't cause.
+    have_reply_data: bool = ((ent["reply"] or {})["_jac_id"] or "") as str != "";
+    open_ask(rid, have_reply_data);
 }
