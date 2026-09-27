@@ -12,3 +12,4 @@ ios/
 .DS_Store
 .claude/worktrees/
 uploads/
+deploy/client-dist/
