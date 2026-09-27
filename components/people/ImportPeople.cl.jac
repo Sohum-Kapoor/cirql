@@ -25,12 +25,13 @@ import from ..ui.label { Label }
 import from ..ui.badge { Badge }
 import from ..ui.icons { CheckIcon, XIcon, ChevronLeftIcon }
 import from ..api_import { import_people, confirm_person, skip_person }
-import from ...lib.text { join_with }
+import from ...lib.text { join_with, linkedin_how_met }
 import from ...lib.toast { toast }
 
 glob _NL: str = chr(10),
      _QUOTE: str = chr(34),
-     _ALNUM: str = "abcdefghijklmnopqrstuvwxyz0123456789";
+     _ALNUM: str = "abcdefghijklmnopqrstuvwxyz0123456789",
+     _IMPORT_ROW_LIMIT: int = 500;
 
 # ---------------------------------------------------------------- parsing helpers
 
@@ -52,11 +53,21 @@ def _normalize_header(tok: str) -> str {
     return out;
 }
 
-"""A normalized header token -> one of "name"|"org"|"title"|"email"|"how_met", or ""."""
+"""A normalized header token -> one of "name"|"first_name"|"last_name"|"org"|
+"title"|"email"|"how_met"|"connected_on"|"url", or "". The last two only show
+up on a LinkedIn `Connections.csv` export ("First Name" / "Last Name" /
+"Connected On" / "URL") — `url` is otherwise ignored (SOH-181: the row shape
+`imports.sv.jac` accepts has no `links` field this weekend)."""
 def _header_field(tok: str) -> str {
     key: str = _normalize_header(tok);
     if key in ["name", "fullname", "personname", "contact"] {
         return "name";
+    }
+    if key == "firstname" {
+        return "first_name";
+    }
+    if key == "lastname" {
+        return "last_name";
     }
     if key in ["org", "organization", "company", "employer"] {
         return "org";
@@ -70,7 +81,61 @@ def _header_field(tok: str) -> str {
     if key in ["howmet", "howyoumet", "source", "met"] {
         return "how_met";
     }
+    if key == "connectedon" {
+        return "connected_on";
+    }
+    if key == "url" {
+        return "url";
+    }
     return "";
+}
+
+"""How many of the LinkedIn-export-shaped columns (first/last name, company,
+position, connected-on, email address, url) a mapped header row hits."""
+def _header_score(mapped: list[str]) -> int {
+    score: int = 0;
+    if "first_name" in mapped {
+        score = score + 1;
+    }
+    if "last_name" in mapped {
+        score = score + 1;
+    }
+    if "org" in mapped {
+        score = score + 1;
+    }
+    if "title" in mapped {
+        score = score + 1;
+    }
+    if "connected_on" in mapped {
+        score = score + 1;
+    }
+    if "email" in mapped {
+        score = score + 1;
+    }
+    if "url" in mapped {
+        score = score + 1;
+    }
+    return score;
+}
+
+"""True when a mapped header row is usable: a single "name" column, a split
+first/last name pair, or at least two of the LinkedIn-shaped columns (lets us
+skip a `Notes:` / disclaimer preamble LinkedIn's export sometimes puts before
+the real header row)."""
+def _is_header_row(mapped: list[str]) -> bool {
+    if "name" in mapped {
+        return True;
+    }
+    if "first_name" in mapped and "last_name" in mapped {
+        return True;
+    }
+    return _header_score(mapped) >= 2;
+}
+
+"""A mapped header row came from LinkedIn's own export shape when it has a
+"Connected On" column — no other list we parse uses that header."""
+def _is_linkedin_header(mapped: list[str]) -> bool {
+    return "connected_on" in mapped;
 }
 
 """One CSV line -> its fields, honoring quoted fields (`"a, b"` stays one
@@ -112,32 +177,78 @@ def parse_csv_line(line: str) -> list[str] {
     return fields;
 }
 
-"""CSV text with a header row -> `{ rows, error }`. `error` is "no_header"
-when the header has no recognizable name column."""
+"""CSV text with a header row -> `{ rows, error, skipped_no_name, is_linkedin }`.
+`error` is "no_header" when no line in the first 15 rows maps to a usable
+header (`_is_header_row`); this also skips a LinkedIn export's preamble
+("Notes:" / a sentence about missing emails / a blank line) ahead of its real
+header row. A LinkedIn header ("First Name" + "Last Name" -> `name`; "Company"
+-> `org`; "Position" -> `title`; "Email Address" -> `email`; "URL" ignored
+(no `links` field in the row shape this weekend); "Connected On" ->
+`how_met` = "LinkedIn connection since <Mon YYYY>") is detected via
+`_is_linkedin_header` and reported back as `is_linkedin` for the preview
+chip. Rows with an empty (post-combine) name are dropped and counted in
+`skipped_no_name`, never added to `rows`."""
 def parse_csv_text(text: str) -> dict {
     lines: list[str] = [ln for ln in text.split(_NL) if ln.strip() != ""];
     if len(lines) == 0 {
-        return {"rows": [], "error": "empty"};
+        return {"rows": [], "error": "empty", "skipped_no_name": 0, "is_linkedin": False};
     }
-    header_fields: list[str] = parse_csv_line(lines[0]);
-    mapped: list[str] = [_header_field(h) for h in header_fields];
-    if "name" not in mapped {
-        return {"rows": [], "error": "no_header"};
+    header_idx: int = -1;
+    mapped: list[str] = [];
+    scan_limit: int = len(lines) if len(lines) < 15 else 15;
+    i: int = 0;
+    while i < scan_limit {
+        candidate_fields: list[str] = parse_csv_line(lines[i]);
+        candidate: list[str] = [_header_field(h) for h in candidate_fields];
+        if _is_header_row(candidate) {
+            header_idx = i;
+            mapped = candidate;
+            break;
+        }
+        i = i + 1;
     }
+    if header_idx < 0 {
+        return {"rows": [], "error": "no_header", "skipped_no_name": 0, "is_linkedin": False};
+    }
+    is_linkedin: bool = _is_linkedin_header(mapped);
     rows: list[dict] = [];
-    for ln in lines[1:] {
+    skipped_no_name: int = 0;
+    for ln in lines[header_idx + 1:] {
         cells: list[str] = parse_csv_line(ln);
         row: dict = {"name": "", "org": "", "title": "", "email": "", "how_met": ""};
+        first_name: str = "";
+        last_name: str = "";
+        connected_on: str = "";
         for (idx, field) in enumerate(mapped) {
-            if field and idx < len(cells) {
-                row[field] = cells[idx].strip();
+            if not field or idx >= len(cells) {
+                continue;
             }
+            cell: str = cells[idx].strip();
+            if field == "first_name" {
+                first_name = cell;
+            } elif field == "last_name" {
+                last_name = cell;
+            } elif field == "connected_on" {
+                connected_on = cell;
+            } elif field == "url" {
+                continue;
+            } else {
+                row[field] = cell;
+            }
+        }
+        if not row["name"] and (first_name or last_name) {
+            row["name"] = join_with([p for p in [first_name, last_name] if p], " ");
+        }
+        if is_linkedin and connected_on and not row["how_met"] {
+            row["how_met"] = linkedin_how_met(connected_on);
         }
         if row["name"] {
             rows.append(row);
+        } else {
+            skipped_no_name = skipped_no_name + 1;
         }
     }
-    return {"rows": rows, "error": ""};
+    return {"rows": rows, "error": "", "skipped_no_name": skipped_no_name, "is_linkedin": is_linkedin};
 }
 
 """One free-form line -> a row. Forms: `Name`, `Name, Org`, `Name, Org,
@@ -184,25 +295,37 @@ def parse_free_text(text: str) -> list[dict] {
     return rows;
 }
 
-"""Pasted textarea content -> `{ rows, source, error }`. A first line that
-splits into 2+ comma fields with a recognizable name column is treated as
-CSV; everything else is one person per line."""
+"""Pasted textarea content -> `{ rows, source, error, skipped_no_name }`. A
+CSV-shaped header (recognizable name column, or a LinkedIn-shaped one) found
+within the first 5 lines is treated as CSV (`source` "linkedin" when it's a
+LinkedIn header, else "csv"); everything else is one person per line."""
 def parse_pasted_text(text: str) -> dict {
     lines: list[str] = [ln for ln in text.split(_NL) if ln.strip() != ""];
     if len(lines) == 0 {
-        return {"rows": [], "source": "paste", "error": "empty"};
+        return {"rows": [], "source": "paste", "error": "empty", "skipped_no_name": 0};
     }
-    header_fields: list[str] = parse_csv_line(lines[0]);
-    mapped: list[str] = [_header_field(h) for h in header_fields];
-    if len(header_fields) > 1 and "name" in mapped {
+    scan_limit: int = len(lines) if len(lines) < 5 else 5;
+    looks_like_csv: bool = False;
+    i: int = 0;
+    while i < scan_limit {
+        header_fields: list[str] = parse_csv_line(lines[i]);
+        mapped: list[str] = [_header_field(h) for h in header_fields];
+        if len(header_fields) > 1 and _is_header_row(mapped) {
+            looks_like_csv = True;
+            break;
+        }
+        i = i + 1;
+    }
+    if looks_like_csv {
         parsed: dict = parse_csv_text(text);
-        return {"rows": parsed["rows"], "source": "csv", "error": parsed["error"]};
+        src: str = "linkedin" if parsed["is_linkedin"] else "csv";
+        return {"rows": parsed["rows"], "source": src, "error": parsed["error"], "skipped_no_name": parsed["skipped_no_name"]};
     }
     rows: list[dict] = parse_free_text(text);
     if len(rows) == 0 {
-        return {"rows": [], "source": "paste", "error": "empty"};
+        return {"rows": [], "source": "paste", "error": "empty", "skipped_no_name": 0};
     }
-    return {"rows": rows, "source": "paste", "error": ""};
+    return {"rows": rows, "source": "paste", "error": "", "skipped_no_name": 0};
 }
 
 """vCard text (one or many `BEGIN:VCARD`…`END:VCARD` blocks) -> rows, reading
@@ -304,6 +427,18 @@ def _drop_str_key(d: dict, key: str) -> dict {
     return out;
 }
 
+"""Rows past `_IMPORT_ROW_LIMIT` (the same bound `imports.sv.jac` enforces
+server-side) never leave the browser — the client caps up front so the
+preview count, the "how many people" text, and the actual import all agree,
+and the user gets a plain "run it again" nudge instead of a silent server-side
+`over_limit` skip list."""
+def _cap_rows(rows: list[dict]) -> dict {
+    if len(rows) > _IMPORT_ROW_LIMIT {
+        return {"rows": rows[:_IMPORT_ROW_LIMIT], "capped": True};
+    }
+    return {"rows": rows, "capped": False};
+}
+
 # ---------------------------------------------------------------- small components
 
 def:pub EmptyState(children: any = None) -> JsxElement {
@@ -313,18 +448,24 @@ def:pub EmptyState(children: any = None) -> JsxElement {
         </p>;
 }
 
-"""One parsed row in the preview table — no actions, just what will be sent."""
+"""One parsed row in the preview table — no actions, just what will be sent.
+`how_met` (e.g. a LinkedIn "since Apr 2023" line) shows as its own caption
+line when the row already carries one."""
 def:pub PreviewRow(row: dict) -> JsxElement {
     name: str = (row["name"] or "") as str;
     sub: str = join_with([s for s in [(row["title"] or "") as str, (row["org"] or "") as str] if s], ", ");
     email: str = (row["email"] or "") as str;
+    how_met: str = (row["how_met"] or "") as str;
     return
-        <li className="flex items-center justify-between gap-2 py-2.5 pl-4 pr-4">
-            <span className="flex min-w-0 flex-col">
-                <span className="truncate text-body-sm">{name}</span>
-                {sub and <span className="truncate text-caption text-muted-foreground">{sub}</span>}
+        <li className="flex flex-col gap-0.5 py-2.5 pl-4 pr-4">
+            <span className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-body-sm">{name}</span>
+                    {sub and <span className="truncate text-caption text-muted-foreground">{sub}</span>}
+                </span>
+                {email and <span className="shrink-0 max-w-[40%] truncate text-caption text-muted-foreground">{email}</span>}
             </span>
-            {email and <span className="shrink-0 max-w-[40%] truncate text-caption text-muted-foreground">{email}</span>}
+            {how_met and <span className="truncate text-caption text-muted-foreground">{how_met}</span>}
         </li>;
 }
 
@@ -420,6 +561,8 @@ def:pub ImportPeople(
         parsed_rows: list[dict] = [],
         source: str = "paste",
         parse_error: str = "",
+        preview_skipped_no_name: int = 0,
+        cap_notice: str = "",
         fileRef: Ref[any] = Ref(),
         file_busy: bool = False,
         file_error: str = "",
@@ -447,8 +590,11 @@ def:pub ImportPeople(
             parse_error = "Paste at least one name: one person per line, or a CSV with a name column.";
             return;
         }
-        parsed_rows = parsed["rows"] as list[dict];
+        capped: dict = _cap_rows(parsed["rows"] as list[dict]);
+        parsed_rows = capped["rows"] as list[dict];
+        cap_notice = "Imported the first " + str(_IMPORT_ROW_LIMIT) + "; run it again for the rest." if (capped["capped"] as bool) else "";
         source = (parsed["source"] or "paste") as str;
+        preview_skipped_no_name = (parsed["skipped_no_name"] or 0) as int;
         parse_error = "";
         step = "preview";
     }
@@ -487,8 +633,11 @@ def:pub ImportPeople(
                 file_error = "No contacts found in that file.";
                 return;
             }
-            parsed_rows = vrows;
+            capped_v: dict = _cap_rows(vrows);
+            parsed_rows = capped_v["rows"] as list[dict];
+            cap_notice = "Imported the first " + str(_IMPORT_ROW_LIMIT) + "; run it again for the rest." if (capped_v["capped"] as bool) else "";
             source = "vcf";
+            preview_skipped_no_name = 0;
             parse_error = "";
             step = "preview";
             return;
@@ -503,8 +652,11 @@ def:pub ImportPeople(
             file_error = "No rows found in that file.";
             return;
         }
-        parsed_rows = crows;
-        source = "csv";
+        capped_c: dict = _cap_rows(crows);
+        parsed_rows = capped_c["rows"] as list[dict];
+        cap_notice = "Imported the first " + str(_IMPORT_ROW_LIMIT) + "; run it again for the rest." if (capped_c["capped"] as bool) else "";
+        source = "linkedin" if (parsed["is_linkedin"] as bool) else "csv";
+        preview_skipped_no_name = (parsed["skipped_no_name"] or 0) as int;
         parse_error = "";
         step = "preview";
     }
@@ -512,6 +664,8 @@ def:pub ImportPeople(
     def back_to_paste(e: MouseEvent) {
         step = "paste";
         import_error = "";
+        preview_skipped_no_name = 0;
+        cap_notice = "";
     }
 
     async def do_import() -> None {
@@ -634,6 +788,9 @@ def:pub ImportPeople(
         step = "paste";
         paste_text = "";
         parsed_rows = [];
+        source = "paste";
+        preview_skipped_no_name = 0;
+        cap_notice = "";
         parse_error = "";
         file_error = "";
         import_error = "";
@@ -668,7 +825,7 @@ def:pub ImportPeople(
                     <div className="flex flex-col gap-1">
                         <h2 className="text-eyebrow text-muted-foreground">Import people</h2>
                         <p className="text-body-sm text-muted-foreground">
-                            Paste a list, one person per line: "Name", "Name, Org", "Name, Org, Title", or "Name &lt;email&gt;", or a CSV with a header row. You can also upload a .csv or .vcf export from your contacts.
+                            Paste a list, one person per line: "Name", "Name, Org", "Name, Org, Title", or "Name &lt;email&gt;", or a CSV with a header row. You can also upload a .csv or .vcf export from your contacts. Or drop in the Connections.csv from LinkedIn's data export (Settings → Data privacy → Get a copy of your data).
                         </p>
                     </div>
                     <Textarea
@@ -718,6 +875,11 @@ def:pub ImportPeople(
                         </Button>
                         <span className="text-caption tabular-nums text-muted-foreground">{str(len(parsed_rows)) + " people"}</span>
                     </div>
+                    {source == "linkedin" and
+                        <Badge variant="secondary" className="self-start">{"LinkedIn export · " + str(len(parsed_rows)) + " connections"}</Badge>}
+                    {preview_skipped_no_name > 0 and
+                        <p className="text-caption text-muted-foreground">{str(preview_skipped_no_name) + " rows skipped: no name"}</p>}
+                    {cap_notice and <p className="text-caption text-muted-foreground">{cap_notice}</p>}
                     <div className="flex flex-col gap-2">
                         <Label htmlFor="import-how-met">How you know them</Label>
                         <Input
