@@ -68,6 +68,60 @@ def compute_gaps(x: GapExtraction, warm_count: int) -> list[dict[str, str]] {
     return out;
 }
 
+"""SOH-223: the anonymized warm lines GapFinder sends the model, as a plain
+def. One line per (known or reported) person whose RelevantTo edge to
+`goal` is known/route and strong/medium. RunAgent treats an empty list as
+a deterministic gap (the goal itself has no warm path)."""
+def warm_lines_for(me: Me, goal: Goal) -> list[str] {
+    known: list[Person] = [me ->:Knows:->];
+    candidates: list[Person] = [];
+    seen_ids: list[str] = [];
+    for p in known {
+        pid = jid(p);
+        if pid not in seen_ids {
+            seen_ids.append(pid);
+            candidates.append(p);
+        }
+    }
+    for p in known {
+        for rp in [p ->:Reported:->] {
+            rid = jid(rp);
+            if rid not in seen_ids {
+                seen_ids.append(rid);
+                candidates.append(rp);
+            }
+        }
+    }
+
+    warm_lines: list[str] = [];
+    warm_count = 0;
+    for p in candidates {
+        for e in [edge p ->:RelevantTo:-> goal] {
+            if e.label in ["known", "route"] and e.strength in ["strong", "medium"] {
+                role = f"{p.title} at {p.org}" if p.org else p.title;
+                line = f"#{warm_count} | role: {role} | {e.label} | {e.strength} | {e.reason}";
+                evidence: list[str] = [];
+                for fact in [p <-:FactAbout:<-] {
+                    if len(evidence) < 3 {
+                        evidence.append(fact.text);
+                    }
+                }
+                for intent in [p <-:IntentAbout:<-] {
+                    if len(evidence) < 3 {
+                        evidence.append(intent.text);
+                    }
+                }
+                if evidence {
+                    line = line + " | evidence: " + " / ".join(evidence[:3]);
+                }
+                warm_lines.append(line);
+                warm_count += 1;
+            }
+        }
+    }
+    return warm_lines;
+}
+
 walker:priv GapFinder {
     """Report the kinds of people a goal needs for which there is no warm
     (known/route, strong/medium) path in the caller's graph. Never names a
@@ -97,52 +151,8 @@ walker:priv GapFinder {
         # a safe, documented cast (`jac guide jac-types`), not a bypass.
         goal: Goal = found_goal as Goal;
 
-        known: list[Person] = [me ->:Knows:->];
-        candidates: list[Person] = [];
-        seen_ids: list[str] = [];
-        for p in known {
-            pid = jid(p);
-            if pid not in seen_ids {
-                seen_ids.append(pid);
-                candidates.append(p);
-            }
-        }
-        for p in known {
-            for rp in [p ->:Reported:->] {
-                rid = jid(rp);
-                if rid not in seen_ids {
-                    seen_ids.append(rid);
-                    candidates.append(rp);
-                }
-            }
-        }
-
-        warm_lines: list[str] = [];
-        warm_count = 0;
-        for p in candidates {
-            for e in [edge p ->:RelevantTo:-> goal] {
-                if e.label in ["known", "route"] and e.strength in ["strong", "medium"] {
-                    role = f"{p.title} at {p.org}" if p.org else p.title;
-                    line = f"#{warm_count} | role: {role} | {e.label} | {e.strength} | {e.reason}";
-                    evidence: list[str] = [];
-                    for fact in [p <-:FactAbout:<-] {
-                        if len(evidence) < 3 {
-                            evidence.append(fact.text);
-                        }
-                    }
-                    for intent in [p <-:IntentAbout:<-] {
-                        if len(evidence) < 3 {
-                            evidence.append(intent.text);
-                        }
-                    }
-                    if evidence {
-                        line = line + " | evidence: " + " / ".join(evidence[:3]);
-                    }
-                    warm_lines.append(line);
-                    warm_count += 1;
-                }
-            }
-        }
+        warm_lines = warm_lines_for(me, goal);
+        warm_count = len(warm_lines);
         warm_summary = "\n".join(warm_lines) if warm_lines else "none";
 
         try {

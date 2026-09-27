@@ -273,3 +273,40 @@ node MergeRecord {
     has created_at: str = "";
     has undone: bool = False;
 }
+
+# ---------------------------------------------------------------- Agent inbox (SOH-223)
+
+node AgentAction {
+    """One proposal RunAgent found in the caller's own graph. Nothing sends:
+    approving performs an in-app step at most (PostRequest, ReplyToRequest,
+    CompletePromise) and otherwise only stores the edited draft."""
+    has kind: str;                   # new_match | ask_network | route | promise_due | follow_up | reconnect | answer_ask
+    has title: str;
+    has why: str;
+    has evidence: list[str] = [];    # jids of the caller's own Facts/Intents/Promises/Notes/Goals; never empty
+    has person_id: str = "";
+    has goal_id: str = "";
+    has request_id: str = "";
+    has draft: str = "";
+    has payload_json: str = "";
+    has status: str = "open";        # open | approved | dismissed | snoozed
+    has created_at: str = "";
+    has resolved_at: str = "";
+    has source_walker: str = "";
+    has dedup_key: str = "";
+    has approval_source: str = "";   # "" | in_app
+}
+
+node AgentRun {
+    """One per RunAgent call, under Me. Throttles model-backed steps (one per
+    account per 10 minutes) and remembers RelevantTo strengths so new_match
+    only fires when a strength rose."""
+    has ran_at: str;
+    has reason: str;
+    has model_backed: bool = False;
+    has strengths_json: str = "";    # {"<person_id>|<goal_id>": "strong|medium|weak"}
+}
+
+edge HasAction: Me --> AgentAction {}
+
+edge HasAgentRun: Me --> AgentRun {}

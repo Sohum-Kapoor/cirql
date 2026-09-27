@@ -43,6 +43,7 @@ import from dates { NormalizeDates, UpcomingDates }
 import from circles { CreateCircle, RenameCircle, DeleteCircle, AddToCircle, RemoveFromCircle, ListCircles }
 import from events { CreateEvent, ListEvents, AddToEvent, RemoveFromEvent, EventPeople, UpdateEvent }
 import from lifecycle { ArchivePerson, RestorePerson, ListArchived, DeleteMyData, ImportGraph }
+import from agent { RunAgent, ListAgentActions, ResolveAgentAction, DevSeedAgent }
 
 # Client-side UI
 cl {
