@@ -144,7 +144,11 @@ def _seed_rows() -> list[dict] {
             [
                 _ev("mock-card-sam", "card", "2026-08-30T12:00:00Z", "Looking for: ways to cut peak-hour energy costs")
             ],
-            "", "", {}, "mock-req-jordan", "WhoNeedsWhatIHave", 10
+            "", "",
+            # SOH-229: from_name blank on purpose — the server doesn't carry it
+            # yet either; ActionCard falls back to the handle.
+            {"need": "a plant manager at a Midwest foundry open to piloting a heat-recovery retrofit", "from_handle": "jordan-lee-3f2a", "from_name": ""},
+            "mock-req-jordan", "WhoNeedsWhatIHave", 10
         ),
         _row(
             "9d2b4f6a8c0e41a3b5d7f9e1c3a5b7d9", "follow_up",
