@@ -42,3 +42,19 @@ def:pub today_month_day() -> str {
     d: any = Date();
     return _MONTHS[d.getMonth() as int] + " " + str(d.getDate());
 }
+
+glob _WEEKDAYS: list[str] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+"""ISO date/datetime -> "Due Mon Sep 28" (weekday-aware, local time). "" when
+`iso` is blank or doesn't parse (SOH-222)."""
+def:pub due_label(iso: str) -> str {
+    if not iso {
+        return "";
+    }
+    t: any = Date.parse(iso);  # jac:ignore[W2001]
+    if isNaN(t) {  # jac:ignore[W2001]
+        return "";
+    }
+    d: any = new(Date, t);  # jac:ignore[W2001]
+    return "Due " + _WEEKDAYS[d.getDay() as int] + " " + _MONTHS[d.getMonth() as int] + " " + str(d.getDate() as int);
+}

@@ -22,6 +22,7 @@ import from ..ui.skeleton { Skeleton }
 import from ..ui.icons { ChevronLeftIcon, ChevronDownIcon, ChevronRightIcon }
 import from .common { StatusChip, DraftBlock, reply_label }
 import from .Requests { match_phrase }
+import from ..api { reply_to_request }
 import from ...lib.utils { cn }
 
 """The ask in one line. Only a friends-audience ask (SOH-218) is from a friend;
@@ -154,12 +155,73 @@ def:pub OtherAsksSection(other: list[dict]) -> JsxElement {
         </section>;
 }
 
+"""Sequential SOH-222 auto-check: on Inbox load, run ReplyToRequest (the exact
+call `open_ask`/`friend_check` run for a manually-opened ask, `reply_to_request`
+from `api.cl.jac`) for up to 5 asks this account hasn't checked yet — so a
+brand-new account doesn't have to open every stranger's ask by hand before
+"Needs your OK" settles into its real bucket. Results are kept only in this
+component's own `has` state (an overlay on top of `friend`, never written back
+to it): `checked_ids` is the dedup guard, so a request already queued this
+mount is never re-sent even if the effect re-renders."""
 def:pub AsksSection(
     incoming: list[dict],
     friend: dict,
     onOpen: Callable[[str], None],
     title: str = "Asks on the exchange"
 ) -> JsxElement {
+    has auto: dict = {},
+        checked_ids: list[str] = [],
+        auto_total: int = 0,
+        auto_done: int = 0,
+        auto_running: bool = False;
+
+    """`friend`'s own entry for `rid`, overlaid with this component's own
+    auto-checked reply when `friend` doesn't already have a real one."""
+    def merged_ent(rid: str) -> dict {
+        base: dict = (friend[rid] or {}) as dict;
+        base_reply: dict = (base["reply"] or {}) as dict;
+        if base_reply["_jac_id"] {
+            return base;
+        }
+        ar: dict = (auto[rid] or {}) as dict;
+        if not ar["_jac_id"] {
+            return base;
+        }
+        merged: dict = {**base};
+        merged["reply"] = ar;
+        return merged;
+    }
+
+    async can with entry {
+        todo: list[str] = [];
+        for r in incoming {
+            rid: str = (r["_jac_id"] or "") as str;
+            if rid and rid not in checked_ids and friend_status(merged_ent(rid)) == "new" {
+                todo = todo + [rid];
+            }
+        }
+        if len(todo) > 0 {
+            batch: list[str] = todo[:5];
+            checked_local: list[str] = checked_ids + batch;
+            checked_ids = checked_local;
+            auto_total = len(batch);
+            auto_done = 0;
+            auto_running = True;
+            acc: dict = {**auto};
+            done_local: int = 0;
+            for rid in batch {
+                reply: dict = await reply_to_request(rid);
+                if reply["_jac_id"] {
+                    acc[rid] = reply;
+                }
+                done_local = done_local + 1;
+                auto_done = done_local;
+                auto = acc;
+            }
+            auto_running = False;
+        }
+    }
+
     ids: list[str] = [];
     for r in incoming {
         ids = ids + [r["_jac_id"] as str];
@@ -174,7 +236,8 @@ def:pub AsksSection(
     needs: list[dict] = [];
     other: list[dict] = [];
     for r in incoming {
-        ent: dict = (friend[r["_jac_id"]] or {}) as dict;
+        rid: str = (r["_jac_id"] or "") as str;
+        ent: dict = merged_ent(rid);
         entry: dict = {"request": r};
         if is_zero_match(ent) {
             other = other + [entry];
@@ -183,17 +246,24 @@ def:pub AsksSection(
         }
     }
     for e in extra {
-        if is_zero_match(e) {
+        rid: str = ((e["request"] or {})["_jac_id"] or "") as str;
+        ent: dict = merged_ent(rid);
+        if is_zero_match(ent) {
             other = other + [e];
         } else {
             needs = needs + [e];
         }
     }
+    checking_now: int = auto_total - auto_done;
     if len(needs) == 0 and len(other) == 0 {
         return <span hidden={True} />;
     }
     return
         <div className="flex flex-col gap-3">
+            {auto_running and checking_now > 0 and
+                <p role="status" className="text-caption text-muted-foreground">
+                    {"Checking " + str(checking_now) + (" ask" if checking_now == 1 else " asks") + " against your graph…"}
+                </p>}
             {if len(needs) > 0 {
                 <section aria-label={title} className="flex flex-col gap-3">
                     <h2 className="text-eyebrow text-muted-foreground">{title}</h2>
@@ -202,7 +272,7 @@ def:pub AsksSection(
                             <AskRow
                                 key={(e["request"] or {})["_jac_id"] as str}
                                 req={e["request"] as dict}
-                                status={friend_status((friend[(e["request"] or {})["_jac_id"] as str] or {}) as dict)}
+                                status={friend_status(merged_ent((e["request"] or {})["_jac_id"] as str))}
                                 onOpen={onOpen}
                             />
                         }}

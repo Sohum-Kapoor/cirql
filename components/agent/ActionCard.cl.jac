@@ -15,7 +15,7 @@ import from ..ui.icons { MoreIcon, ChevronRightIcon, CheckIcon }
 import from ..ui.dropdown_menu { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem }
 import from ..goals.RankList { EvidenceChip }
 import from ..capture.Review { SourceQuote }
-import from .common { KindIcon, kind_label, approve_label, resolved_label, ago_words, since_iso }
+import from .common { KindIcon, kind_label, approve_label, resolved_label, ago_words, since_iso, promise_due_label }
 import from ...lib.text { join_with }
 import from ...lib.utils { cn }
 
@@ -89,6 +89,8 @@ def:pub ActionCard(
     evidence: list[dict] = (row["evidence"] or []) as list[dict];
     first_name: str = ((person["name"] or "") as str).split(" ")[0];
     ago: str = ago_words(since_iso((act["created_at"] or "") as str));
+    created_title: str = (act["created_at"] or "") as str;
+    eyebrow_text: str = promise_due_label(act) if kind == "promise_due" else kind_label(kind);
 
     has draft_text: str = (act["draft"] or "") as str,
         open_key: str = "",
@@ -146,10 +148,10 @@ def:pub ActionCard(
             className={cn("flex flex-col gap-3 rounded-lg border bg-card pt-3 pb-4 pl-4 pr-2 shadow-edge transition-opacity", "opacity-70" if pending else "")}
         >
             <div className="flex min-h-8 items-center justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-1.5 text-eyebrow text-muted-foreground">
+                <span className="flex min-w-0 items-center gap-1.5 text-eyebrow text-muted-foreground" title={created_title}>
                     <KindIcon kind={kind} />
-                    <span className="truncate">{kind_label(kind)}</span>
-                    {ago and <span className="shrink-0 font-normal normal-case tracking-normal text-ink-tertiary">{"· " + ago}</span>}
+                    <span className="truncate">{eyebrow_text}</span>
+                    {(ago and kind != "promise_due") and <span className="shrink-0 font-normal normal-case tracking-normal text-ink-tertiary">{"· " + ago}</span>}
                 </span>
                 <DropdownMenu modal={False}>
                     <DropdownMenuTrigger
@@ -159,7 +161,7 @@ def:pub ActionCard(
                     >
                         <MoreIcon className="size-4" />
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuContent align="end" sideOffset={6} className="w-52">
                         <DropdownMenuGroup>
                             <DropdownMenuItem onSelect={handle_snooze}>Snooze until the next run</DropdownMenuItem>
                         </DropdownMenuGroup>
