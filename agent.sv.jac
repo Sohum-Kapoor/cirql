@@ -31,7 +31,10 @@ import from gaps { warm_lines_for }
 import from paths { find_path }
 import from tend { tend_for }
 import from drafts { gather_follow_up_evidence, fallback_draft, first_name }
-import from scoring { collect_candidates, fallback_tokens, polish_reason }
+import from scoring {
+    collect_candidates, fallback_tokens, polish_reason,
+    tok_match, dedupe_need_tokens, matched_need_tokens, evidence_hits_for_need, overlap_hits
+}
 import from exchange {
     all_requests, shared_replies, owner_root, visible_to_me, now_iso,
     post_request, reply_to_request, need_key, requester_first_name
@@ -448,83 +451,27 @@ def step_tend(me: Me, now: datetime) -> list[dict[str, any]] {
     return out;
 }
 
-"""True when `a` and `b` (each already fallback_tokens: lowercased, alnum,
->= 4 chars, not a stopword) name the same idea allowing for a simple plural/
-suffix (`nurse` <-> `nurses`): equal, or one is a prefix of the other."""
+"""SOH-229: moved to `scoring.tok_match` so `exchange.reply_to_request` can
+share this exact rule as its own fallback (a reply must never disagree with
+the answer_ask proposal that led to it). Thin wrapper kept under the old
+name — nothing else in this file or `agent.test.jac` needs to change."""
 def _tok_match(a: str, b: str) -> bool {
-    if a == b {
-        return True;
-    }
-    return a.startswith(b) or b.startswith(a);
+    return tok_match(a, b);
 }
 
-"""Collapse `need`'s own tokens onto one representative per `_tok_match`
-family, so a plural/singular pair IN THE NEED ITSELF (e.g. "nurse nurses")
-never counts as two independent signals against a candidate (SOH-223 review
-fix #3). First token seen for a family wins; order otherwise preserved."""
+"""SOH-229: moved to `scoring.dedupe_need_tokens` — see `_tok_match`."""
 def _dedupe_need_tokens(tokens: list[str]) -> list[str] {
-    out: list[str] = [];
-    for t in tokens {
-        dup = False;
-        for o in out {
-            if _tok_match(t, o) {
-                dup = True;
-                break;
-            }
-        }
-        if not dup {
-            out.append(t);
-        }
-    }
-    return out;
+    return dedupe_need_tokens(tokens);
 }
 
-"""The distinct tokens of `need` (fallback_tokens, deduped by `_tok_match`
-family — SOH-223 review fix #3) that also name something in THIS ONE
-candidate's own facts/intents/title/org text — never anywhere else on the
-root. Order follows the need's own token order."""
+"""SOH-229: moved to `scoring.matched_need_tokens` — see `_tok_match`."""
 def _answer_ask_match_tokens(need: str, cand: dict[str, any]) -> list[str] {
-    p = cand["person"] as Person;
-    text = f"{p.title} {p.org}";
-    for e in cand["evidence"] as list[dict[str, str]] {
-        text = text + " " + e["text"];
-    }
-    cand_tokens = fallback_tokens(text);
-    matched: list[str] = [];
-    for nt in _dedupe_need_tokens(fallback_tokens(need)) {
-        for ct in cand_tokens {
-            if _tok_match(nt, ct) {
-                if nt not in matched {
-                    matched.append(nt);
-                }
-                break;
-            }
-        }
-    }
-    return matched;
+    return matched_need_tokens(need, cand);
 }
 
-"""Evidence items from THIS candidate that name something in `need`,
-allowing the same plural/prefix match `_answer_ask_match_tokens` uses."""
+"""SOH-229: moved to `scoring.evidence_hits_for_need` — see `_tok_match`."""
 def _answer_ask_evidence_hits(need: str, cand: dict[str, any]) -> list[dict[str, str]] {
-    need_tokens = _dedupe_need_tokens(fallback_tokens(need));
-    hits: list[dict[str, str]] = [];
-    for e in cand["evidence"] as list[dict[str, str]] {
-        for ct in fallback_tokens(e["text"]) {
-            found = False;
-            for nt in need_tokens {
-                if _tok_match(nt, ct) {
-                    found = True;
-                    break;
-                }
-            }
-            if found {
-                hits.append(e);
-                break;
-            }
-        }
-    }
-    return hits;
+    return evidence_hits_for_need(need, cand);
 }
 
 """Tighter than a bare keyword scan (SOH-223 tune, B's live feedback:
@@ -536,24 +483,11 @@ directly with `_answer_ask_match_tokens`/`_answer_ask_evidence_hits` —
 never scoring.fallback_results' EXACT-token pre-filter, which dropped a
 candidate that matched only by prefix (need "nurses", fact "nurse") before
 `_answer_ask_match_tokens` ever saw it. Each kept item carries its `matched`
-tokens for `why`."""
+tokens for `why`. SOH-229: moved to `scoring.overlap_hits` — this is now a
+thin wrapper so `exchange.reply_to_request`'s fallback and this proposal
+step run the identical deterministic rule."""
 def _answer_ask_hits(candidates: list[dict[str, any]], need: str) -> list[dict[str, any]] {
-    out: list[dict[str, any]] = [];
-    for cand in candidates {
-        matched = _answer_ask_match_tokens(need, cand);
-        if len(matched) < 2 {
-            continue;
-        }
-        hits = _answer_ask_evidence_hits(need, cand);
-        evidence = cand["evidence"] as list[dict[str, str]];
-        source = hits if hits else evidence;
-        evidence_ids: list[str] = [];
-        for e in source {
-            evidence_ids.append(e["jid"]);
-        }
-        out.append({"person_id": jid(cand["person"] as Person), "evidence_ids": evidence_ids, "matched": matched});
-    }
-    return out;
+    return overlap_hits(candidates, need);
 }
 
 """SOH-229: two answer_ask findings are the same proposal when their need_keys

@@ -222,11 +222,21 @@ test "agent: RunAgent proposes, dedups, respects dismiss, reopens snooze, approv
         assert bool(pd_ap["result"]["promise"]["done"]);
 
         # ---- approve answer_ask -> ReplyToRequest (scorer stubbed -> fallback)
+        # SOH-229: the proposal's own matched-people count (payload_json's
+        # `matched_person_ids`, computed by the SAME `scoring.overlap_hits`
+        # rule) must equal the real reply's `match_count` on this fully
+        # deterministic path -- the exact proposal/reply agreement this fix
+        # guarantees.
+        aa_payload = json.loads(str(aa["action"]["payload_json"])) as dict[str, any];
+        aa_people = aa_payload["matched_person_ids"] as list[str];
         orig = _ag_stub_scorer();
         aa_ap = dict(_ag_run(cl, a, "ResolveAgentAction", {"action_id": str(aa["action"]["_jac_id"]), "decision": "approve"})[0]);
         print(f"[agent] approve answer_ask {aa_ap}");
         assert str(aa_ap["result"]["step"]) == "replied";
         assert str(aa_ap["result"]["reply"]["request_id"]) == b_req_id;
+        assert int(aa_ap["result"]["reply"]["match_count"]) == len(aa_people), (aa_payload, aa_ap);
+        assert int(aa_ap["result"]["reply"]["match_count"]) >= 1, aa_ap;
+        assert str(aa_ap["result"]["reply"]["strength"]) == "weak", aa_ap;
 
         # ---- isolation: B never sees or resolves A's actions
         b_rows = _ag_actions(cl, b, "all");

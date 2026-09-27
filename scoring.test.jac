@@ -10,7 +10,7 @@ via curl (see the SOH-171 deliverable), not by a test.
 import from scoring {
     collect_candidates, build_prompt, normalize_strength, fallback_strength,
     order_by_strength, post_process, fallback_results, score_against_need,
-    NeedMatch, NeedMatches, polish_reason
+    NeedMatch, NeedMatches, polish_reason, tok_match, overlap_hits
 }
 import from schema {
     Me, Person, Fact, Intent, Card, Knows, FactAbout, IntentAbout, FromCard
@@ -317,6 +317,38 @@ test "fallback_results (SOH-211): keeps only overlapping candidates, weak, citin
         assert r["strength"] == "weak", r;
     }
     assert fallback_results(candidates, "a pastry chef") == [];
+}
+
+test "tok_match (SOH-229): equal, or a prefix/plural pair, matches; unrelated words do not" {
+    assert tok_match("climate", "climate");
+    assert tok_match("investor", "investors");
+    assert tok_match("investors", "investor");
+    assert not tok_match("climate", "startup");
+}
+
+test "overlap_hits (SOH-229): keeps only candidates with >=2 distinct matched need tokens (prefix/plural-tolerant), citing the overlapping evidence and the matched tokens -- the SAME rule agent.step_answer_ask uses, now shared with exchange.reply_to_request's fallback" {
+    person_a = Person(name="A", status="confirmed");
+    person_b = Person(name="B", status="confirmed");
+    person_c = Person(name="C", status="confirmed");
+    candidates = [
+        # two matches ("seed" exact, "investor"/"investors" prefix) -> kept
+        {"person": person_a, "evidence": [{"kind": "offer", "text": "intros to seed investors", "jid": "jid-1"}]},
+        # one match only ("seed") -> excluded, tighter than fallback_strength's bare 1-token rule
+        {"person": person_b, "evidence": [{"kind": "fact", "text": "planted a seed garden", "jid": "jid-2"}]},
+        # no match -> excluded
+        {"person": person_c, "evidence": [{"kind": "offer", "text": "happy to help", "jid": "jid-3"}]}
+    ];
+    hits = overlap_hits(candidates, "a seed investor who hires interns");
+    assert len(hits) == 1, hits;
+    assert hits[0]["person_id"] == jid(person_a);
+    assert hits[0]["evidence_ids"] == ["jid-1"];
+    assert sorted(hits[0]["matched"] as list[str]) == ["investor", "seed"], hits[0];
+}
+
+test "overlap_hits: no candidate reaches 2 matched tokens -> []" {
+    person = Person(name="C", status="confirmed");
+    candidates = [{"person": person, "evidence": [{"kind": "fact", "text": "planted a seed garden", "jid": "jid-1"}]}];
+    assert overlap_hits(candidates, "a seed investor who hires interns") == [];
 }
 
 test "score_against_need reports [] when the caller has no candidates" {
