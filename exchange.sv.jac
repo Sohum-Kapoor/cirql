@@ -354,6 +354,28 @@ def visible_to_me(req: IntroRequest) -> bool {
 
 # ---------------------------------------------------------------- requester side
 
+"""SOH-223: PostRequest's body as a plain def (RunAgent approve reuses it)."""
+def post_request(need: str, about_line: str, ttl_days: int, audience: str) -> object {
+    card = my_card();
+    if card is None {
+        return err("no_card");
+    }
+    c = card as Card;
+    now = datetime.now();
+    ex = get_exchange();
+    req = (ex +>:Posted:+> IntroRequest(
+        need=need,
+        from_handle=c.handle,
+        about_line=about_line,
+        status="open",
+        created_at=now.isoformat(),
+        expires_at=(now + timedelta(days=ttl_days)).isoformat(),
+        audience=norm_audience(audience)
+    ))[0];
+    grant(req, level=ConnectPerm);
+    return req;
+}
+
 walker:priv PostRequest {
     """Post a need to the shared Exchange under the caller's Card handle.
     `ttl_days` is a dev/test knob (default 7; 0 posts an already-expiring request)."""
@@ -364,25 +386,7 @@ walker:priv PostRequest {
     has reports: list[object] = [];
 
     can go with Root entry {
-        card = my_card();
-        if card is None {
-            report err("no_card");
-            return;
-        }
-        c = card as Card;
-        now = datetime.now();
-        ex = get_exchange();
-        req = (ex +>:Posted:+> IntroRequest(
-            need=self.need,
-            from_handle=c.handle,
-            about_line=self.about_line,
-            status="open",
-            created_at=now.isoformat(),
-            expires_at=(now + timedelta(days=self.ttl_days)).isoformat(),
-            audience=norm_audience(self.audience)
-        ))[0];
-        grant(req, level=ConnectPerm);
-        report req;
+        report post_request(self.need, self.about_line, self.ttl_days, self.audience);
     }
 }
 
@@ -617,6 +621,71 @@ walker:priv ListIncomingRequests {
     }
 }
 
+"""SOH-223: ReplyToRequest's body as a plain def so RunAgent's approve can
+call it on the caller's own root (a nested spawn's reports leak into the
+outer walker's stream). Returns an err dict or the ReplyView."""
+def reply_to_request(request_id: str) -> object {
+    n = load(request_id);
+    if not isinstance(n, IntroRequest) {
+        return err("not_found");
+    }
+    if not readable(n) {
+        return err("forbidden");
+    }
+    req = n as IntroRequest;
+    rid = jid(req);
+    if owner_root(req) == jid(root) {
+        return err("invalid_state");
+    }
+    if not visible_to_me(req) {
+        return err("not_visible");
+    }
+    me_root = jid(root);
+    for r in shared_replies() {
+        if owner_root(r) == me_root and r.request_id == rid {
+            return err("invalid_state");
+        }
+    }
+    if req.status == "declined" or (req.expires_at and req.expires_at < now_iso()) {
+        return err("invalid_state");
+    }
+    m = my_me();
+    if m is None {
+        return err("no_card");
+    }
+    me = m as Me;
+    c = card_of(me);
+    if c is None {
+        return err("no_card");
+    }
+    card = c as Card;
+    matches = score_against_need(me, req.need, [req.from_handle]);
+    kept = [x for x in matches if x["strength"] == "strong" or x["strength"] == "medium"];
+    strength = "weak";
+    person_id = "";
+    why = "No strong match in your graph.";
+    if kept {
+        strength = str(kept[0]["strength"]);
+        person_id = str(kept[0]["person_id"]);
+        why = str(kept[0]["why"]);
+    }
+    reply = (root.shared ++> IntroReply(
+        request_id=rid,
+        from_handle=card.handle,
+        match_count=len(kept),
+        strength=strength,
+        status="pending"
+    ))[0];
+    top = my_person(person_id) if person_id else None;
+    if top is not None {
+        reply.match_tokens = tokens_for(top as Person);  # SOH-215: hashes only, never a name
+    }
+    Jac.allow_root(reply, UUID(owner_root(req)), ReadPerm);  # jac:ignore[E1053]
+    root ++> ReplyPrivate(reply_id=jid(reply), match_person_id=person_id, why=why);
+    reply +>:RepliedTo:+> req;  # kept for the graph view; nothing reads it
+    return view(reply);
+}
+
 walker:priv ReplyToRequest {
     """Score the need against MY graph only; reply with a count and a strength,
     no identity. The reply lives on my root, read-only to the requester."""
@@ -624,73 +693,7 @@ walker:priv ReplyToRequest {
     has reports: list[object] = [];
 
     can go with Root entry {
-        n = load(self.request_id);
-        if not isinstance(n, IntroRequest) {
-            report err("not_found");
-            return;
-        }
-        if not readable(n) {
-            report err("forbidden");
-            return;
-        }
-        req = n as IntroRequest;
-        rid = jid(req);
-        if owner_root(req) == jid(root) {
-            report err("invalid_state");
-            return;
-        }
-        if not visible_to_me(req) {
-            report err("not_visible");
-            return;
-        }
-        me_root = jid(root);
-        for r in shared_replies() {
-            if owner_root(r) == me_root and r.request_id == rid {
-                report err("invalid_state");
-                return;
-            }
-        }
-        if req.status == "declined" or (req.expires_at and req.expires_at < now_iso()) {
-            report err("invalid_state");
-            return;
-        }
-        m = my_me();
-        if m is None {
-            report err("no_card");
-            return;
-        }
-        me = m as Me;
-        c = card_of(me);
-        if c is None {
-            report err("no_card");
-            return;
-        }
-        card = c as Card;
-        matches = score_against_need(me, req.need, [req.from_handle]);
-        kept = [x for x in matches if x["strength"] == "strong" or x["strength"] == "medium"];
-        strength = "weak";
-        person_id = "";
-        why = "No strong match in your graph.";
-        if kept {
-            strength = str(kept[0]["strength"]);
-            person_id = str(kept[0]["person_id"]);
-            why = str(kept[0]["why"]);
-        }
-        reply = (root.shared ++> IntroReply(
-            request_id=rid,
-            from_handle=card.handle,
-            match_count=len(kept),
-            strength=strength,
-            status="pending"
-        ))[0];
-        top = my_person(person_id) if person_id else None;
-        if top is not None {
-            reply.match_tokens = tokens_for(top as Person);  # SOH-215: hashes only, never a name
-        }
-        Jac.allow_root(reply, UUID(owner_root(req)), ReadPerm);  # jac:ignore[E1053]
-        root ++> ReplyPrivate(reply_id=jid(reply), match_person_id=person_id, why=why);
-        reply +>:RepliedTo:+> req;  # kept for the graph view; nothing reads it
-        report view(reply);
+        report reply_to_request(self.request_id);
     }
 }
 
