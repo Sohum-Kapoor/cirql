@@ -280,7 +280,7 @@ def _empty_health() -> dict[str, object] {
 involved) — see health.test.jac. See the module docstring and
 contracts/walkers.md for the exact definitions."""
 def network_health_for(me: Me) -> dict[str, object] {
-    known: list[Person] = [me ->:Knows:->];
+    known: list[Person] = [p for p in [me ->:Knows:->] if not p.archived];  # SOH-220
     people = len(known);
     confirmed_people = [p for p in known if p.status == "confirmed"];
     confirmed = len(confirmed_people);

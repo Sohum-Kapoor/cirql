@@ -44,6 +44,9 @@ def _known_people(me: Me) -> list[Person] {
     people: list[Person] = [];
     seen: list[str] = [];
     for p in [me ->:Knows:->] {
+        if p.archived {
+            continue;   # SOH-220
+        }
         pid = jid(p);
         if pid in seen {
             continue;
@@ -213,6 +216,9 @@ def _gather_newly_relevant(me: Me, active_goal: Goal | None, now: datetime) -> l
     }
     goal = active_goal as Goal;
     for p in [goal <-:RelevantTo:<-] {
+        if p.archived {
+            continue;   # SOH-220
+        }
         matched = [edge p ->:RelevantTo:-> goal];
         if not matched {
             continue;

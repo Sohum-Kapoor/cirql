@@ -47,6 +47,9 @@ def match_known(me: Me, guest_name: str) -> list[Person] {
     out: list[Person] = [];
 
     for p in [me ->:Knows:->] {
+        if p.archived {
+            continue;   # SOH-220
+        }
         full = _norm(p.name);
         matched = full == key;
         if not matched and single {
@@ -71,7 +74,13 @@ Person}` for the first match found, or None."""
 def find_reported_route(me: Me, guest_name: str) -> dict[str, Person] | None {
     key = _norm(guest_name);
     for p in [me ->:Knows:->] {
+        if p.archived {
+            continue;   # SOH-220
+        }
         for q in [p ->:Reported:->] {
+            if q.archived {
+                continue;
+            }
             if _norm(q.name) == key {
                 return {"via": p, "target": q};
             }

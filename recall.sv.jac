@@ -91,7 +91,7 @@ def gather_recall_items(max_items: int) -> list[RecallItem] {
     promises: list[Promise] = [];
     for n in [root --> [?:Note]] {
         person_name = "";
-        mentioned = [n ->:Mentions:->];
+        mentioned = [m for m in [n ->:Mentions:->] if not m.archived];  # SOH-220
         if mentioned {
             person_name = mentioned[0].name;
         }
@@ -110,6 +110,9 @@ def gather_recall_items(max_items: int) -> list[RecallItem] {
         }
         seen.append(jid(f));
         about = [f ->:FactAbout:->];
+        if about and about[0].archived {
+            continue;   # SOH-220: evidence about an archived person stays out
+        }
         person_name = about[0].name if about else "";
         items.append(RecallItem(id=jid(f), kind="fact", observed_at=f.observed_at, span=f.text, person=person_name));
     }
@@ -120,6 +123,9 @@ def gather_recall_items(max_items: int) -> list[RecallItem] {
         }
         seen.append(jid(i));
         about = [i ->:IntentAbout:->];
+        if about and about[0].archived {
+            continue;   # SOH-220
+        }
         person_name = about[0].name if about else "";
         observed_at = "";
         notes_for_intent = [i <-:AssertsIntent:<-];
@@ -135,6 +141,9 @@ def gather_recall_items(max_items: int) -> list[RecallItem] {
         }
         seen.append(jid(pr));
         to_list = [pr ->:PromiseTo:->];
+        if to_list and to_list[0].archived {
+            continue;   # SOH-220
+        }
         person_name = to_list[0].name if to_list else "";
         observed_at = "";
         notes_for_promise = [pr <-:AssertsPromise:<-];

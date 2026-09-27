@@ -111,7 +111,7 @@ caller's graph at all) versus "no known route" (target is somewhere in the
 caller's network, just not by a valid evidenced route within `max_depth`)."""
 def _broad_reachable(me: Me, target_jid: str) -> bool {
     visited: dict[str, bool] = {};
-    queue: list[Person] = [p for p in [me ->:Knows:->]];
+    queue: list[Person] = [p for p in [me ->:Knows:->] if not p.archived];
     for p in queue {
         visited[jid(p)] = True;
     }
@@ -124,6 +124,9 @@ def _broad_reachable(me: Me, target_jid: str) -> bool {
         cur = queue[idx];
         idx += 1;
         for q in [cur ->:Reported:->] {
+            if q.archived {
+                continue;   # SOH-220
+            }
             qjid = jid(q);
             if qjid in visited {
                 continue;
@@ -179,7 +182,7 @@ def find_path(me: Me, target: Person, max_depth: int) -> dict[str, any] {
             continue;
         }
         ke0 = matched[0];
-        if p.status == "confirmed" and ke0.status != "proposed" {
+        if p.status == "confirmed" and ke0.status != "proposed" and not p.archived {
             level0.append(p);
             knows_edge_for[jid(p)] = ke0;
         }
@@ -226,6 +229,9 @@ def find_path(me: Me, target: Person, max_depth: int) -> dict[str, any] {
 
         for parent_person in current_frontier {
             for q in [parent_person ->:Reported:->] {
+                if q.archived {
+                    continue;   # SOH-220
+                }
                 qjid = jid(q);
                 if qjid in visited {
                     continue;

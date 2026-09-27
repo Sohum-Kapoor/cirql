@@ -213,6 +213,9 @@ def collect_all_candidates(me: Me, now: datetime) -> list[Candidate] {
     proposed_edges: list[Knows] = [];
 
     for p in [me ->:Knows:->] {
+        if p.archived {
+            continue;   # SOH-220: archived people are never candidates
+        }
         # Never zip parallel node/edge queries by index (no order guarantee
         # across the two separate traversals) - look up each person's own
         # Knows edge directly instead.
@@ -235,6 +238,9 @@ def collect_all_candidates(me: Me, now: datetime) -> list[Candidate] {
     for kc in known {
         p = kc.person;
         for q in [p ->:Reported:->] {
+            if q.archived {
+                continue;
+            }
             qid = jid(q);
             if qid in known_jids {
                 continue;
@@ -291,6 +297,9 @@ gathering evidence - cheap enough for the cached path."""
 def count_candidate_people(me: Me) -> int {
     ids: list[str] = [];
     for p in [me ->:Knows:->] {
+        if p.archived {
+            continue;
+        }
         pid = jid(p);
         if pid not in ids {
             ids.append(pid);
@@ -298,6 +307,9 @@ def count_candidate_people(me: Me) -> int {
         matched = [edge me ->:Knows:-> p];
         if matched and p.status == "confirmed" and matched[0].status != "proposed" {
             for q in [p ->:Reported:->] {
+                if q.archived {
+                    continue;
+                }
                 qid = jid(q);
                 if qid not in ids {
                     ids.append(qid);
@@ -438,6 +450,9 @@ def serve_cached(goal: Goal, me: Me) -> list[dict[str, any]] {
     report_items: list[dict[str, any]] = [];
 
     for p in people {
+        if p.archived {
+            continue;   # SOH-220: a cached ranking never shows an archived person
+        }
         matched = [edge p ->:RelevantTo:-> goal];
         if not matched {
             continue;

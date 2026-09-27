@@ -57,7 +57,7 @@ def _confirmed_known_people(me: Me) -> list[Person] {
             continue;
         }
         e = matched[0];
-        if p.status != "confirmed" or e.status == "proposed" {
+        if p.status != "confirmed" or e.status == "proposed" or p.archived {
             continue;
         }
         seen.append(pid);
