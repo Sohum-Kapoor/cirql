@@ -1,7 +1,12 @@
 """Onboarding step 2 — preview of the drafted Card, goals and interests. OWNER: Person B.
 
 Edits are local only (PublishCard is Tier 1). List fields are edited one item per
-line. The shell owns `card` and applies `onFieldChange(field, value)`.
+line. The shell owns `card` and applies `onFieldChange(field, value)`. Goals use
+the shared GoalPicker (components/goals/GoalPicker.cl.jac — imported
+here, never edited): with no active goal it's the "What are you working toward?"
+prompt with an inline add; with one, tapping it opens a sheet to switch to
+another extracted goal or add a new one — SetGoal underneath either way, so a
+second goal OnboardMe extracted but didn't activate is never stranded.
 """
 
 import from "..ui.button" { Button }
@@ -9,14 +14,19 @@ import from "..ui.input" { Input }
 import from "..ui.textarea" { Textarea }
 import from "..ui.badge" { Badge }
 import from "..ui.field" { Field, FieldLabel, FieldGroup }
-import from "...lib.utils" { cn }
+import from ..goals.GoalPicker { GoalPicker }
 import from "...lib.text" { join_lines, split_lines }
 
 def:pub CardStep(
     card: dict,
     goals: list[dict],
     interests: list[dict],
+    goal_busy: bool,
+    goal_error: str,
     onFieldChange: Callable[[str, any], None],
+    onSwitchGoal: Callable[[str], None],
+    onCreateGoal: Callable[[str], None],
+    onCloseGoal: Callable[[str], None],
     onContinue: Callable[[], None]
 ) -> JsxElement {
     def handle_continue(e: MouseEvent) {
@@ -60,23 +70,14 @@ def:pub CardStep(
                 </p>
             </div>
 
-            <section className="flex flex-col gap-2">
-                <h3 className="text-eyebrow text-muted-foreground">Goals</h3>
-                <ul className="flex flex-col gap-2">
-                    {for g in goals {
-                        <li
-                            key={g["_jac_id"]}
-                            className={cn(
-                                "flex items-start justify-between gap-2 rounded-lg border pt-2.5 pb-2.5 pl-4 pr-3 text-body-sm",
-                                "border-border-strong bg-secondary text-foreground" if g["active"] else "bg-card text-muted-foreground"
-                            )}
-                        >
-                            <span>{g["text"]}</span>
-                            {g["active"] and <Badge>Active</Badge>}
-                        </li>
-                    }}
-                </ul>
-            </section>
+            <GoalPicker
+                goals={goals}
+                busy={goal_busy}
+                error={goal_error}
+                onSwitch={onSwitchGoal}
+                onCreate={onCreateGoal}
+                onClose={onCloseGoal}
+            />
 
             <section className="flex flex-col gap-2">
                 <h3 className="text-eyebrow text-muted-foreground">Interests</h3>
