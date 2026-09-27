@@ -6,7 +6,7 @@ carries a random per-call suffix (`_uid()`) — this guarantees a name is always
 genuinely new, whether this is the first run ever or the hundredth.
 """
 
-import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction, hedge_fact_text, fact_source_kind, specific_follow_up, promise_is_only_a_want, default_how_met, second_person, attach_metat_for_new_people }
+import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction, hedge_fact_text, fact_source_kind, specific_follow_up, promise_is_only_a_want, default_how_met, second_person, attach_metat_for_new_people, is_role_only }
 import from schema { Event, Fact, HasEvent, Intent, Knows, Me, Mentions, MetAt, Note, Person, Promise, Reported, PromiseTo }
 import uuid;
 import from datetime { datetime }
@@ -686,4 +686,83 @@ test "attach_metat_for_new_people: no-op when result[\"people\"] is empty" {
     attach_metat_for_new_people(note, event, empty_result);
 
     assert len([event <-:MetAt:<-]) == 0;
+}
+
+# ---------------------------------------------------------------- SOH-225 role-only people
+
+test "is_role_only: bare role words and possessive+role phrases; distinguishing descriptions are not" {
+    assert is_role_only("her manager");
+    assert is_role_only("a friend");
+    assert is_role_only("the CEO");
+    assert is_role_only("my roommate");
+    assert is_role_only("Manager");
+    assert is_role_only("  THE   Founder  ");
+    assert not is_role_only("the tall girl from the climbing gym");
+    assert not is_role_only("the young man from the robotics thing who built the wheelchair sensor");
+    assert not is_role_only("Maya Chen");
+    assert not is_role_only("her manager Dana");
+}
+
+test "apply_extraction: a role-only person entry is skipped, never becomes a Person" {
+    me = _fresh_me();
+    suffix = _uid();
+    maya_name = "Maya" + suffix;
+    note = _fresh_note(f"Met {maya_name}. Her manager wants intros.");
+
+    x = CaptureExtraction(
+        people=[
+            XPerson(name=maya_name, org="", title="", span=f"Met {maya_name}"),
+            XPerson(name="her manager", org="", title="", span="Her manager")
+        ],
+        facts=[], intents=[], promises=[], ties=[]
+    );
+    result = apply_extraction(note, me, x);
+
+    people = result["people"] as list[dict[str, any]];
+    assert len(people) == 1, f"expected only {maya_name}, got {[(e['person'] as Person).name for e in people]}";
+    assert (people[0]["person"] as Person).name == maya_name;
+    assert result["skipped_people"] == 1;
+}
+
+test "apply_extraction: a fact/intent/promise/tie pointing at a role-only description is dropped" {
+    me = _fresh_me();
+    suffix = _uid();
+    maya_name = "Maya" + suffix;
+    note = _fresh_note(f"{maya_name} says her manager wants intros and promised to follow up with the CEO.");
+
+    x = CaptureExtraction(
+        people=[XPerson(name=maya_name, org="", title="", span=maya_name)],
+        facts=[XFact(about_name="her manager", text="wants intros", span="her manager wants intros")],
+        intents=[XIntent(about_name="a friend", kind="need", text="wants feedback", span="a friend wants feedback")],
+        promises=[XPromise(to_name="the CEO", text="follow up", due="", span="promised to follow up with the CEO")],
+        ties=[XTie(from_name=maya_name, to_name="my roommate", span=f"{maya_name} and my roommate")]
+    );
+    result = apply_extraction(note, me, x);
+
+    assert result["facts"] == [];
+    assert result["intents"] == [];
+    assert result["promises"] == [];
+    assert result["ties"] == [];
+    # Distinct role-only names touched: "her manager", "a friend", "the CEO", "my roommate".
+    assert result["skipped_people"] == 4, f"got {result['skipped_people']}";
+    people = result["people"] as list[dict[str, any]];
+    assert len(people) == 1 and (people[0]["person"] as Person).name == maya_name;
+}
+
+test "apply_extraction: a description with context beyond the role word still becomes a Person" {
+    me = _fresh_me();
+    note = _fresh_note("Met the tall girl from the climbing gym; she does accessible robotics.");
+
+    x = CaptureExtraction(
+        people=[XPerson(name="the tall girl from the climbing gym", org="", title="", span="the tall girl from the climbing gym", named=False)],
+        facts=[XFact(about_name="the tall girl from the climbing gym", text="does accessible robotics", span="does accessible robotics")],
+        intents=[], promises=[], ties=[]
+    );
+    result = apply_extraction(note, me, x);
+
+    people = result["people"] as list[dict[str, any]];
+    assert len(people) == 1;
+    assert (people[0]["person"] as Person).name == "the tall girl from the climbing gym";
+    assert len(result["facts"] as list[dict[str, any]]) == 1;
+    assert result["skipped_people"] == 0;
 }

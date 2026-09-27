@@ -405,6 +405,112 @@ def fallback_rank(candidates: list[Candidate]) -> list[RankedItem] {
     return ranked;
 }
 
+"""SOH-225 near-duplicate goal matching (used by `SetGoal` and, via import,
+`OnboardMe`'s extraction dedupe). Normalise: lowercase, strip punctuation,
+keep only words >= 4 chars, drop a short stopword list; match when the
+Jaccard similarity of the two word sets is >= 0.6 or one normalised text
+(in original word order) contains the other as a substring."""
+glob GOAL_STOPWORDS: list[str] = [
+    "that", "this", "have", "will", "your", "about", "from", "with",
+    "onto", "over", "under", "after", "before", "their", "them", "then",
+    "than", "some", "more", "most", "each", "when", "where", "which",
+    "what", "whom", "whose", "there", "here", "into", "been", "were",
+    "would", "could", "should", "being"
+];
+
+def _normalize_goal_words(text: str) -> list[str] {
+    t = (text or "").lower();
+    word = "";
+    words: list[str] = [];
+    for ch in t {
+        if ch.isalnum() {
+            word += ch;
+        } else {
+            if len(word) >= 4 and word not in GOAL_STOPWORDS {
+                words.append(word);
+            }
+            word = "";
+        }
+    }
+    if len(word) >= 4 and word not in GOAL_STOPWORDS {
+        words.append(word);
+    }
+    return words;
+}
+
+def goal_texts_match(a: str, b: str) -> bool {
+    words_a = _normalize_goal_words(a);
+    words_b = _normalize_goal_words(b);
+    if len(words_a) == 0 or len(words_b) == 0 {
+        return False;
+    }
+
+    set_a: list[str] = [];
+    for w in words_a {
+        if w not in set_a {
+            set_a.append(w);
+        }
+    }
+    set_b: list[str] = [];
+    for w in words_b {
+        if w not in set_b {
+            set_b.append(w);
+        }
+    }
+
+    inter = 0;
+    for w in set_a {
+        if w in set_b {
+            inter += 1;
+        }
+    }
+    union = len(set_a) + len(set_b) - inter;
+    jaccard = (inter / union) if union > 0 else 0.0;
+    if jaccard >= 0.6 {
+        return True;
+    }
+
+    norm_a = " ".join(words_a);
+    norm_b = " ".join(words_b);
+    if norm_a in norm_b or norm_b in norm_a {
+        return True;
+    }
+    return False;
+}
+
+"""Find-or-create + activate the caller's goal for `text` (SOH-225): reuses
+an existing goal that's a near-duplicate (`goal_texts_match`) if found —
+setting it active, creating nothing — else creates a new Goal; deactivates
+every other goal under `me`. Kept as a plain def (never through `root spawn`
+for the resolved-Me path, per the `[root --> [?:Me]][0]` gotcha) so it's
+directly testable on a hand-built `me`."""
+def set_goal_for(me: Me, text: str, now: datetime) -> Goal {
+    goals = [me ->:HasGoal:->];
+
+    target: Goal | None = None;
+    for g in goals {
+        if goal_texts_match(g.text, text) {
+            target = g;
+            break;
+        }
+    }
+
+    if target is not None {
+        t = target as Goal;
+        t.active = True;
+    } else {
+        t = (me +>:HasGoal:+> Goal(text=text, created_at=now.isoformat()))[0];
+    }
+
+    for g in goals {
+        if jid(g) != jid(t) {
+            g.active = False;
+        }
+    }
+
+    return t;
+}
+
 def _sort_key(item: dict[str, any]) -> tuple[int, int, int] {
     strength = item["strength"];
     label = item["label"];
@@ -564,8 +670,9 @@ def materialize(goal: Goal, ranked: list[RankedItem], candidates: list[Candidate
 # ---------------------------------------------------------------- walkers
 
 walker:priv SetGoal {
-    """Get-or-create Me; create (or reactivate, if identical text exists) a
-    Goal under Me via HasGoal; deactivate every other goal. Reports [Goal]."""
+    """Get-or-create Me; create (or reactivate, if a near-duplicate text
+    already exists — SOH-225 `goal_texts_match`) a Goal under Me via HasGoal;
+    deactivate every other goal. Reports [Goal]."""
     has text: str;
     has reports: list[Goal] = [];
 
@@ -577,22 +684,7 @@ walker:priv SetGoal {
             me = (root ++> Me(name="me"))[0];
         }
 
-        goals = [me ->:HasGoal:->];
-        matches = [g for g in goals if g.text == self.text];
-
-        if matches {
-            target = matches[0];
-            target.active = True;
-        } else {
-            target = (me +>:HasGoal:+> Goal(text=self.text, created_at=datetime.now().isoformat()))[0];
-        }
-
-        for g in goals {
-            if jid(g) != jid(target) {
-                g.active = False;
-            }
-        }
-
+        target = set_goal_for(me, self.text, datetime.now());
         report target;
     }
 }

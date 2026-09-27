@@ -5,7 +5,7 @@ here. The LLM extraction path itself is proven live via curl (see the SOH-164
 deliverable), not by a test.
 """
 
-import from onboard { OnboardExtraction, name_from_about, handle_from_name, clean_list, jid_suffix, find_by_topic, find_goal_by_text, find_intent, looks_like_goal, activate_first_goal }
+import from onboard { OnboardExtraction, name_from_about, handle_from_name, clean_list, jid_suffix, find_by_topic, find_goal_by_text, find_intent, looks_like_goal, activate_first_goal, collect_goals }
 import from schema { Me, Interest, Goal, Intent, HasGoal }
 
 test "OnboardExtraction obj holds the fields the walker copies out" {
@@ -92,6 +92,44 @@ test "activate_first_goal is a no-op on an empty goal list" {
     activate_first_goal(me, []);
 
     assert g.active;
+}
+
+test "SOH-225 find_goal_by_text: near-duplicate phrasing matches, a distinct goal does not" {
+    goals = [Goal(text="Land a summer 2027 climate-tech VC internship", created_at="2026-01-01T00:00:00")];
+    g = find_goal_by_text(goals, "land a climate-tech VC internship for summer 2027");
+    assert g is not None and g.text == "Land a summer 2027 climate-tech VC internship";
+    assert find_goal_by_text(goals, "Find a mentor in accessible robotics") is None;
+}
+
+test "SOH-225 collect_goals: two near-duplicate extracted goal texts in one batch yield a single goal" {
+    me = (root ++> Me(name="collect-goals-batch-test-me"))[0];
+    existing_goals: list[Goal] = [me ->:HasGoal:->];
+
+    goals = collect_goals(me, existing_goals, [
+        "Land a summer 2027 climate-tech VC internship",
+        "land a climate-tech VC internship for summer 2027"
+    ], "2026-01-01T00:00:00");
+
+    assert len(goals) == 1, f"expected one goal, got {len(goals)}: {[g.text for g in goals]}";
+    on_root = [me ->:HasGoal:->];
+    assert len(on_root) == 1, "collect_goals must not create a second Goal node for the near-duplicate";
+}
+
+test "SOH-225 collect_goals: dedupes against a goal already on the root, and still creates a genuinely different one" {
+    me = (root ++> Me(name="collect-goals-existing-test-me"))[0];
+    pre = (me +>:HasGoal:+> Goal(text="Land a climate-tech VC internship for summer 2027", created_at="2026-01-01T00:00:00"))[0];
+    existing_goals = [me ->:HasGoal:->];
+
+    goals = collect_goals(me, existing_goals, [
+        "Land a summer 2027 climate-tech VC internship",
+        "Find a mentor in accessible robotics"
+    ], "2026-01-02T00:00:00");
+
+    assert len(goals) == 2;
+    assert jid(goals[0]) == jid(pre), "the near-duplicate must reuse the pre-existing goal, not create a new one";
+    assert goals[1].text == "Find a mentor in accessible robotics";
+    on_root = [me ->:HasGoal:->];
+    assert len(on_root) == 2;
 }
 
 test "SOH-212 name_from_about: the speaker's own name when stated, else empty" {
