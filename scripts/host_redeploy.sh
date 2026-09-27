@@ -5,6 +5,9 @@
 # started by hand in its own terminal; its URL is printed there and also at
 # http://127.0.0.1:20241/quicktunnel). `.jac/data` (accounts, graphs) is kept;
 # only the client bundle is rebuilt. Usage: scripts/host_redeploy.sh [ref]
+# Run it from a real terminal: from an agent's Bash tool the nohup'd server dies
+# with the tool call, so an agent runs the same steps with `exec jac start` in a
+# backgrounded shell instead.
 set -euo pipefail
 HOST_DIR="${CIRQL_HOST_DIR:-$HOME/.cache/cirql-host}"
 REF="${1:-origin/main}"

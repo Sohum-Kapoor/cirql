@@ -71,6 +71,7 @@ We do not say "private", "secure", or "encrypted". Roots and grants do not encry
 - Web enrichment only with a source: `Enrich` uses Gemini with Google Search grounding and attaches a fact only when a grounding chunk gives it a URL and the model says the identity matched your captured context; a made-up name returns nothing. LinkedIn pages are never fetched, even when search points there.
 - Users can correct the system: `Forget` deletes a person or fact and retracts only what depended on it.
 - Your data comes back out: `ExportGraph` returns everything on your root as one JSON file (people, facts, intents, promises, notes, ties, with every span and source) and `ImportGraph` takes it back; `ExportContacts` writes your people as a vCard file any phone imports. `DeleteAccount` removes the graph and the login.
+- People → Import takes a pasted list, a CSV or a .vcf file and turns it into proposed people you confirm or skip; Settings → My card edits the one object that ever crosses accounts, with a "what a friend sees" preview.
 - The privacy page (`/static/privacy.html`) says all of this in plain sentences and is linked from Settings; the graph view has a text list of every tie for screen readers and keyboards.
 
 ## Verified, not intended
