@@ -118,7 +118,7 @@ def bump(counts: dict[str, int], status: str) {
 
 def mark(counts: dict[str, int], status: str, label: str, ms: float, detail: str = "") {
     bump(counts, status);
-    suffix = f" — {detail}" if len(detail) > 0 else "";
+    suffix = f": {detail}" if len(detail) > 0 else "";
     print(f"{status:<4} {label} ({ms:.0f}ms){suffix}");
 }
 

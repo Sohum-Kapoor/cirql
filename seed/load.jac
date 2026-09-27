@@ -178,7 +178,7 @@ with entry {
             ties = r["ties"] as list[dict[str, any]];
             total = len(people) + len(facts) + len(intents_c) + len(promises) + len(ties);
             if total == 0 {
-                print(f"  note_id={note_id} EMPTY extraction (quota exhausted?) — continuing");
+                print(f"  note_id={note_id} EMPTY extraction (quota exhausted?), continuing");
             } else {
                 print(
                     f"  note_id={note_id} people={len(people)} facts={len(facts)} "

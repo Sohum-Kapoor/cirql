@@ -148,7 +148,7 @@ test "agent: RunAgent proposes, dedups, respects dismiss, reopens snooze, approv
         assert str(seed["fact_id"]) in [str(e["id"]) for e in nm["evidence"]];
         rt = _ag_by_kind(rows, "route")[0];
         assert str(rt["action"]["person_id"]) == str(seed["dev_id"]);
-        assert "ask Dev" in str(rt["action"]["title"]), rt;
+        assert "Ask Dev" in str(rt["action"]["title"]), rt;
         assert str(rt["action"]["draft"]).startswith("Hi Dev");
         aa = _ag_by_kind(rows, "answer_ask")[0];
         assert str(aa["action"]["request_id"]) == b_req_id;

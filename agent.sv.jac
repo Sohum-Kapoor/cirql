@@ -304,7 +304,7 @@ def step_ask_network(me: Me, gaps: list[Goal]) -> list[dict[str, any]] {
         out.append(make_finding(
             "ask_network",
             f"Ask the network: {need}",
-            f"Your goal '{need}' has no warm path in your graph yet — no strong or medium match you know or can reach.",
+            f"Your goal '{need}' has no warm path in your graph yet. No strong or medium match you know or can reach.",
             [jid(goal)], "", jid(goal), "", need,
             {"need": need, "about_line": about},
             "GapFinder", "", True
@@ -384,7 +384,7 @@ def step_route(me: Me, gaps: list[Goal]) -> list[dict[str, any]] {
         told = f"\"{_clip(span, 160)}\"" if span else "a note you captured";
         out.append(make_finding(
             "route",
-            f"{connector.name} knows someone {where} — ask {connector.name}?",
+            f"{connector.name} knows someone {where}. Ask {connector.name}?",
             f"{path['reason']} You were told: {told}. Your goal '{goal_phrase}' has no warm path yet.",
             ev, jid(connector), jid(goal), "", draft,
             {"target_id": jid(target), "connector_id": jid(connector)},

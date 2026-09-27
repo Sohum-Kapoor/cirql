@@ -39,7 +39,7 @@ obj NeedMatches {
 
 sem NeedMatch.index = "The candidate's # number from the input, copied exactly.";
 sem NeedMatch.strength = "strong only when a listed offer/open_to intent or a fact shows this person can directly provide what the need asks for; medium when their role or a fact makes it plausible; weak otherwise. Sharing an employer, school, or job title with the need's domain is never more than weak on its own.";
-sem NeedMatch.why = "One sentence citing the specific evidence number(s) for this candidate. Never invent or mention a person's name — none were given to you. Speak as the product talking to the user in second person; never say 'the fact', 'the intent', 'the evidence', 'the profile', 'the note', 'the author', 'the speaker', or 'the user'; never quote evidence in parentheses; one sentence, under 160 characters.";
+sem NeedMatch.why = "One sentence citing the specific evidence number(s) for this candidate. Never invent or mention a person's name — none were given to you. Speak as the product talking to the user in second person; never say 'the fact', 'the intent', 'the evidence', 'the profile', 'the note', 'the author', 'the speaker', or 'the user'; never quote evidence in parentheses; one sentence, under 160 characters. Never use an em-dash or en-dash; use a period, colon or comma instead.";
 sem NeedMatch.evidence_indices = "The 0-based evidence numbers from THIS candidate's own numbered evidence list that you relied on; empty if none. Never a number from another candidate's list.";
 sem NeedMatches.items = "One item per candidate; omit none.";
 
@@ -89,6 +89,47 @@ outside a matched preamble, so an unrelated, legitimate use of the word
 ("no ill intent") is left alone."""
 glob _FACT_PREAMBLE_RE: str = r"(?i)^(her|his|their|the)\s+(intent|intents|evidence|fact|facts|note|notes|profile)\s+(explicitly\s+)?(mentions|states|notes|confirms|shows|says|indicates)(\s+that)?\s+";
 glob _EVIDENCE_PAREN_RE: str = r"(?i)\s*\(evidence[^)]*\)\.?";
+glob _DASH_RE: str = r"\s*[—–]\s*";
+glob _VERBISH_RE: str = r"(?i)\b(?:is|are|was|were|am|be|been|being|has|have|had|do|does|did|will|would|can|could|should|must|might|may|shall|want|wants|wanted|need|needs|needed|offer|offers|offered|work|works|worked|know|knows|knew|ask|asks|asked|match|matches|matched|fit|fits|fitted|help|helps|helped|mention|mentions|mentioned|state|states|stated|confirm|confirms|confirmed|introduce|introduces|introduced|send|sends|sent|give|gives|gave|tell|tells|told|meet|meets|met|promise|promises|promised|say|says|said|look|looks|looked|raise|raises|raised|land|lands|landed|recruit|recruits|recruited|find|finds|found|found|get|gets|got|reach|reaches|reached|refresh|continue|continues|continuing|\w+ing|\w+ed)\b";
+
+"""True when `s` contains at least one word that reads as a verb: a bare
+be/have/do/modal auxiliary, or a word ending in -ing/-ed. Deterministic and
+intentionally loose (no real POS tagging) — good enough to tell "she wants
+X" from a bare noun phrase like "Ross café"."""
+def _has_verbish(s: str) -> bool {
+    return re.search(_VERBISH_RE, s) is not None;
+}
+
+"""SOH-226: no em-dash or en-dash may reach the user. Replace every run of
+one (spaced or bare) with ". " when it sits between two clauses that each
+read as their own (both sides have a verb-ish word) — the next letter is
+capitalized to start the new sentence — else with ", " (an appositive or
+a trailing fragment, not two full clauses)."""
+def _delash(text: str) -> str {
+    out = text;
+    guard = 0;
+    while True {
+        guard += 1;
+        if guard > 20 {
+            break;   # never loop forever on pathological input
+        }
+        m = re.search(_DASH_RE, out);
+        if m is None {
+            break;
+        }
+        before = out[:m.start()];
+        after = out[m.end():];
+        if _has_verbish(before) and _has_verbish(after) {
+            if after and after[0].isalpha() {
+                after = after[0].upper() + after[1:];
+            }
+            out = before + ". " + after;
+        } else {
+            out = before + ", " + after;
+        }
+    }
+    return out;
+}
 
 def polish_reason(text: str) -> str {
     t: str = (text or "").strip();
@@ -107,6 +148,7 @@ def polish_reason(text: str) -> str {
     t = re.sub(r"(?i)\bthe author\b", "you", t);
     t = re.sub(r"(?i)\bauthor\b", "you", t);
     t = re.sub(_EVIDENCE_PAREN_RE, "", t).strip();
+    t = _delash(t);
     t = re.sub(r" {2,}", " ", t);
     if not t {
         return t;
