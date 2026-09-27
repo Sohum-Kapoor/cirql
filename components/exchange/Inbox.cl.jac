@@ -7,11 +7,19 @@ the in-progress reply for this session in `friend[request_id]`:
   { request, reply: ReplyView | {}, draft, revealed_handle, error, busy }
 The reply's count and strength come from this user's own graph only
 (ReplyToRequest). Every step is a click by this user; nothing sends.
+
+SOH-222: an ask only counts as "Needs your OK" (and only counts toward the
+Inbox badge) once this account's agent has actually found something to
+approve — `match_count >= 1` on the checked reply, or it hasn't been checked
+yet at all (unknown, so it stays visible until checked). A checked reply with
+`match_count == 0` has nothing left to approve — `ApprovalView` never shows an
+Approve button for it either — so it moves into a collapsed "Other asks on the
+exchange" section instead of sitting in the primary list forever.
 """
 
 import from ..ui.button { Button }
 import from ..ui.skeleton { Skeleton }
-import from ..ui.icons { ChevronLeftIcon }
+import from ..ui.icons { ChevronLeftIcon, ChevronDownIcon, ChevronRightIcon }
 import from .common { StatusChip, DraftBlock, reply_label }
 import from .Requests { match_phrase }
 import from ...lib.utils { cn }
@@ -34,23 +42,38 @@ def:pub friend_status(ent: dict) -> str {
     return "new";
 }
 
+"""True once ReplyToRequest has actually run for this ask (this session, or
+carried over as `reply`) and found no strong/medium match. `ApprovalView`
+never offers Approve at `match_count == 0`, so there is nothing left for the
+user to do here — the honest answer is "no match", not "needs your OK"."""
+def:pub is_zero_match(ent: dict) -> bool {
+    reply: dict = (ent["reply"] or {}) as dict;
+    if not reply["_jac_id"] {
+        return False;
+    }
+    n: int = (reply["match_count"] or 0) as int;
+    return n == 0;
+}
+
 """How many friends' asks are waiting on this user (part of the Inbox tab badge, SOH-213/224):
 every unanswered incoming ask, plus this session's replies still mid-way
-(needs your OK / approved / contact said yes). Revealed and declined don't count."""
+(needs your OK / approved / contact said yes). Revealed, declined, and a
+checked-but-zero-match ask (SOH-222) don't count."""
 def:pub asks_needing_you(incoming: list[dict], friend: dict) -> int {
     n: int = 0;
     ids: list[str] = [];
     for r in incoming {
         rid: str = r["_jac_id"] as str;
         ids = ids + [rid];
-        st: str = friend_status((friend[rid] or {}) as dict);
-        if st != "revealed" and st != "declined" {
+        ent: dict = (friend[rid] or {}) as dict;
+        st: str = friend_status(ent);
+        if st != "revealed" and st != "declined" and not is_zero_match(ent) {
             n = n + 1;
         }
     }
     for rid in Object.keys(friend) {  # jac:ignore[W2001]
         ent: dict = friend[rid] as dict;
-        if rid not in ids and ent["request"] and friend_status(ent) in ["pending", "approved", "opted_in"] {
+        if rid not in ids and ent["request"] and friend_status(ent) in ["pending", "approved", "opted_in"] and not is_zero_match(ent) {
             n = n + 1;
         }
     }
@@ -82,6 +105,55 @@ def:pub AskRow(req: dict, status: str, onOpen: Callable[[str], None]) -> JsxElem
         </li>;
 }
 
+"""One count-0 ask, collapsed: no Approve, just the honest line."""
+def:pub OtherAskRow(req: dict) -> JsxElement {
+    return
+        <li className="flex flex-col gap-1 pt-2.5 pb-2.5 pl-3 pr-3">
+            <div className="flex items-start justify-between gap-2">
+                <span className="min-w-0 text-body-sm text-muted-foreground">{ask_line(req)}</span>
+            </div>
+            {req["about_line"] and <span className="text-caption text-muted-foreground">{req["about_line"] as str}</span>}
+            <span className="text-caption text-muted-foreground">{"from @" + (req["from_handle"] as str)}</span>
+            <span className="text-caption text-ink-muted">Your agent found no match; nothing to approve.</span>
+        </li>;
+}
+
+"""Collapsed, default-closed section for asks this account's agent checked and
+found zero strong/medium matches for (SOH-222). Still on the exchange, just
+nothing to do here."""
+def:pub OtherAsksSection(other: list[dict]) -> JsxElement {
+    has open: bool = False;
+
+    def toggle(e: MouseEvent) {
+        open = not open;
+    }
+
+    if len(other) == 0 {
+        return <span hidden={True} />;
+    }
+    return
+        <section aria-label="Other asks on the exchange" className="flex flex-col gap-2">
+            <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-between px-1"
+                aria-expanded={open}
+                onClick={toggle}
+            >
+                <span>{"Other asks on the exchange (" + str(len(other)) + ")"}</span>
+                {<ChevronDownIcon className="size-4" /> if open else <ChevronRightIcon className="size-4" />}
+            </Button>
+            {if open {
+                <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card">
+                    {for e in other {
+                        <OtherAskRow key={(e["request"] or {})["_jac_id"] as str} req={e["request"] as dict} />
+                    }}
+                </ul>
+            }}
+        </section>;
+}
+
 def:pub AsksSection(
     incoming: list[dict],
     friend: dict,
@@ -99,31 +171,46 @@ def:pub AsksSection(
             extra = extra + [entry];
         }
     }
-    if len(incoming) == 0 and len(extra) == 0 {
+    needs: list[dict] = [];
+    other: list[dict] = [];
+    for r in incoming {
+        ent: dict = (friend[r["_jac_id"]] or {}) as dict;
+        entry: dict = {"request": r};
+        if is_zero_match(ent) {
+            other = other + [entry];
+        } else {
+            needs = needs + [entry];
+        }
+    }
+    for e in extra {
+        if is_zero_match(e) {
+            other = other + [e];
+        } else {
+            needs = needs + [e];
+        }
+    }
+    if len(needs) == 0 and len(other) == 0 {
         return <span hidden={True} />;
     }
     return
-        <section aria-label={title} className="flex flex-col gap-3">
-            <h2 className="text-eyebrow text-muted-foreground">{title}</h2>
-            <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">
-                {for r in incoming {
-                    <AskRow
-                        key={r["_jac_id"] as str}
-                        req={r}
-                        status={friend_status((friend[r["_jac_id"]] or {}) as dict)}
-                        onOpen={onOpen}
-                    />
-                }}
-                {for e in extra {
-                    <AskRow
-                        key={(e["request"] or {})["_jac_id"] as str}
-                        req={e["request"] as dict}
-                        status={friend_status(e)}
-                        onOpen={onOpen}
-                    />
-                }}
-            </ul>
-        </section>;
+        <div className="flex flex-col gap-3">
+            {if len(needs) > 0 {
+                <section aria-label={title} className="flex flex-col gap-3">
+                    <h2 className="text-eyebrow text-muted-foreground">{title}</h2>
+                    <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">
+                        {for e in needs {
+                            <AskRow
+                                key={(e["request"] or {})["_jac_id"] as str}
+                                req={e["request"] as dict}
+                                status={friend_status((friend[(e["request"] or {})["_jac_id"] as str] or {}) as dict)}
+                                onOpen={onOpen}
+                            />
+                        }}
+                    </ul>
+                </section>
+            }}
+            <OtherAsksSection other={other} />
+        </div>;
 }
 
 def:pub ApprovalView(
