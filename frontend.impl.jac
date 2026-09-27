@@ -65,7 +65,6 @@ impl app.logout -> None {
     cap_text = "";
     cap_kind = "voice";
     tab = "home";
-    seen_reveals = [];
     clear_session_ui();
     cap_guided = empty_guided();
     cap_voice = empty_voice();
@@ -938,6 +937,18 @@ impl app.open_ask(rid: str) -> None {
 """ReplyToRequest: score the need against MY graph only; count + strength back."""
 impl app.friend_check(rid: str) -> None {
     ent: dict = friend_get(rid);
+    # SOH-226: guaranteed here (not just by `open_ask`) — the shell's own
+    # auto-check driver (`start_auto_checks`) calls this directly, and once
+    # a checked ask leaves ListIncomingRequests (answered) this `request` is
+    # the only way `split_asks`'s "extra" bucket still finds it, so a
+    # zero-match ask doesn't just vanish instead of landing under "Other asks".
+    if not ent["request"] {
+        for r in EX["incoming"] as list[dict] {
+            if r["_jac_id"] == rid {
+                ent["request"] = r;
+            }
+        }
+    }
     ent["busy"] = True;
     ent["error"] = "";
     friend_put(rid, ent);
@@ -1114,9 +1125,30 @@ impl app.set_cap_kind(kind: str) -> None {
     save_cap_kind(kind);
 }
 
-"""Reveals shown on the Inbox tab stop counting toward its badge."""
-impl app.mark_seen(ids: list[str]) -> None {
-    seen_reveals = seen_reveals + [i for i in ids if i not in seen_reveals];
+"""Drives the SOH-222 auto-check (SOH-226: the single source both the
+"Needs your OK" list and the Inbox badge read from) — up to 5 asks not yet
+checked, through the exact same `friend_check` a manually-opened ask uses.
+Reads the module-level EX/AGENT state directly (not the render-scope
+`incoming_shown`/`friend_shown` locals, which aren't in scope for an `impl`
+method) — same "covered" exclusion as the render does, so this never checks
+a request an open `answer_ask` AgentAction already represents."""
+impl app.start_auto_checks -> None {
+    rows: list[dict] = AGENT["rows"] as list[dict];
+    covered_now: list[str] = covered_requests(rows);
+    incoming_now: list[dict] = [r for r in (EX["incoming"] as list[dict]) if r["_jac_id"] not in covered_now];
+    friend_now: dict = EX["friend"] as dict;
+    todo: list[str] = pick_unchecked(incoming_now, friend_now, 5);
+    if len(todo) > 0 {
+        run_auto_checks(todo);
+    }
+}
+
+"""Sequential, one at a time (mirrors the ordering ReplyToRequest used to run
+under its own local effect, before SOH-226 moved it here)."""
+impl app.run_auto_checks(ids: list[str]) -> None {
+    for rid in ids {
+        await friend_check(rid);
+    }
 }
 
 # ---------------------------------------------------------------- agent inbox (SOH-224)

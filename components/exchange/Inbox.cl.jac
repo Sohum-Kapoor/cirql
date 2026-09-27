@@ -15,6 +15,16 @@ yet at all (unknown, so it stays visible until checked). A checked reply with
 `match_count == 0` has nothing left to approve — `ApprovalView` never shows an
 Approve button for it either — so it moves into a collapsed "Other asks on the
 exchange" section instead of sitting in the primary list forever.
+
+SOH-226: `friend_status` / `is_zero_match` / the needs-vs-other split
+(`split_asks`) live in `components/agent/common.cl.jac` now, the ONE place
+both this screen and the Inbox badge compute from — the auto-check that used
+to run inside this file called `reply_to_request` on its own, a second path
+alongside the shell's `friend_check`, and the two drifted out of sync (the
+badge counting a zero-match ask this file had already resolved and hidden
+under "Other asks"). The shell drives the check now (`pick_unchecked` +
+`friend_check`, same call `open_ask` uses for a manually-opened ask); this
+file only renders `friend` as the shell already has it.
 """
 
 import from ..ui.button { Button }
@@ -22,7 +32,7 @@ import from ..ui.skeleton { Skeleton }
 import from ..ui.icons { ChevronLeftIcon, ChevronDownIcon, ChevronRightIcon }
 import from .common { StatusChip, DraftBlock, reply_label }
 import from .Requests { match_phrase }
-import from ..api { reply_to_request }
+import from ..agent.common { friend_status, is_zero_match, split_asks }
 import from ...lib.utils { cn }
 
 """The ask in one line. Only a friends-audience ask (SOH-218) is from a friend;
@@ -30,55 +40,6 @@ an "everyone" ask can come from anyone on Cirql, so it doesn't claim friendship.
 def:pub ask_line(req: dict) -> str {
     who: str = "A friend" if req["audience"] == "friends" else "Someone on Cirql";
     return who + " is looking for " + ((req["need"] or "") as str) + ".";
-}
-
-def:pub friend_status(ent: dict) -> str {
-    reply: dict = (ent["reply"] or {}) as dict;
-    if reply["status"] {
-        return reply["status"] as str;
-    }
-    if ent["busy"] {
-        return "checking";
-    }
-    return "new";
-}
-
-"""True once ReplyToRequest has actually run for this ask (this session, or
-carried over as `reply`) and found no strong/medium match. `ApprovalView`
-never offers Approve at `match_count == 0`, so there is nothing left for the
-user to do here — the honest answer is "no match", not "needs your OK"."""
-def:pub is_zero_match(ent: dict) -> bool {
-    reply: dict = (ent["reply"] or {}) as dict;
-    if not reply["_jac_id"] {
-        return False;
-    }
-    n: int = (reply["match_count"] or 0) as int;
-    return n == 0;
-}
-
-"""How many friends' asks are waiting on this user (part of the Inbox tab badge, SOH-213/224):
-every unanswered incoming ask, plus this session's replies still mid-way
-(needs your OK / approved / contact said yes). Revealed, declined, and a
-checked-but-zero-match ask (SOH-222) don't count."""
-def:pub asks_needing_you(incoming: list[dict], friend: dict) -> int {
-    n: int = 0;
-    ids: list[str] = [];
-    for r in incoming {
-        rid: str = r["_jac_id"] as str;
-        ids = ids + [rid];
-        ent: dict = (friend[rid] or {}) as dict;
-        st: str = friend_status(ent);
-        if st != "revealed" and st != "declined" and not is_zero_match(ent) {
-            n = n + 1;
-        }
-    }
-    for rid in Object.keys(friend) {  # jac:ignore[W2001]
-        ent: dict = friend[rid] as dict;
-        if rid not in ids and ent["request"] and friend_status(ent) in ["pending", "approved", "opted_in"] and not is_zero_match(ent) {
-            n = n + 1;
-        }
-    }
-    return n;
 }
 
 def:pub AskRow(req: dict, status: str, onOpen: Callable[[str], None]) -> JsxElement {
@@ -155,20 +116,13 @@ def:pub OtherAsksSection(other: list[dict]) -> JsxElement {
         </section>;
 }
 
-"""Sequential SOH-222 auto-check: on Inbox load, run ReplyToRequest (the exact
-call `open_ask`/`friend_check` run for a manually-opened ask, `reply_to_request`
-from `api.cl.jac`) for up to 5 asks this account hasn't checked yet — so a
-brand-new account doesn't have to open every stranger's ask by hand before
-"Needs your OK" settles into its real bucket. Results are kept only in this
-component's own `has` state (an overlay on top of `friend`, never written back
-to it): `checked_ids` is the dedup guard, so a request already queued this
-mount is never re-sent even if the effect re-renders.
-
-`onChecked` (SOH-222) fires once right after this auto-check batch finishes, so
-a parent can refresh its own `incoming`/`friend` state immediately instead of
-waiting on its ~15 s poll for the badge/sections to catch up — wire it to
-whatever server call the parent's poll already uses; this component makes no
-new one."""
+"""Needs-your-OK + Other, split by `split_asks` (SOH-226: the same call the
+Inbox badge uses) — this component only renders `friend` as the shell has
+it. The shell (`frontend.impl.jac`) runs the actual check, sequentially, up
+to 5 unchecked asks at a time, through the SAME `friend_check` a manually-
+opened ask uses (`pick_unchecked` in `agent/common.cl.jac`); a checking entry
+shows here as "checking" via `friend_status` the moment `friend[rid].busy` is
+set, no local polling of its own."""
 def:pub AsksSection(
     incoming: list[dict],
     friend: dict,
@@ -176,101 +130,22 @@ def:pub AsksSection(
     title: str = "Asks",
     onChecked: Callable[[], None] | None = None
 ) -> JsxElement {
-    has auto: dict = {},
-        checked_ids: list[str] = [],
-        auto_total: int = 0,
-        auto_done: int = 0,
-        auto_running: bool = False;
-
-    """`friend`'s own entry for `rid`, overlaid with this component's own
-    auto-checked reply when `friend` doesn't already have a real one."""
-    def merged_ent(rid: str) -> dict {
-        base: dict = (friend[rid] or {}) as dict;
-        base_reply: dict = (base["reply"] or {}) as dict;
-        if base_reply["_jac_id"] {
-            return base;
-        }
-        ar: dict = (auto[rid] or {}) as dict;
-        if not ar["_jac_id"] {
-            return base;
-        }
-        merged: dict = {**base};
-        merged["reply"] = ar;
-        return merged;
-    }
-
-    async can with entry {
-        todo: list[str] = [];
-        for r in incoming {
-            rid: str = (r["_jac_id"] or "") as str;
-            if rid and rid not in checked_ids and friend_status(merged_ent(rid)) == "new" {
-                todo = todo + [rid];
-            }
-        }
-        if len(todo) > 0 {
-            batch: list[str] = todo[:5];
-            checked_local: list[str] = checked_ids + batch;
-            checked_ids = checked_local;
-            auto_total = len(batch);
-            auto_done = 0;
-            auto_running = True;
-            acc: dict = {**auto};
-            done_local: int = 0;
-            for rid in batch {
-                reply: dict = await reply_to_request(rid);
-                if reply["_jac_id"] {
-                    acc[rid] = reply;
-                }
-                done_local = done_local + 1;
-                auto_done = done_local;
-                auto = acc;
-            }
-            auto_running = False;
-            if onChecked {
-                onChecked();
-            }
-        }
-    }
-
-    ids: list[str] = [];
-    for r in incoming {
-        ids = ids + [r["_jac_id"] as str];
-    }
-    extra: list[dict] = [];
-    for rid in Object.keys(friend) {  # jac:ignore[W2001]
-        entry: dict = friend[rid] as dict;
-        if rid not in ids and entry["request"] {
-            extra = extra + [entry];
-        }
-    }
-    needs: list[dict] = [];
-    other: list[dict] = [];
-    for r in incoming {
-        rid: str = (r["_jac_id"] or "") as str;
-        ent: dict = merged_ent(rid);
-        entry: dict = {"request": r};
-        if is_zero_match(ent) {
-            other = other + [entry];
-        } else {
-            needs = needs + [entry];
-        }
-    }
-    for e in extra {
+    split: dict = split_asks(incoming, friend, []);
+    needs: list[dict] = (split["needs"] or []) as list[dict];
+    other: list[dict] = (split["other"] or []) as list[dict];
+    checking_now: int = 0;
+    for e in needs {
         rid: str = ((e["request"] or {})["_jac_id"] or "") as str;
-        ent: dict = merged_ent(rid);
-        if is_zero_match(ent) {
-            other = other + [e];
-        } else {
-            needs = needs + [e];
+        if friend_status((friend[rid] or {}) as dict) == "checking" {
+            checking_now = checking_now + 1;
         }
     }
-    checking_now: int = auto_total - auto_done;
     if len(needs) == 0 and len(other) == 0 {
         return <span hidden={True} />;
     }
     return
         <div className="flex flex-col gap-3">
-            {auto_running and checking_now > 0 and
+            {checking_now > 0 and
                 <p role="status" className="text-caption text-muted-foreground">
                     {"Checking " + str(checking_now) + (" ask" if checking_now == 1 else " asks") + " against your people…"}
                 </p>}
@@ -282,7 +157,7 @@ def:pub AsksSection(
                             <AskRow
                                 key={(e["request"] or {})["_jac_id"] as str}
                                 req={e["request"] as dict}
-                                status={friend_status(merged_ent((e["request"] or {})["_jac_id"] as str))}
+                                status={friend_status((friend[((e["request"] or {})["_jac_id"] or "") as str] or {}) as dict)}
                                 onOpen={onOpen}
                             />
                         }}

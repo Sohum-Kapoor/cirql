@@ -12,12 +12,14 @@ skeleton cards sit on top. Approve routes by kind:
 The shell owns the rows and every resolve (optimistic, rolled back on error).
 """
 
+import from react { useEffect }
 import from ..ui.button { Button }
 import from ..ui.skeleton { Skeleton }
 import from ..ui.tabs { Tabs, TabsList, TabsTrigger }
 import from ..exchange.GapAlert { AskSheet }
 import from .ActionCard { ActionCard }
 import from .common { FILTERS, in_filter, payload_of, ago_words, AgentIcon }
+import from .common { load_inbox_seen_ms, mark_inbox_seen_now, new_since_seen }
 import from ...lib.utils { cn }
 
 def:pub AgentSkeleton() -> JsxElement {
@@ -33,11 +35,15 @@ def:pub AgentSkeleton() -> JsxElement {
         </li>;
 }
 
-"""Status line + Run agent now."""
+"""Status line + Run agent now. `new_count` is the same array "What Cirql
+found" counts (open AgentActions), filtered to those created since the last
+time the Inbox tab was opened this session (SOH-226) — never a walker-
+reported "new this run" that can drift from what's actually on screen."""
 def:pub AgentHeader(
     running: bool,
     last_run: dict,
     open_count: int,
+    new_count: int,
     available: bool,
     error: str,
     onRun: Callable[[], None]
@@ -48,14 +54,13 @@ def:pub AgentHeader(
 
     ran_ms: int = (last_run["ms"] or 0) as int;
     ago: str = ago_words((Date.now() as int) - ran_ms) if ran_ms > 0 else "";  # jac:ignore[W2001]
-    n_new: int = (last_run["new"] or 0) as int;
     line: str = "";
     if running {
         line = "Reading your notes…";
     } elif not available {
         line = "Cirql isn't switched on for this account yet.";
     } elif ago {
-        line = "Checked " + ago + " · " + (str(n_new) + " new" if n_new > 0 else "nothing new");
+        line = "Checked " + ago + " · " + (str(new_count) + " new" if new_count > 0 else "nothing new");
     } else {
         line = "Cirql hasn't checked yet this session.";
     }
@@ -102,7 +107,17 @@ def:pub AgentInbox(
         posted: bool = False,
         need: str = "",
         about_line: str = "",
-        ask_kind: str = "";
+        ask_kind: str = "",
+        seen_ms: int = load_inbox_seen_ms();
+
+    # This mount = "the Inbox tab opened" (SOH-226): `seen_ms` (read above,
+    # before this runs) is the boundary "new" counts against for the WHOLE
+    # time this screen stays open; this call moves the boundary to now, for
+    # the next time the Inbox is opened.
+    useEffect(lambda {
+        mark_inbox_seen_now();
+        return lambda { };
+    }, []);
 
     def find_row(aid: str) -> dict {
         for r in rows {
@@ -175,6 +190,7 @@ def:pub AgentInbox(
     }
     # The sheet closes itself once the post lands (busy -> idle with no error).
     sheet_open: bool = ask_aid != "" and not (posted and not ask_busy and not ask_error);
+    new_count: int = new_since_seen(open_rows, seen_ms);
 
     return
         <section aria-label="What Cirql found" className="flex flex-col gap-3">
@@ -182,6 +198,7 @@ def:pub AgentInbox(
                 running={running}
                 last_run={last_run}
                 open_count={len(open_rows)}
+                new_count={new_count}
                 available={available}
                 error={run_error}
                 onRun={run_now}
