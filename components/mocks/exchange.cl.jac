@@ -14,6 +14,9 @@ cards.sv.jac; contracts/walkers.md v1.1 + the SOH-205 change log):
 ReplyView = { _jac_id, request_id, from_handle, match_count, strength, status }
 — never a match identity.
 
+SOH-229: `from_name`, `goal_text`, `need_key` are seeded here ahead of the
+real walker (read defensively everywhere, empty until it lands).
+
 Module-level MX state lets ONE browser under `?mock=1` click the whole loop:
 the dev-only "act as a friend" toggle makes the user's own open requests show
 up in their incoming list too, answered as the mock friend `sam-ruiz-9c1d`.
@@ -39,6 +42,9 @@ def _seed() -> None {
             "_jac_id": "mock-req-jordan",
             "need": "a plant manager at a Midwest foundry open to piloting a heat-recovery retrofit",
             "from_handle": "jordan-lee-3f2a",
+            "from_name": "Jordan Lee",
+            "goal_text": "Pilot a heat-recovery retrofit with a Midwest foundry by December",
+            "need_key": "",
             "about_line": "Mechanical engineering senior building a heat-pump retrofit kit",
             "status": "open",
             "created_at": "2026-09-26T17:40:00Z",
@@ -168,6 +174,9 @@ def:pub mock_post_request(need: str, about_line: str) -> dict {
         "_jac_id": _next_id("mock-req-"),
         "need": need,
         "from_handle": MY_HANDLE,
+        "from_name": "",
+        "goal_text": "",
+        "need_key": "",
         "about_line": about_line,
         "status": "open",
         "created_at": "2026-09-26T18:05:00Z",

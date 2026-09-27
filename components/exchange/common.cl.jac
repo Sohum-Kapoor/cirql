@@ -11,6 +11,7 @@ import from ..ui.badge { Badge }
 import from ..ui.button { Button }
 import from ...lib.utils { cn }
 import from ...lib.toast { toast }
+import from ...lib.text { join_with }
 
 glob REQ_LABEL: dict[str, str] = {
          "open": "Asked",
@@ -114,6 +115,110 @@ def:pub DraftBlock(title: str, text: str, note: str = "") -> JsxElement {
             <p className="whitespace-pre-wrap text-body-sm">{text}</p>
             {note and <span className="text-caption text-muted-foreground">{note}</span>}
         </div>;
+}
+
+"""SOH-229: the friend-name-aware ask copy + the client-side grouping key.
+`from_name`/`goal_text`/`need_key` are read defensively off an IntroRequest
+row — the server adds them; until it does (or when it doesn't recognize a
+caller), every function here falls back to the handle and skips the goal
+line entirely, never guessing.
+"""
+
+glob NEED_STOPWORDS: list[str] = ["a", "an", "the", "who", "someone", "that", "for", "in", "and", "with", "of", "to"];
+
+"""The first word of a name, "" when blank."""
+def:pub first_name(name: str) -> str {
+    n: str = (name or "").strip();
+    if not n {
+        return "";
+    }
+    for w in n.split(" ") {
+        if w {
+            return w;
+        }
+    }
+    return "";
+}
+
+"""The requester's display word: their first name when known, else their handle."""
+def:pub asker_label(from_name: str, from_handle: str) -> str {
+    fn: str = first_name(from_name);
+    if fn {
+        return fn;
+    }
+    return "@" + (from_handle or "");
+}
+
+"""Lower-cases only the first letter, so a need that reads as its own
+sentence ("An investor…") folds into the middle of another one."""
+def:pub lower_lead(s: str) -> str {
+    if not s {
+        return s;
+    }
+    return s[0:1].lower() + s[1:];
+}
+
+"""`need` ready to sit mid-sentence: trailing period dropped, leading letter lowered."""
+def:pub need_sentence(need: str) -> str {
+    n: str = (need or "").strip();
+    if n.endswith(".") {
+        n = n[0:len(n) - 1];
+    }
+    return lower_lead(n);
+}
+
+"""SOH-229 title: "<First name> is looking for <need>." — "@handle" when no name."""
+def:pub ask_title(from_name: str, from_handle: str, need: str) -> str {
+    return asker_label(from_name, from_handle) + " is looking for " + need_sentence(need) + ".";
+}
+
+"""SOH-229 second line: only rendered when the requester's own goal text is known."""
+def:pub goal_approved_line(from_name: str, from_handle: str, goal_text: str) -> str {
+    if not goal_text {
+        return "";
+    }
+    return asker_label(from_name, from_handle) + " approved this ask from their goal '" + goal_text + "'.";
+}
+
+"""SOH-229 footer under an expanded ask: only meaningful once a name is known."""
+def:pub handle_caption(from_name: str, from_handle: str) -> str {
+    fn: str = first_name(from_name);
+    if not fn {
+        return "";
+    }
+    return "@" + (from_handle or "") + " is " + fn + "'s Cirql handle.";
+}
+
+glob _NEED_CHARS: str = "abcdefghijklmnopqrstuvwxyz0123456789 ";
+
+def _identity_str(s: str) -> str {
+    return s;
+}
+
+def _need_tokens(need: str) -> list[str] {
+    lower: str = (need or "").lower();
+    buf: str = "";
+    for ch in lower {
+        buf = buf + (ch if ch in _NEED_CHARS else " ");
+    }
+    out: list[str] = [];
+    for tok in buf.split(" ") {
+        if tok and tok not in NEED_STOPWORDS {
+            out = out + [tok];
+        }
+    }
+    return sorted(out, key=_identity_str);
+}
+
+"""SOH-229 grouping key: the server's own `need_key` when present, else the
+same normalize-and-sort a client can do alone (lowercase, strip punctuation,
+drop stopwords, sort tokens, join)."""
+def:pub need_group_key(req: dict) -> str {
+    given: str = (req["need_key"] or "") as str;
+    if given {
+        return given;
+    }
+    return join_with(_need_tokens((req["need"] or "") as str), " ");
 }
 
 """Calls `onTick` every `ms` while mounted (skips while the tab is hidden).

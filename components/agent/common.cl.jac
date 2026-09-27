@@ -24,7 +24,7 @@ glob:pub KIND_LABEL: dict[str, str] = {
          "promise_due": "Mark promise done",
          "follow_up": "Save draft",
          "reconnect": "Save draft",
-         "answer_ask": "Open the reply"
+         "answer_ask": "Offer an intro"
      },
      DONE_LABEL: dict[str, str] = {
          "new_match": "Noted",
@@ -33,7 +33,7 @@ glob:pub KIND_LABEL: dict[str, str] = {
          "promise_due": "Promise marked done",
          "follow_up": "Draft saved",
          "reconnect": "Draft saved",
-         "answer_ask": "Reply opened"
+         "answer_ask": "Intro offered"
      },
      FILTER_KINDS: dict[str, list[str]] = {
          "asks": ["ask_network", "answer_ask"],

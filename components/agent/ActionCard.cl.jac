@@ -15,7 +15,8 @@ import from ..ui.icons { MoreIcon, ChevronRightIcon, CheckIcon }
 import from ..ui.dropdown_menu { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem }
 import from ..goals.RankList { EvidenceChip }
 import from ..capture.Review { SourceQuote }
-import from .common { KindIcon, kind_label, approve_label, resolved_label, ago_words, since_iso, promise_due_label }
+import from .common { KindIcon, kind_label, approve_label, resolved_label, ago_words, since_iso, promise_due_label, payload_of }
+import from ..exchange.common { ask_title }
 import from ...lib.text { join_with }
 import from ...lib.utils { cn }
 
@@ -92,6 +93,19 @@ def:pub ActionCard(
     created_title: str = (act["created_at"] or "") as str;
     eyebrow_text: str = promise_due_label(act) if kind == "promise_due" else kind_label(kind);
 
+    # SOH-229: for an answer_ask card, title from from_name/handle + need
+    # (same words as the Exchange Inbox's ask_title) — read defensively, the
+    # server may not carry from_name yet; falls back to the server's own
+    # title when the payload has no need at all.
+    display_title: str = (act["title"] or "") as str;
+    if kind == "answer_ask" {
+        payload: dict = payload_of(act);
+        ask_need: str = (payload["need"] or "") as str;
+        if ask_need {
+            display_title = ask_title((payload["from_name"] or "") as str, (payload["from_handle"] or "") as str, ask_need);
+        }
+    }
+
     has draft_text: str = (act["draft"] or "") as str,
         open_key: str = "",
         copied: bool = False;
@@ -143,7 +157,7 @@ def:pub ActionCard(
         <li
             data-action-id={aid}
             data-kind={kind}
-            aria-label={kind_label(kind) + ": " + (act["title"] as str)}
+            aria-label={kind_label(kind) + ": " + display_title}
             aria-busy={pending}
             className={cn("flex flex-col gap-3 rounded-lg border bg-card pt-3 pb-4 pl-4 pr-2 shadow-edge transition-opacity", "opacity-70" if pending else "")}
         >
@@ -155,7 +169,7 @@ def:pub ActionCard(
                 </span>
                 <DropdownMenu modal={False}>
                     <DropdownMenuTrigger
-                        aria-label={"More for: " + (act["title"] as str)}
+                        aria-label={"More for: " + display_title}
                         disabled={pending}
                         className={buttonVariants().call(None, {"variant": "ghost", "size": "icon-sm", "className": "shrink-0 text-muted-foreground"})}
                     >
@@ -169,7 +183,7 @@ def:pub ActionCard(
                 </DropdownMenu>
             </div>
             <div className="flex flex-col gap-1 pr-2">
-                <h3 className="text-body font-medium">{act["title"] as str}</h3>
+                <h3 className="text-body font-medium">{display_title}</h3>
                 {act["why"] and <p className="text-body-sm text-ink-muted">{act["why"] as str}</p>}
             </div>
             {if person["_jac_id"] {

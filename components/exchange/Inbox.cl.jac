@@ -25,57 +25,202 @@ badge counting a zero-match ask this file had already resolved and hidden
 under "Other asks"). The shell drives the check now (`pick_unchecked` +
 `friend_check`, same call `open_ask` uses for a manually-opened ask); this
 file only renders `friend` as the shell already has it.
+
+SOH-229: since the shell already auto-checks every unchecked ask, the count
+is usually in hand by the time a row renders, so the row itself carries the
+primary action ("Offer an intro" -> `onOpen`, the same navigation `open_ask`
+always did, which now skips straight past the "check my network" step
+because the reply already exists) instead of forcing a second screen just to
+read the ask. Tapping the row's own title expands it in place (about line,
+goal line, match status, the buttons, the handle footer) — one row expanded
+at a time, component state, never a route change. "Not now" is a session-only
+local hide (no walker call; a refresh brings the ask back), same spirit as
+`ActionCard`'s Dismiss but without a server-side equivalent for a friend's
+ask. Asks sharing a `need_group_key` (server field when the walker has it,
+else the same normalize-lowercase-drop-stopwords-sort a client can do alone)
+collapse into one "<N> people are looking for …" row with its own expand.
 """
 
 import from ..ui.button { Button }
 import from ..ui.skeleton { Skeleton }
 import from ..ui.icons { ChevronLeftIcon, ChevronDownIcon, ChevronRightIcon }
-import from .common { StatusChip, DraftBlock, reply_label }
+import from .common { StatusChip, DraftBlock, reply_label, ask_title, asker_label, need_sentence, goal_approved_line, handle_caption, need_group_key }
 import from .Requests { match_phrase }
 import from ..agent.common { friend_status, is_zero_match, split_asks }
 import from ...lib.utils { cn }
 
-"""The ask in one line. Only a friends-audience ask (SOH-218) is from a friend;
-an "everyone" ask can come from anyone on Cirql, so it doesn't claim friendship."""
-def:pub ask_line(req: dict) -> str {
-    who: str = "A friend" if req["audience"] == "friends" else "Someone on Cirql";
-    return who + " is looking for " + ((req["need"] or "") as str) + ".";
+"""SOH-229 item 3: the reply-state sentence under an expanded ask. A
+count-0 reply never reaches here — `split_asks` already routes it to
+"Other asks" before this file sees it."""
+def:pub ask_status_line(ent: dict) -> str {
+    reply: dict = (ent["reply"] or {}) as dict;
+    if reply["_jac_id"] {
+        n: int = (reply["match_count"] or 0) as int;
+        return "Cirql already replied: " + str(n) + " of your people may fit. No names were shared.";
+    }
+    if ent["busy"] {
+        return "Checking your people…";
+    }
+    return "Not checked yet.";
 }
 
-def:pub AskRow(req: dict, status: str, onOpen: Callable[[str], None]) -> JsxElement {
-    rid: str = req["_jac_id"] as str;
+"""One ask, collapsed to its title + status chip; tapping the title expands
+it in place. `ent` is the shell's `friend[rid]` entry (or just `{"request":
+req}` for one the auto-check hasn't reached yet)."""
+def:pub AskRow(
+    req: dict,
+    ent: dict,
+    expanded: bool,
+    onToggle: Callable[[str], None],
+    onOffer: Callable[[str], None],
+    onDismiss: Callable[[str], None]
+) -> JsxElement {
+    rid: str = (req["_jac_id"] or "") as str;
+    status: str = friend_status(ent);
+    from_name: str = (req["from_name"] or "") as str;
+    from_handle: str = (req["from_handle"] or "") as str;
+    goal_text: str = (req["goal_text"] or "") as str;
+    about_line: str = (req["about_line"] or "") as str;
+    need: str = (req["need"] or "") as str;
+    caption: str = handle_caption(from_name, from_handle);
+    approved: str = goal_approved_line(from_name, from_handle, goal_text);
+    status_line: str = ask_status_line(ent);
 
-    def handle_open(e: MouseEvent) {
-        onOpen(rid);
+    def handle_toggle(e: MouseEvent) {
+        onToggle(rid);
+    }
+
+    def handle_offer(e: MouseEvent) {
+        onOffer(rid);
+    }
+
+    def handle_dismiss(e: MouseEvent) {
+        onDismiss(rid);
     }
 
     return
-        <li>
+        <li className="flex flex-col">
             <Button
                 variant="ghost"
                 size="row"
+                aria-expanded={expanded}
                 className={cn("opacity-60" if status == "declined" or status == "revealed" else "")}
-                onClick={handle_open}
+                onClick={handle_toggle}
             >
                 <div className="flex items-start justify-between gap-2">
-                    <span className="min-w-0 text-body-sm">{ask_line(req)}</span>
+                    <span className="min-w-0 text-body-sm">{ask_title(from_name, from_handle, need)}</span>
                     <StatusChip status={status} label={reply_label(status)} />
                 </div>
-                {req["about_line"] and <span className="text-caption text-muted-foreground">{req["about_line"] as str}</span>}
-                <span className="text-caption text-muted-foreground">{"from @" + (req["from_handle"] as str)}</span>
             </Button>
+            {if expanded {
+                <div className="flex flex-col gap-2 pt-1 pb-3 pl-3 pr-3">
+                    {about_line and
+                        <p className="text-body-sm text-muted-foreground">
+                            {"About " + asker_label(from_name, from_handle) + ": " + about_line}
+                        </p>}
+                    {approved and <p className="text-body-sm text-muted-foreground">{approved}</p>}
+                    <p className="text-body-sm">{status_line}</p>
+                    <div className="flex gap-2">
+                        <Button size="sm" className="flex-1" onClick={handle_offer}>Offer an intro</Button>
+                        <Button size="sm" variant="secondary" onClick={handle_dismiss}>Not now</Button>
+                    </div>
+                    {caption and <span className="text-caption text-muted-foreground">{caption}</span>}
+                </div>
+            }}
+        </li>;
+}
+
+"""One requester line inside an expanded group: their name/handle, status,
+and their own "Offer an intro" — no per-requester detail, just the action."""
+def:pub AskRequesterLine(ent: dict, friend: dict, onOffer: Callable[[str], None]) -> JsxElement {
+    req: dict = (ent["request"] or {}) as dict;
+    rid: str = (req["_jac_id"] or "") as str;
+    fent: dict = (friend[rid] or {}) as dict;
+    status: str = friend_status(fent);
+    from_name: str = (req["from_name"] or "") as str;
+    from_handle: str = (req["from_handle"] or "") as str;
+
+    def handle_offer(e: MouseEvent) {
+        onOffer(rid);
+    }
+
+    return
+        <li className="flex items-center justify-between gap-2 pt-2 pb-2 pl-1 pr-2">
+            <span className="min-w-0 truncate text-body-sm">{asker_label(from_name, from_handle)}</span>
+            <div className="flex shrink-0 items-center gap-2">
+                <StatusChip status={status} label={reply_label(status)} />
+                <Button size="xs" onClick={handle_offer}>Offer an intro</Button>
+            </div>
+        </li>;
+}
+
+"""SOH-229 item 5: same-`need_group_key` asks collapse into one row titled
+"<N> people are looking for <need>", expanding to one line per requester."""
+def:pub AskGroupRow(
+    group_key: str,
+    entries: list[dict],
+    friend: dict,
+    expanded_key: str,
+    onToggle: Callable[[str], None],
+    onOffer: Callable[[str], None],
+    onDismiss: Callable[[str], None]
+) -> JsxElement {
+    if len(entries) <= 1 {
+        only: dict = entries[0] if len(entries) == 1 else {};
+        req: dict = (only["request"] or {}) as dict;
+        rid: str = (req["_jac_id"] or "") as str;
+        ent: dict = (friend[rid] or {}) as dict;
+        return
+            <AskRow
+                req={req}
+                ent={ent}
+                expanded={expanded_key == rid}
+                onToggle={onToggle}
+                onOffer={onOffer}
+                onDismiss={onDismiss}
+            />;
+    }
+    group_id: str = "group:" + group_key;
+    is_open: bool = expanded_key == group_id;
+    need0: str = ((entries[0]["request"] or {})["need"] or "") as str;
+
+    def handle_toggle(e: MouseEvent) {
+        onToggle(group_id);
+    }
+
+    return
+        <li className="flex flex-col">
+            <Button variant="ghost" size="row" aria-expanded={is_open} onClick={handle_toggle}>
+                <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 text-body-sm">{str(len(entries)) + " people are looking for " + need_sentence(need0) + "."}</span>
+                    {<ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" /> if is_open else <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />}
+                </div>
+            </Button>
+            {if is_open {
+                <ul className="flex flex-col divide-y divide-border border-t bg-secondary/40 pl-3 pr-1">
+                    {for e in entries {
+                        <AskRequesterLine
+                            key={((e["request"] or {})["_jac_id"] or "") as str}
+                            ent={e}
+                            friend={friend}
+                            onOffer={onOffer}
+                        />
+                    }}
+                </ul>
+            }}
         </li>;
 }
 
 """One count-0 ask, collapsed: no Approve, just the honest line."""
 def:pub OtherAskRow(req: dict) -> JsxElement {
+    from_name: str = (req["from_name"] or "") as str;
+    from_handle: str = (req["from_handle"] or "") as str;
     return
         <li className="flex flex-col gap-1 pt-2.5 pb-2.5 pl-3 pr-3">
             <div className="flex items-start justify-between gap-2">
-                <span className="min-w-0 text-body-sm text-muted-foreground">{ask_line(req)}</span>
+                <span className="min-w-0 text-body-sm text-muted-foreground">{ask_title(from_name, from_handle, (req["need"] or "") as str)}</span>
             </div>
             {req["about_line"] and <span className="text-caption text-muted-foreground">{req["about_line"] as str}</span>}
-            <span className="text-caption text-muted-foreground">{"from @" + (req["from_handle"] as str)}</span>
             <span className="text-caption text-ink-muted">Cirql found no match; nothing to approve.</span>
         </li>;
 }
@@ -116,13 +261,36 @@ def:pub OtherAsksSection(other: list[dict]) -> JsxElement {
         </section>;
 }
 
+"""Stable-order groups of `needs` entries sharing a `need_group_key`, each
+`{"key": str, "entries": [dict]}` — a group of one renders as a plain row."""
+def _group_asks(needs: list[dict]) -> list[dict] {
+    order: list[str] = [];
+    by_key: dict = {};
+    for e in needs {
+        req: dict = (e["request"] or {}) as dict;
+        k: str = need_group_key(req);
+        if k not in order {
+            order = order + [k];
+            by_key[k] = [];
+        }
+        by_key[k] = (by_key[k] as list[dict]) + [e];
+    }
+    out: list[dict] = [];
+    for k in order {
+        out = out + [{"key": k, "entries": by_key[k]}];
+    }
+    return out;
+}
+
 """Needs-your-OK + Other, split by `split_asks` (SOH-226: the same call the
 Inbox badge uses) — this component only renders `friend` as the shell has
 it. The shell (`frontend.impl.jac`) runs the actual check, sequentially, up
 to 5 unchecked asks at a time, through the SAME `friend_check` a manually-
 opened ask uses (`pick_unchecked` in `agent/common.cl.jac`); a checking entry
 shows here as "checking" via `friend_status` the moment `friend[rid].busy` is
-set, no local polling of its own."""
+set, no local polling of its own. SOH-229: `needs` is further grouped by
+`need_group_key` and any row this session dismissed ("Not now") is filtered
+out locally before either happens."""
 def:pub AsksSection(
     incoming: list[dict],
     friend: dict,
@@ -130,9 +298,13 @@ def:pub AsksSection(
     title: str = "Asks",
     onChecked: Callable[[], None] | None = None
 ) -> JsxElement {
+    has expanded_key: str = "",
+        hidden_ids: list[str] = [];
+
     split: dict = split_asks(incoming, friend, []);
-    needs: list[dict] = (split["needs"] or []) as list[dict];
+    all_needs: list[dict] = (split["needs"] or []) as list[dict];
     other: list[dict] = (split["other"] or []) as list[dict];
+    needs: list[dict] = [e for e in all_needs if (((e["request"] or {})["_jac_id"] or "") as str) not in hidden_ids];
     checking_now: int = 0;
     for e in needs {
         rid: str = ((e["request"] or {})["_jac_id"] or "") as str;
@@ -140,7 +312,24 @@ def:pub AsksSection(
             checking_now = checking_now + 1;
         }
     }
-    if len(needs) == 0 and len(other) == 0 {
+    groups: list[dict] = _group_asks(needs);
+
+    def toggle_expand(k: str) -> None {
+        expanded_key = "" if expanded_key == k else k;
+    }
+
+    def offer_intro(rid: str) -> None {
+        onOpen(rid);
+    }
+
+    def dismiss_now(rid: str) -> None {
+        hidden_ids = hidden_ids + [rid];
+        if expanded_key == rid {
+            expanded_key = "";
+        }
+    }
+
+    if len(all_needs) == 0 and len(other) == 0 {
         return <span hidden={True} />;
     }
     return
@@ -149,16 +338,20 @@ def:pub AsksSection(
                 <p role="status" className="text-caption text-muted-foreground">
                     {"Checking " + str(checking_now) + (" ask" if checking_now == 1 else " asks") + " against your people…"}
                 </p>}
-            {if len(needs) > 0 {
+            {if len(groups) > 0 {
                 <section aria-label={title} className="flex flex-col gap-3">
                     <h2 className="text-eyebrow text-muted-foreground">{title}</h2>
                     <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">
-                        {for e in needs {
-                            <AskRow
-                                key={(e["request"] or {})["_jac_id"] as str}
-                                req={e["request"] as dict}
-                                status={friend_status((friend[((e["request"] or {})["_jac_id"] or "") as str] or {}) as dict)}
-                                onOpen={onOpen}
+                        {for g in groups {
+                            <AskGroupRow
+                                key={g["key"] as str}
+                                group_key={g["key"] as str}
+                                entries={g["entries"] as list[dict]}
+                                friend={friend}
+                                expanded_key={expanded_key}
+                                onToggle={toggle_expand}
+                                onOffer={offer_intro}
+                                onDismiss={dismiss_now}
                             />
                         }}
                     </ul>
@@ -183,7 +376,12 @@ def:pub ApprovalView(
     busy: bool = True if ask["busy"] else False;
     rid: str = (req["_jac_id"] or "") as str;
     reply_id: str = (reply["_jac_id"] or "") as str;
-    asker: str = "@" + ((req["from_handle"] or "") as str);
+    from_name: str = (req["from_name"] or "") as str;
+    from_handle: str = (req["from_handle"] or "") as str;
+    goal_text: str = (req["goal_text"] or "") as str;
+    asker: str = asker_label(from_name, from_handle);
+    approved: str = goal_approved_line(from_name, from_handle, goal_text);
+    caption: str = handle_caption(from_name, from_handle);
     n: int = (reply["match_count"] or 0) as int;
 
     def handle_back(e: MouseEvent) {
@@ -228,8 +426,9 @@ def:pub ApprovalView(
                         <span className="text-eyebrow text-muted-foreground">{"Ask from " + asker}</span>
                         <StatusChip status={status} label={reply_label(status)} />
                     </div>
-                    <h2 className="text-subhead font-medium">{ask_line(req)}</h2>
-                    {req["about_line"] and <p className="text-body-sm text-muted-foreground">{"About them: " + (req["about_line"] as str)}</p>}
+                    <h2 className="text-subhead font-medium">{ask_title(from_name, from_handle, (req["need"] or "") as str)}</h2>
+                    {req["about_line"] and <p className="text-body-sm text-muted-foreground">{"About " + asker + ": " + (req["about_line"] as str)}</p>}
+                    {approved and <p className="text-body-sm text-muted-foreground">{approved}</p>}
                     {if status == "new" or status == "checking" {
                         if busy {
                             <div role="status" className="flex flex-col gap-2 rounded-md bg-secondary pt-3 pb-3 pl-3 pr-3">
@@ -265,9 +464,9 @@ def:pub ApprovalView(
                         <p role="alert" className="text-body-sm text-destructive">{ask["error"] as str}</p>
                     }}
                     {if status == "pending" and n > 0 {
-                        <p className="text-caption text-muted-foreground">{"Approve to ask your contact. " + asker + " still sees only the count until they say yes."}</p>
+                        <p className="text-caption text-muted-foreground">{"Offering an intro asks your contact. " + asker + " still sees only the count until they say yes."}</p>
                         <div className="flex gap-2">
-                            <Button className="flex-1" disabled={busy} onClick={handle_approve}>Approve</Button>
+                            <Button className="flex-1" disabled={busy} onClick={handle_approve}>Offer an intro</Button>
                             <Button variant="secondary" disabled={busy} onClick={handle_decline}>Decline</Button>
                         </div>
                     } elif status == "approved" {
@@ -296,6 +495,7 @@ def:pub ApprovalView(
                     {if can_decline and busy {
                         <span role="status" className="text-caption text-muted-foreground">Working…</span>
                     }}
+                    {caption and <span className="text-caption text-muted-foreground">{caption}</span>}
                 </section>
             }}
         </div>;
