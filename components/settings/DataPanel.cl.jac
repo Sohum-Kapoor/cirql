@@ -145,7 +145,12 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
         delete_result: dict = {};
 
     async can with entry {
+        await load_archived();
+    }
+
+    async def load_archived -> None {
         archived_error = "";
+        archived_loaded = False;
         got: list[dict] = [];
         try {
             got = await list_archived();
@@ -238,7 +243,7 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                     {Boolean(len(list(export_counts.keys())) if export_counts else 0) and (
                         <p className="text-caption text-muted-foreground">{_counts_line(export_counts)}</p>
                     )}
-                    <Button variant="outline" disabled={export_busy} onClick={run_export} className="w-full">
+                    <Button variant="outline" disabled={export_busy} onClick={run_export} className="w-full focus-visible:ring-inset">
                         {"Exporting…" if export_busy else "Export my data"}
                     </Button>
                 </CardContent>
@@ -250,7 +255,11 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                     <CardDescription>Hidden from lists and rankings. Restore brings them back.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    {archived_error and <p role="alert" className="text-body-sm text-destructive">{archived_error}</p>}
+                    {archived_error and
+                        <div className="flex items-center gap-2">
+                            <p role="alert" className="flex-1 text-body-sm text-destructive">{archived_error}</p>
+                            <Button size="sm" variant="outline" onClick={load_archived}>Retry</Button>
+                        </div>}
                     {if not archived_loaded {
                         <div role="status" aria-label="Loading archived people" className="flex flex-col gap-2">
                             <Skeleton className="h-4 w-3/4" />
@@ -284,7 +293,7 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                     {Boolean(len(list(delete_result.keys())) if delete_result else 0) and (
                         <p className="text-body-sm text-muted-foreground">{"Deleted " + _counts_line(delete_result) + "."}</p>
                     )}
-                    <Button variant="destructive" className="w-full" onClick={ask_delete}>Delete my data</Button>
+                    <Button variant="destructive" className="w-full focus-visible:ring-inset" onClick={ask_delete}>Delete my data</Button>
                 </CardContent>
             </Card>
 

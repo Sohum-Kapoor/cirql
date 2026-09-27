@@ -208,7 +208,7 @@ def:pub NoteRow(
                 </div>
                 <Button
                     variant="ghost"
-                    size="icon-sm"
+                    size="icon-lg"
                     className="shrink-0 text-muted-foreground"
                     aria-label="Delete note"
                     onClick={handle_delete}
@@ -229,9 +229,10 @@ def:pub Timeline(on_open_person: Callable[[str], None]) -> JsxElement {
         expanded: dict = {},
         confirm_id: str = "",
         delete_busy: bool = False,
-        delete_error: str = "";
+        delete_error: str = "",
+        retry_tick: int = 0;
 
-    async can with [kind_filter] entry {
+    async can with [kind_filter, retry_tick] entry {
         load_error = "";
         loaded = False;
         has_more = True;
@@ -244,6 +245,10 @@ def:pub Timeline(on_open_person: Callable[[str], None]) -> JsxElement {
             rows = [];
         }
         loaded = True;
+    }
+
+    def retry_load() {
+        retry_tick = retry_tick + 1;
     }
 
     def set_filter(kind: str) {
@@ -326,7 +331,11 @@ def:pub Timeline(on_open_person: Callable[[str], None]) -> JsxElement {
                     />
                 }}
             </div>
-            {load_error and <p role="alert" className="text-body-sm text-destructive">{load_error}</p>}
+            {load_error and
+                <div className="flex items-center gap-2">
+                    <p role="alert" className="flex-1 text-body-sm text-destructive">{load_error}</p>
+                    <Button size="sm" variant="outline" onClick={retry_load}>Retry</Button>
+                </div>}
             {if not loaded {
                 <div role="status" aria-label="Loading your notes" className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
                     <Skeleton className="h-4 w-3/4" />

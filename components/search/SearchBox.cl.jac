@@ -236,8 +236,13 @@ def:pub RecallCard(
     answer: dict,
     asked: str,
     name_to_id: dict,
-    onOpenPerson: Callable[[str], None]
+    onOpenPerson: Callable[[str], None],
+    onRetry: Callable[[], None]
 ) -> JsxElement {
+    def handle_retry(e: MouseEvent) {
+        onRetry();
+    }
+
     has_answer: bool = bool(answer) and asked == question;
     citations: list[dict] = [];
     answer_text: str = "";
@@ -259,7 +264,10 @@ def:pub RecallCard(
                     <Skeleton className="h-3 w-1/2" />
                 </div>
             } elif error {
-                <p role="alert" className="text-body-sm text-destructive">{error}</p>
+                <div className="flex items-center gap-2">
+                    <p role="alert" className="flex-1 text-body-sm text-destructive">{error}</p>
+                    <Button size="sm" variant="outline" onClick={handle_retry}>Retry</Button>
+                </div>
             } elif has_answer {
                 <p className="text-body-sm">{answer_text}</p>
                 if len(citations) > 0 {
@@ -346,6 +354,19 @@ def:pub SearchBox(
         loading = False;
         searched = True;
         active_index = -1;
+    }
+
+    def handle_retry_search(e: MouseEvent) {
+        if trimmed_query {
+            loading = True;
+            run_search(trimmed_query);
+        }
+    }
+
+    def retry_recall() {
+        if trimmed_query {
+            run_recall(trimmed_query);
+        }
     }
 
     async def run_recall(q: str) -> None {
@@ -460,7 +481,7 @@ def:pub SearchBox(
                         type="button"
                         onClick={handle_clear}
                         aria-label="Clear search"
-                        className="absolute top-1/2 right-2 -translate-y-1/2 rounded-xs p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                        className="absolute top-1/2 right-0 flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
                     >
                         <XIcon className="size-4" />
                     </button>}
@@ -475,6 +496,7 @@ def:pub SearchBox(
                     asked={recall_asked}
                     name_to_id={name_to_id}
                     onOpenPerson={on_open_person}
+                    onRetry={retry_recall}
                 />}
 
             {trimmed_query and
@@ -485,7 +507,10 @@ def:pub SearchBox(
                             <Skeleton className="h-3 w-1/3" />
                         </div>
                     } elif error {
-                        <p role="alert" className="text-body-sm text-destructive">{error}</p>
+                        <div className="flex items-center gap-2">
+                            <p role="alert" className="flex-1 text-body-sm text-destructive">{error}</p>
+                            <Button size="sm" variant="outline" onClick={handle_retry_search}>Retry</Button>
+                        </div>
                     } elif show_empty {
                         <p className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm text-muted-foreground">
                             Nothing matched. Try a first name, a company, or a word from the conversation.
