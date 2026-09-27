@@ -23,6 +23,7 @@ import requests;
 import from datetime { datetime }
 import from schema { Me, Person, Note, Fact, Knows, Asserts, Mentions, FactAbout }
 import from reads { my_node }
+import from identity { add_link, refresh_person_tokens }
 
 glob MAX_RESOLVES: int = 5;
 
@@ -562,8 +563,10 @@ walker:priv Enrich {
                 source_kind="web", source_url=f["uri"]
             ))[0];
             fact +>:FactAbout:+> p;
+            add_link(p, f["uri"]);  # SOH-215
             facts_out.append({"fact": fact, "source_url": f["uri"], "source_title": f["title"], "span": span});
         }
+        refresh_person_tokens(p);  # SOH-215
         out["note_id"] = jid(note);
         out["facts"] = facts_out;
         report out;

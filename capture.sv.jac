@@ -15,6 +15,7 @@ import from llm { llm }
 import from datetime { datetime }
 import from freshness { default_expiry }
 import from names { name_key, match_names }
+import from identity { refresh_person_tokens }
 import re;
 
 
@@ -387,6 +388,7 @@ def resolve_person(
         new_p = (me +>:Knows(how_met=edge_how_met, last_contact=now, source_note=jid(note), status="reported"):+> Person(name=clean, org=org, title=new_title, status="confirmed"))[0];
     }
 
+    refresh_person_tokens(new_p);  # SOH-215
     entry = {"person": new_p, "is_new": True, "ambiguous_with": ambiguous_with};
     resolved[key] = entry;
     return entry;

@@ -20,6 +20,7 @@ back in `read` only - schema stores no contact details this weekend.
 """
 
 import from schema { Me, Person, Note, Fact, Knows, Asserts, Mentions, FactAbout }
+import from identity { fill_contact }
 import from llm { llm }
 import from datetime { datetime }
 import from byllm.lib { Image }
@@ -199,6 +200,7 @@ def apply_badge_read(note: Note, me: Me, read: dict[str, any]) -> dict[str, any]
 
     entry = resolve_badge_person(name, org, title, me, note);
     p = entry["person"] as Person;
+    fill_contact(p, str(read.get("email", "") or ""), str(read.get("phone", "") or ""), list(read.get("links", []) or []));  # SOH-215
     note +>:Mentions(span=name):+> p;
 
     people_report: list[dict[str, any]] = [{

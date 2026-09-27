@@ -35,6 +35,7 @@ import from person { PersonDetail, Brief }
 import from enrich { Enrich }
 import from export { ExportGraph }
 import from edits { UpdatePerson, UpdatePromise }
+import from identity { RefreshIdentityTokens }
 
 # Client-side UI
 cl {
