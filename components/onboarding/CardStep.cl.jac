@@ -2,7 +2,7 @@
 
 Edits are local only (PublishCard is Tier 1). List fields are edited one item per
 line. The shell owns `card` and applies `onFieldChange(field, value)`. Goals use
-the shared GoalPicker (components/goals/GoalPicker.cl.jac, SK owns it — imported
+the shared GoalPicker (components/goals/GoalPicker.cl.jac — imported
 here, never edited): with no active goal it's the "What are you working toward?"
 prompt with an inline add; with one, tapping it opens a sheet to switch to
 another extracted goal or add a new one — SetGoal underneath either way, so a

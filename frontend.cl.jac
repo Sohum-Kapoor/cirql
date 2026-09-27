@@ -242,13 +242,14 @@ def:pub app -> JsxElement {
     async def submit_about -> None;
     def set_card_field(field: str, value: any) -> None;
     async def onb_switch_goal(goal_id: str) -> None;
+    async def onb_save_goal(text: str) -> str;
     async def onb_create_goal(text: str) -> None;
     async def onb_close_goal(goal_id: str) -> None;
     def set_row(i: int, field: str, value: str) -> None;
     async def submit_people -> None;
     def skip_people -> None;
     def people_next -> None;
-    async def start_recall -> None;
+    async def start_recall(known_goal_id: str = "") -> None;
     async def recall_add_goal(text: str) -> None;
     def finish -> None;
     def open_capture -> None;

@@ -188,23 +188,26 @@ impl app.onb_switch_goal(goal_id: str) -> None {
     next_onboard["goals"] = [mark_active(g, goal_id) for g in existing];
     onboard = next_onboard;
     onb_goal_error = "";
+    onb_goal_busy = True;
     saved: dict = {};
     try {
         saved = await set_goal(target["text"] as str);
     } except Exception as e {
         onboard = before;
+        onb_goal_busy = False;
         onb_goal_error = "Couldn't switch goals — try again. " + str(e);
         return;
     }
+    onb_goal_busy = False;
 }
 
 """Card step goal actions (GoalPicker.onCreate / RecallStep.onAddGoal):
 SetGoal(text) — creates or reactivates a goal and deactivates every other one
 under `onboard["goals"]`."""
-impl app.onb_create_goal(text: str) -> None {
+impl app.onb_save_goal(text: str) -> str {
     clean: str = text.strip();
     if not clean {
-        return;
+        return "";
     }
     existing: list[dict] = (onboard["goals"] or []) as list[dict];
     saved: dict = {};
@@ -215,7 +218,7 @@ impl app.onb_create_goal(text: str) -> None {
     } except Exception as e {
         onb_goal_busy = False;
         onb_goal_error = "Couldn't save that goal. " + str(e);
-        return;
+        return "";
     }
     gid: str = (saved["_jac_id"] or "") as str;
     new_goal: dict = {**saved};
@@ -225,6 +228,7 @@ impl app.onb_create_goal(text: str) -> None {
     next_onboard["goals"] = [new_goal] + kept;
     onboard = next_onboard;
     onb_goal_busy = False;
+    return gid;
 }
 
 """Card step goal actions (GoalPicker.onClose): CloseGoal(goal_id) — inactive,
@@ -311,9 +315,11 @@ impl app.people_next -> None {
 }
 
 """Step 4 -> GoalRank(goal_id=<active goal _jac_id>)."""
-impl app.start_recall -> None {
+impl app.start_recall(known_goal_id: str = "") -> None {
+    # `known_goal_id` lets a caller that just saved a goal rank it directly: `onboard`
+    # read here is this render's value, not the one set a moment ago (stale closure).
     all_goals: list[dict] = (onboard["goals"] or []) as list[dict];
-    goal_id: str = "";
+    goal_id: str = known_goal_id;
     for g in all_goals {
         if g["active"] and not goal_id {
             goal_id = g["_jac_id"] as str;
@@ -343,9 +349,15 @@ impl app.start_recall -> None {
 """Step 4's own inline add-goal (RecallStep.onAddGoal, shown when OnboardMe
 never surfaced or activated a goal): SetGoal(text), then rank it immediately —
 `start_recall` already ran once this render and returned early with no goal_id."""
+impl app.onb_create_goal(text: str) -> None {
+    await onb_save_goal(text);
+}
 impl app.recall_add_goal(text: str) -> None {
-    await onb_create_goal(text);
-    start_recall();
+    new_gid: str = "";
+    new_gid = await onb_save_goal(text);
+    if new_gid {
+        start_recall(new_gid);
+    }
 }
 
 impl app.finish -> None {

@@ -6,8 +6,8 @@ text — nothing sends. Rows render via the shared components/goals/RankList.
 
 With no active goal (skipped step 2, or OnboardMe's extraction never surfaced
 one — see components/onboarding/CardStep.cl.jac) there is nothing to rank: this
-shows a human prompt and the shared NewGoalForm (components/goals/GoalPicker.cl.jac,
-SK owns it) instead of a bare "—" or a misleading "capture a conversation" line.
+shows a human prompt and the shared NewGoalForm (components/goals/GoalPicker.cl.jac)
+instead of a bare "—" or a misleading "capture a conversation" line.
 """
 
 import from "..ui.button" { Button }
