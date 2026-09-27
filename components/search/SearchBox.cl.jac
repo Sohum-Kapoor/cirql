@@ -32,12 +32,12 @@ import from ...lib.text { short_date }
 import from ...lib.utils { cn }
 
 glob _KIND_LABEL: dict[str, str] = {
-    "person": "Person", "fact": "Fact", "intent": "Want/Offer",
+    "person": "Person", "fact": "Fact", "intent": "Want",
     "promise": "Promise", "note": "Note"
 };
 
 glob _GROUP_TITLE: dict[str, str] = {
-    "person": "People", "fact": "Facts", "intent": "Wants / offers",
+    "person": "People", "fact": "Facts", "intent": "Wants and offers",
     "promise": "Promises", "note": "Notes"
 };
 
@@ -45,7 +45,39 @@ glob _QUESTION_STARTERS: list[str] = [
     "who", "what", "when", "where", "which", "did", "do", "is", "are", "how"
 ];
 
+"""Stopwords the highlighter skips entirely - never marked, even as part of a
+longer match - so a query like "who works at stripe?" doesn't light up the
+"at" inside "Natarajan" or "climate"."""
+glob _STOPWORDS: list[str] = [
+    "a", "an", "the", "at", "in", "on", "of", "to", "who", "for", "with",
+    "and", "is", "are", "does", "do", "what", "where"
+];
+
+"""Text cues that mark an intent as something the person is OFFERING rather
+than looking for - `Search`'s row shape (contracts/walkers.md) doesn't carry
+the Intent node's own `kind` (need/offer/open_to), only its free text, so this
+is a best-effort read of that text, same convention `noted.sv.jac`'s
+`share_text` prefixes use ("can offer:" / "open to:" vs "looking for:")."""
+glob _OFFER_CUES: list[str] = [
+    "can offer", "offering", "offered", "can help", "happy to help",
+    "open to", "can review", "can intro", "can connect", "willing to"
+];
+
 glob _SPAN_CAP: int = 64;
+
+def _is_word_char(ch: str) -> bool {
+    return ch in "abcdefghijklmnopqrstuvwxyz0123456789";
+}
+
+def _intent_direction(text: str) -> str {
+    t: str = text.lower();
+    for cue in _OFFER_CUES {
+        if cue in t {
+            return "Offer";
+        }
+    }
+    return "Want";
+}
 
 def _s(d: dict, key: str) -> str {
     return (d[key] or "") as str;
@@ -83,13 +115,14 @@ def _truncate(text: str, n: int) -> str {
     return text[:n] + "…";
 }
 
-"""Every occurrence of every non-empty token in `text`, case-insensitive,
-merged where they overlap - so a multi-token query highlights cleanly even
-when tokens overlap or repeat."""
+"""Every WHOLE-WORD occurrence of every non-empty, non-stopword token in
+`text`, case-insensitive, merged where they overlap - so a multi-token query
+highlights cleanly even when tokens overlap or repeat, and never lights up a
+stopword or a token that only matches mid-word ("at" inside "Natarajan")."""
 def _match_spans(text_l: str, tokens: list[str]) -> list[list[int]] {
     raw: list[list[int]] = [];
     for tok in tokens {
-        if not tok {
+        if not tok or tok in _STOPWORDS {
             continue;
         }
         start = 0;
@@ -98,8 +131,13 @@ def _match_spans(text_l: str, tokens: list[str]) -> list[list[int]] {
             if idx < 0 {
                 break;
             }
-            raw.append([idx, idx + len(tok)]);
-            start = idx + len(tok);
+            end = idx + len(tok);
+            before_ok = (idx == 0) or (not _is_word_char(text_l[idx - 1]));
+            after_ok = (end >= len(text_l)) or (not _is_word_char(text_l[end]));
+            if before_ok and after_ok {
+                raw.append([idx, end]);
+            }
+            start = end;
         }
     }
     if not raw {
@@ -166,6 +204,7 @@ def:pub SearchResultRow(
     span: str = _s(row, "span");
     date_label: str = short_date(_s(row, "observed_at"));
     is_person: bool = kind == "person";
+    kind_label: str = _intent_direction(text) if kind == "intent" else (_KIND_LABEL[kind] or kind);
 
     def handle_person(e: MouseEvent) {
         if pid {
@@ -181,7 +220,7 @@ def:pub SearchResultRow(
             className={cn("flex flex-col gap-1 pt-2.5 pb-2.5 pl-3 pr-3", "bg-secondary" if is_active else "")}
         >
             <div className="flex items-center gap-1.5">
-                <Badge variant={"default" if is_person else "secondary"}>{_KIND_LABEL[kind] or kind}</Badge>
+                <Badge variant={"default" if is_person else "secondary"}>{kind_label}</Badge>
                 {date_label and <span className="text-caption text-muted-foreground">{date_label}</span>}
             </div>
             {if is_person {
@@ -229,6 +268,31 @@ def:pub CitationChip(c: dict, name_to_id: dict, onOpenPerson: Callable[[str], No
     return <Badge variant="outline" title={span}>{label}</Badge>;
 }
 
+"""Dedupe Recall's citation chips by the person they resolve to (falling back
+to the raw person name, then kind+span for a citation with no person at all)
+so the same person never shows two chips in one answer."""
+def _dedupe_citations(citations: list[dict], name_to_id: dict) -> list[dict] {
+    seen: list[str] = [];
+    out: list[dict] = [];
+    for c in citations {
+        person = _s(c, "person");
+        key: str = "";
+        if person and person in name_to_id {
+            key = "id:" + (name_to_id[person] as str);
+        } elif person {
+            key = "name:" + person;
+        } else {
+            key = "span:" + _s(c, "kind") + ":" + _s(c, "span");
+        }
+        if key in seen {
+            continue;
+        }
+        seen.append(key);
+        out.append(c);
+    }
+    return out;
+}
+
 def:pub RecallCard(
     question: str,
     loading: bool,
@@ -247,7 +311,7 @@ def:pub RecallCard(
     citations: list[dict] = [];
     answer_text: str = "";
     if has_answer {
-        citations = (answer["citations"] or []) as list[dict];
+        citations = _dedupe_citations((answer["citations"] or []) as list[dict], name_to_id);
         answer_text = _s(answer, "answer");
     }
 
@@ -499,9 +563,10 @@ def:pub SearchBox(
                     onRetry={retry_recall}
                 />}
 
-            {trimmed_query and
-                <div id="search-results-listbox" role="listbox" aria-label="Search results" className="flex flex-col gap-3">
-                    {if loading and not searched {
+            <div id="search-results-listbox" role="listbox" aria-label="Search results" className="flex flex-col gap-3">
+                    {if not trimmed_query {
+                        skip;
+                    } elif loading and not searched {
                         <div role="status" aria-label="Searching your people" className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
                             <Skeleton className="h-4 w-3/4" />
                             <Skeleton className="h-3 w-1/3" />
@@ -545,7 +610,7 @@ def:pub SearchBox(
                             </TodayGroup>
                         }
                         if len(intent_rows) > 0 {
-                            <TodayGroup title="Wants / offers" count={len(intent_rows)}>
+                            <TodayGroup title="Wants and offers" count={len(intent_rows)}>
                                 {for row in intent_rows {
                                     <SearchResultRow
                                         key={_s(row, "id")}
@@ -587,6 +652,6 @@ def:pub SearchBox(
                             </TodayGroup>
                         }
                     }}
-                </div>}
+            </div>
         </div>;
 }

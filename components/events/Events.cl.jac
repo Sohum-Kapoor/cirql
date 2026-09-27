@@ -34,6 +34,25 @@ def _event_sort_key(row: dict) -> str {
     return date or "0000-00-00";
 }
 
+"""A native date input with a real, visible "Date" label - the browser's own
+empty-state text ("mm/dd/yyyy") otherwise renders in full text colour, which
+reads as an entered value beside the other fields' grey placeholders. The
+muted class only applies while there's no value, matching those placeholders."""
+def:pub DateField(id: str, value: str, onChange: Callable[[ChangeEvent], None], className: str = "") -> JsxElement {
+    return
+        <div className={cn("flex flex-col gap-1", className)}>
+            <label htmlFor={id} className="text-caption text-muted-foreground">Date</label>
+            <Input
+                id={id}
+                type="date"
+                value={value}
+                onChange={onChange}
+                aria-label="Event date"
+                className={cn("w-full", "text-muted-foreground" if not value else "")}
+            />
+        </div>;
+}
+
 """One event row: name, date · location, count; tap to open; overflow menu to edit."""
 def:pub EventRow(
     row: dict,
@@ -84,8 +103,11 @@ def:pub EventRow(
                 <div className="flex flex-1 flex-col gap-2 py-3">
                     <Input value={edit_name} onChange={handle_name_input} aria-label="Event name" placeholder="Event name" />
                     <div className="flex gap-2">
-                        <Input type="date" value={edit_date} onChange={handle_date_input} aria-label="Event date" className="flex-1" />
-                        <Input value={edit_location} onChange={handle_location_input} aria-label="Event location" placeholder="Location" className="flex-1" />
+                        <DateField id={"event-edit-date-" + eid} value={edit_date} onChange={handle_date_input} className="flex-1" />
+                        <div className="flex flex-1 flex-col gap-1">
+                            <label htmlFor={"event-edit-location-" + eid} className="text-caption text-muted-foreground">Location</label>
+                            <Input id={"event-edit-location-" + eid} value={edit_location} onChange={handle_location_input} aria-label="Event location" placeholder="Location" />
+                        </div>
                     </div>
                     <div className="flex justify-end gap-2">
                         <Button size="sm" variant="ghost" disabled={edit_busy} onClick={onCancelEdit}>Cancel</Button>
@@ -417,8 +439,11 @@ def:pub Events(on_open_person: Callable[[str], None]) -> JsxElement {
                     aria-label="New event name"
                 />
                 <div className="flex gap-2">
-                    <Input type="date" value={create_date} onChange={edit_create_date} aria-label="Event date" className="flex-1" />
-                    <Input value={create_location} onChange={edit_create_location} placeholder="Location" aria-label="Event location" className="flex-1" />
+                    <DateField id="event-create-date" value={create_date} onChange={edit_create_date} className="flex-1" />
+                    <div className="flex flex-1 flex-col gap-1">
+                        <label htmlFor="event-create-location" className="text-caption text-muted-foreground">Location</label>
+                        <Input id="event-create-location" value={create_location} onChange={edit_create_location} placeholder="Location" aria-label="Event location" />
+                    </div>
                 </div>
                 <Button disabled={create_busy or not create_name.strip()} onClick={handle_create} className="self-end">
                     <PlusIcon /> {"Adding…" if create_busy else "Add event"}
