@@ -446,7 +446,7 @@ def:pub HomeView(
                         <section aria-label="Needs your OK" className="flex flex-col gap-3">
                             <h2 className="text-eyebrow text-muted-foreground">Needs your OK</h2>
                             <EmptyNote>
-                                Nothing waiting. When another agent on Cirql asks your network for help, it lands here — only a count and a strength leave your graph until you approve.
+                                Nothing waiting. When someone on Cirql asks your network for help, it lands here — only a count and a strength are shared until you approve.
                             </EmptyNote>
                         </section>
                     }}
@@ -574,7 +574,7 @@ def:pub HomeView(
                                 <h2 className="text-eyebrow text-muted-foreground">Who to reach out to</h2>
                                 <div className="flex items-center gap-2">
                                     {rank_pending and
-                                        <span role="status" className="text-caption text-muted-foreground">Walking your graph…</span>}
+                                        <span role="status" className="text-caption text-muted-foreground">Reading your notes…</span>}
                                     <Button
                                         size="xs"
                                         variant="outline"

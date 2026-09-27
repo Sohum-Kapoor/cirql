@@ -11,11 +11,11 @@ import from ...lib.text { due_label }
 glob:pub KIND_LABEL: dict[str, str] = {
          "new_match": "New match",
          "ask_network": "Ask your network",
-         "route": "Route",
+         "route": "Introduction",
          "promise_due": "Promise due",
          "follow_up": "Follow up",
          "reconnect": "Reason to reconnect",
-         "answer_ask": "An ask on the exchange"
+         "answer_ask": "A friend's ask"
      },
      APPROVE_LABEL: dict[str, str] = {
          "new_match": "Got it",
@@ -44,7 +44,7 @@ glob:pub KIND_LABEL: dict[str, str] = {
      FILTERS: list[list[str]] = [
          ["all", "All"],
          ["asks", "Asks"],
-         ["routes", "Routes"],
+         ["routes", "Introductions"],
          ["follow", "Follow-ups"],
          ["matches", "Matches"]
      ];

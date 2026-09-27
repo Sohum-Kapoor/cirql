@@ -51,13 +51,13 @@ def:pub AgentHeader(
     n_new: int = (last_run["new"] or 0) as int;
     line: str = "";
     if running {
-        line = "Your agent is walking your graph…";
+        line = "Reading your notes…";
     } elif not available {
-        line = "Your agent isn't switched on for this account yet.";
+        line = "Cirql isn't switched on for this account yet.";
     } elif ago {
-        line = "Agent ran " + ago + " · " + (str(n_new) + " new" if n_new > 0 else "nothing new");
+        line = "Checked " + ago + " · " + (str(n_new) + " new" if n_new > 0 else "nothing new");
     } else {
-        line = "Your agent hasn't run yet this session.";
+        line = "Cirql hasn't checked yet this session.";
     }
 
     return
@@ -72,7 +72,7 @@ def:pub AgentHeader(
                 </p>
                 <Button size="sm" variant="outline" disabled={running or not available} onClick={handle_run} className="shrink-0">
                     <AgentIcon />
-                    {"Running…" if running else "Run agent now"}
+                    {"Running…" if running else "Check now"}
                 </Button>
             </div>
             {error and <p role="alert" className="text-caption text-destructive">{error}</p>}
@@ -177,7 +177,7 @@ def:pub AgentInbox(
     sheet_open: bool = ask_aid != "" and not (posted and not ask_busy and not ask_error);
 
     return
-        <section aria-label="Your agent found" className="flex flex-col gap-3">
+        <section aria-label="What Cirql found" className="flex flex-col gap-3">
             <AgentHeader
                 running={running}
                 last_run={last_run}
@@ -187,7 +187,7 @@ def:pub AgentInbox(
                 onRun={run_now}
             />
             <div className="flex items-center justify-between gap-2 pt-1">
-                <h2 className="text-eyebrow text-muted-foreground">Your agent found</h2>
+                <h2 className="text-eyebrow text-muted-foreground">What Cirql found</h2>
                 <span className="text-caption tabular-nums text-muted-foreground">{str(len(open_rows))}</span>
             </div>
             {len(rows) > 0 and
@@ -203,12 +203,12 @@ def:pub AgentInbox(
                     </TabsList>
                 </Tabs>}
             {if not loaded and not running {
-                <ul aria-label="Loading your agent's suggestions" className="flex flex-col gap-3">
+                <ul aria-label="Loading your suggestions" className="flex flex-col gap-3">
                     <AgentSkeleton />
                 </ul>
             } elif len(rows) == 0 and not running {
                 <p className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm text-muted-foreground">
-                    Capture a conversation and your agent will look for routes, gaps and follow-ups — you approve everything. Nothing sends on its own.
+                    Capture a conversation and Cirql will look for introductions, gaps and follow-ups — you approve everything. Nothing sends on its own.
                 </p>
             } else {
                 <ul className="flex flex-col gap-3" aria-busy={running}>
