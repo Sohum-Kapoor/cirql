@@ -37,11 +37,7 @@ import requests;
 glob HS_REPO_ROOT = os.path.dirname(os.path.abspath(__file__));
 
 def _hs_harness(tmp_dir: str) -> str {
-    for name in [
-        "handshake.sv.jac", "schema.sv.jac", "exchange.sv.jac", "onboard.sv.jac",
-        "cards.sv.jac", "scoring.sv.jac", "freshness.sv.jac", "walkers.sv.jac",
-        "reads.sv.jac", "identity.sv.jac", "names.sv.jac"
-    ] {
+    for name in sorted([n for n in os.listdir(HS_REPO_ROOT) if n.endswith(".sv.jac")]) {
         shutil.copyfile(os.path.join(HS_REPO_ROOT, name), os.path.join(tmp_dir, name));
     }
     harness_path = os.path.join(tmp_dir, "hs_entry.jac");
@@ -328,11 +324,7 @@ because a subprocess has no access to the real repo's modules the way an
 in-process JacTestClient apparently does."""
 
 def _make_restart_harness(tmp_dir: str) -> str {
-    for name in [
-        "handshake.sv.jac", "schema.sv.jac", "exchange.sv.jac", "onboard.sv.jac",
-        "cards.sv.jac", "scoring.sv.jac", "freshness.sv.jac", "walkers.sv.jac",
-        "reads.sv.jac", "llm.sv.jac", "identity.sv.jac", "names.sv.jac"
-    ] {
+    for name in sorted([n for n in os.listdir(HS_REPO_ROOT) if n.endswith(".sv.jac")]) {
         shutil.copyfile(os.path.join(HS_REPO_ROOT, name), os.path.join(tmp_dir, name));
     }
     harness_path = os.path.join(tmp_dir, "hsapp.jac");
