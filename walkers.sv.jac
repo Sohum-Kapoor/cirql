@@ -76,10 +76,14 @@ walker:priv ListPeople {
     SOH-217: optionally filtered to one circle (`InCircle`) and/or one
     event (`MetAt`); archived people (`Person.archived`) are excluded
     unless `include_archived=True`. Keeps the original report shape
-    (`list[Person]`, no wrapper dict)."""
+    (`list[Person]`, no wrapper dict).
+    SOH-236: `fields="list"` omits `identity_tokens`/`links`/`email`/`phone`
+    from every row (a lighter row for the 300-person list view); default
+    `"full"` keeps every key so no existing caller breaks."""
     has circle_id: str = "";
     has event_id: str = "";
     has include_archived: bool = False;
+    has fields: str = "full";
     has reports: list[dict[str, any]] = [];
 
     can collect with Root entry {
@@ -89,30 +93,54 @@ walker:priv ListPeople {
         }
         me = mes[0];
         people: list[Person] = [me ->:Knows:->];
+        knows_edges: list[Knows] = [edge me ->:Knows:->];
+        knows_by_person: dict[str, Knows] = {};
+        i = 0;
+        for p in people {
+            if i < len(knows_edges) {
+                knows_by_person[jid(p)] = knows_edges[i];
+            }
+            i = i + 1;
+        }
         for p in filter_people(people, self.circle_id, self.event_id, self.include_archived) {
-            report person_row(me, p);
+            ke: Knows | None = None;
+            if jid(p) in knows_by_person {
+                ke = knows_by_person[jid(p)];
+            }
+            report person_row(p, ke, self.fields);
         }
     }
 }
 
 """One ListPeople row: the Person's own fields (same keys the client already
 reads) plus the caller's `Knows.last_contact` and `how_met` (SOH-226, display
-only: nothing ranks or decays on `last_contact`)."""
-def person_row(me: Me, p: Person) -> dict[str, any] {
+only: nothing ranks or decays on `last_contact`). `ke` is the caller's own
+`Knows` edge to `p` (already resolved by the caller, once, for the whole
+list) or `None` when no such edge exists. `fields == "list"` omits
+`identity_tokens`/`links`/`email`/`phone` (SOH-236); any other value (the
+default `"full"`) keeps them."""
+def person_row(p: Person, ke: Knows | None, fields: str) -> dict[str, any] {
     last_contact = "";
     how_met = "";
-    kes = [edge me ->:Knows:-> p];
-    if kes {
-        last_contact = kes[0].last_contact;
-        how_met = kes[0].how_met;
+    if ke is not None {
+        k = ke as Knows;
+        last_contact = k.last_contact;
+        how_met = k.how_met;
     }
-    return {
+    row: dict[str, any] = {
         "_jac_type": "Person", "_jac_id": jid(p), "_jac_archetype": "node",
         "name": p.name, "org": p.org, "title": p.title, "status": p.status,
-        "archived": p.archived, "email": p.email, "phone": p.phone,
-        "links": p.links, "location": p.location, "identity_tokens": p.identity_tokens,
+        "archived": p.archived, "location": p.location,
         "last_contact": last_contact, "how_met": how_met
     };
+    if fields == "list" {
+        return row;
+    }
+    row["email"] = p.email;
+    row["phone"] = p.phone;
+    row["links"] = p.links;
+    row["identity_tokens"] = p.identity_tokens;
+    return row;
 }
 
 walker:priv ListGoals {

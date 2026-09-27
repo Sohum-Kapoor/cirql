@@ -178,13 +178,13 @@ def get_exchange() -> Exchange {
 """Every IntroRequest under EVERY Exchange in root.shared, deduped by jid.
 get_exchange() can race and leave two Exchanges; readers must see both."""
 def all_requests() -> list[IntroRequest] {
-    seen: list[str] = [];
+    seen: dict[str, bool] = {};
     out: list[IntroRequest] = [];
     for ex in [x for x in [root.shared -->] if isinstance(x, Exchange)] {
         for req in [x for x in [ex -->] if isinstance(x, IntroRequest)] {
             k = jid(req);
             if k not in seen {
-                seen.append(k);
+                seen[k] = True;
                 out.append(req);
             }
         }
