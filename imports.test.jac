@@ -8,7 +8,7 @@ ever or the hundredth, and that two tests never collide on the same
 lowercase name.
 """
 
-import from imports { ImportPeople, ConfirmPerson, ConfirmPeople, SkipPerson, row_str, source_display }
+import from imports { ImportPeople, ConfirmPerson, ConfirmPeople, SkipPerson, SkipPeople, row_str, source_display }
 import from schema { Me, Person, Note, Knows, Mentions }
 import from datetime { datetime }
 import uuid;
@@ -342,6 +342,54 @@ test "SOH-235 ConfirmPeople: a bogus id lands in not_found alongside real confir
     assert result["not_found"] == [bogus_id];
 }
 
+# ---------------------------------------------------------------- SkipPeople (SOH-236)
+
+test "SOH-236 SkipPeople: skips proposed people in one call; a confirmed person lands in not_found" {
+    suffix = _uid();
+    rows: list[dict[str, any]] = [];
+    for i in range(3) {
+        rows.append({"name": f"Skip236 {suffix} {i}"});
+    }
+    imported_result = (root spawn ImportPeople(rows=rows, source="csv")).reports[0] as dict[str, any];
+    imported = imported_result["imported"] as list[dict[str, any]];
+    assert len(imported) == 3;
+    ids = [jid(e["person"] as Person) for e in imported];
+
+    # Confirm the last one so it is no longer "proposed" — SkipPeople must
+    # refuse it (same rule SkipPerson already enforces on a single id).
+    confirmed_id = ids[2];
+    confirm_out = (root spawn ConfirmPerson(person_id=confirmed_id)).reports[0];
+    assert isinstance(confirm_out, Person);
+
+    result = (root spawn SkipPeople(person_ids=ids)).reports[0] as dict[str, any];
+    assert result["count"] == 2, f"expected count 2, got {result}";
+    assert result["skipped"] == [ids[0], ids[1]], "skipped order must follow person_ids";
+    assert result["not_found"] == [confirmed_id], "the confirmed person must not be skippable";
+
+    existing_me = [root --> [?:Me]];
+    assert existing_me;
+    me = existing_me[0];
+    known_ids = [jid(p) for p in [me ->:Knows:->]];
+    assert ids[0] not in known_ids, "a skipped person's Knows edge/node must be gone";
+    assert ids[1] not in known_ids, "a skipped person's Knows edge/node must be gone";
+    assert confirmed_id in known_ids, "the confirmed person must be untouched";
+}
+
+test "SOH-236 SkipPeople: a bogus id lands in not_found alongside a real skip" {
+    suffix = _uid();
+    name = f"Skip236B {suffix} Solo";
+    r1 = (root spawn ImportPeople(rows=[{"name": name}], source="csv")).reports[0] as dict[str, any];
+    imported = r1["imported"] as list[dict[str, any]];
+    assert len(imported) == 1;
+    real_id = jid(imported[0]["person"] as Person);
+    bogus_id = "not-a-real-jid-at-all";
+
+    result = (root spawn SkipPeople(person_ids=[real_id, bogus_id])).reports[0] as dict[str, any];
+    assert result["count"] == 1, f"expected count 1, got {result}";
+    assert result["skipped"] == [real_id];
+    assert result["not_found"] == [bogus_id];
+}
+
 # ---------------------------------------------------------------- ConfirmPeople isolation (two real roots)
 
 import from jaclang.runtimelib.testing { JacTestClient }
@@ -363,7 +411,7 @@ def _confirm_bulk_harness(tmp_dir: str) -> str {
     harness_path = os.path.join(tmp_dir, "app.jac");
     f = open(harness_path, "w");
     f.write(
-        "import from imports { ImportPeople, ConfirmPeople }\n"
+        "import from imports { ImportPeople, ConfirmPeople, SkipPeople }\n"
         "import from walkers { ListPeople }\n"
     );
     f.close();
@@ -421,6 +469,39 @@ test "SOH-235 isolation: an id from account B is not_found when confirmed via A'
         b_row = b_people[0] as dict[str, any];
         print(f"[confirm bulk isolation] B's own ListPeople after A's attempt -> {b_row}");
         assert b_row["status"] == "proposed", "B's person must stay proposed after A's failed cross-root confirm";
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "SOH-236 isolation: an id from account B is not_found when skipped via A's root; B's person stays proposed" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_confirm_bulk_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _confirm_bulk_register(cl, "skip_bulk_a@example.com");
+        b = _confirm_bulk_register(cl, "skip_bulk_b@example.com");
+
+        b_imported = _confirm_bulk_call(cl, b, "ImportPeople", {
+            "rows": [{"name": "Skip236 Isolation Target"}], "source": "csv"
+        });
+        b_result = b_imported[0] as dict[str, any];
+        b_person_id = str(((b_result["imported"] as list[any])[0] as dict[str, any])["person"]["_jac_id"]);
+        print(f"[skip bulk isolation] B seeded person_id={b_person_id}");
+
+        a_skip = _confirm_bulk_call(cl, a, "SkipPeople", {"person_ids": [b_person_id]});
+        a_out = a_skip[0] as dict[str, any];
+        print(f"[skip bulk isolation] A's SkipPeople on B's person -> {a_out}");
+        assert a_out["count"] == 0, f"A must never skip B's person: {a_out}";
+        assert a_out["skipped"] == [];
+        assert a_out["not_found"] == [b_person_id];
+
+        b_people = _confirm_bulk_call(cl, b, "ListPeople", {});
+        b_row = b_people[0] as dict[str, any];
+        print(f"[skip bulk isolation] B's own ListPeople after A's attempt -> {b_row}");
+        assert b_row["status"] == "proposed", "B's person must stay proposed (and present) after A's failed cross-root skip";
     } finally {
         if client is not None { client.close(); }
         shutil.rmtree(tmp_dir, ignore_errors=True);

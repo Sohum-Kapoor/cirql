@@ -6,7 +6,7 @@ carries a random per-call suffix (`_uid()`) — this guarantees a name is always
 genuinely new, whether this is the first run ever or the hundredth.
 """
 
-import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction, hedge_fact_text, fact_source_kind, specific_follow_up, promise_is_only_a_want, default_how_met, second_person, attach_metat_for_new_people, is_role_only, _human_date, attach_hint, find_hinted_person, hint_label, capture_hint_suffix }
+import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction, hedge_fact_text, fact_source_kind, specific_follow_up, promise_is_only_a_want, default_how_met, second_person, attach_metat_for_new_people, is_role_only, _human_date, attach_hint, find_hinted_person, hint_label, capture_hint_suffix, maybe_confirm_hinted }
 import from schema { Event, Fact, HasEvent, Intent, Knows, Me, Mentions, MetAt, Note, Person, Promise, Reported, PromiseTo }
 import uuid;
 import from datetime { datetime }
@@ -1043,4 +1043,45 @@ test "SOH-231: no person_id (default) -> apply_extraction behaves identically wi
     assert (people1[0]["person"] as Person).org == "Fleetly";
     assert (people2[0]["person"] as Person).org == "Fleetly";
     assert people1[0]["is_new"] and people2[0]["is_new"];
+}
+
+# ---------------------------------------------------------------- SOH-236 Capture confirm flag
+
+test "SOH-236 maybe_confirm_hinted: confirm=True on a proposed hinted person marks it (and the Knows edge) confirmed" {
+    me = _fresh_me();
+    suffix = _uid();
+    p = (me +>:Knows(how_met="imported", status="proposed"):+> Person(
+        name=f"Prop{suffix} Contact", status="proposed"
+    ))[0];
+
+    hinted = find_hinted_person(me, jid(p));
+    assert hinted is not None;
+
+    confirmed = maybe_confirm_hinted(me, hinted, True, "met at demo day");
+    assert confirmed, "maybe_confirm_hinted must report True on a real confirm";
+    assert p.status == "confirmed";
+    ke = ([edge me ->:Knows:-> p])[0];
+    assert ke.status == "confirmed";
+    assert ke.how_met == "met at demo day";
+}
+
+test "SOH-236 maybe_confirm_hinted: confirm=False (default) leaves the hinted person proposed" {
+    me = _fresh_me();
+    suffix = _uid();
+    p = (me +>:Knows(how_met="imported", status="proposed"):+> Person(
+        name=f"Prop{suffix} Contact2", status="proposed"
+    ))[0];
+
+    hinted = find_hinted_person(me, jid(p));
+    assert hinted is not None;
+
+    confirmed = maybe_confirm_hinted(me, hinted, False, "");
+    assert not confirmed, "maybe_confirm_hinted must report False when do_confirm is unset";
+    assert p.status == "proposed", "the person must stay proposed when confirm was not requested";
+}
+
+test "SOH-236 maybe_confirm_hinted: no hinted person -> False, nothing written" {
+    me = _fresh_me();
+    confirmed = maybe_confirm_hinted(me, None, True, "");
+    assert not confirmed, "maybe_confirm_hinted must report False when no person was hinted";
 }

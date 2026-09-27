@@ -6,8 +6,15 @@ Annex to gaps.sv.jac — run with `jac test gaps.sv.jac`. Covers only
 warm person is dropped and an uncovered kind is reported.
 """
 
-import from gaps { compute_gaps, GapExtraction, NeededKind, known_people_texts, strip_score_words }
-import from schema { Me, Goal, Person, HasGoal, Knows, RelevantTo }
+import from gaps { compute_gaps, GapExtraction, NeededKind, known_people_texts, strip_score_words, candidate_people, graph_newest_evidence_at, gaps_cache_is_fresh, served_from_cache }
+import from schema { Me, Goal, Person, HasGoal, Knows, RelevantTo, Fact, FactAbout }
+import from datetime { datetime, timedelta }
+import json;
+import uuid;
+
+def _uid() -> str {
+    return uuid.uuid4().hex[:8];
+}
 
 test "compute_gaps drops the covered kind, keeps the uncovered kind" {
     me = (root ++> Me(name="Test"))[0];
@@ -54,7 +61,8 @@ test "compute_gaps drops the covered kind, keeps the uncovered kind" {
     assert len(gaps) == 1, f"expected exactly one gap, got {gaps}";
     assert gaps[0]["kind"] == "robotics mentor";
     for g in gaps {
-        assert "climate" not in g["kind"].lower(), f"covered kind leaked into gaps: {g}";
+        kind_text = g["kind"] as str;
+        assert "climate" not in kind_text.lower(), f"covered kind leaked into gaps: {g}";
     }
 }
 
@@ -151,7 +159,9 @@ test "compute_gaps never emits the banned word 'score'/'scores'/'scoring'" {
     gaps = compute_gaps(extraction, 0);
 
     assert len(gaps) == 1;
-    text = (gaps[0]["why_needed"] + " " + gaps[0]["suggested_need"]).lower();
+    why_text = gaps[0]["why_needed"] as str;
+    need_text = gaps[0]["suggested_need"] as str;
+    text = (why_text + " " + need_text).lower();
     assert "score" not in text, f"banned word 'score' leaked into gap text: {gaps}";
     assert strip_score_words("Scoring the Score and scores.") == "results the results and results.";
 }
@@ -184,4 +194,86 @@ test "compute_gaps (SOH-226): why_needed/suggested_need are polished, model narr
     assert len(gaps) == 1;
     assert gaps[0]["why_needed"] == "The goal needs a climate-tech VC.";
     assert gaps[0]["suggested_need"] == "An intro to a climate-tech VC.";
+}
+
+# ---------------------------------------------------------------- SOH-236 gap cache
+
+test "gaps_cache_is_fresh: a cache stored minutes ago with no newer evidence is fresh" {
+    now = datetime.now();
+    gaps_at = (now - timedelta(minutes=5)).isoformat();
+    fresh = gaps_cache_is_fresh(
+        json.dumps([{"kind": "x", "why_needed": "y", "suggested_need": "z"}]),
+        gaps_at, "", now
+    );
+    assert fresh, "a 5-minute-old cache with no newer evidence must be served";
+}
+
+test "gaps_cache_is_fresh: empty gaps_json or gaps_at is never fresh" {
+    now = datetime.now();
+    gaps_at = (now - timedelta(minutes=5)).isoformat();
+    assert not gaps_cache_is_fresh("", gaps_at, "", now), "no stored gaps_json -> never fresh";
+    assert not gaps_cache_is_fresh(json.dumps([]), "", "", now), "no stored gaps_at -> never fresh";
+}
+
+test "gaps_cache_is_fresh: older than 6 hours is stale (the documented fallback rule)" {
+    now = datetime.now();
+    gaps_at = (now - timedelta(hours=7)).isoformat();
+    fresh = gaps_cache_is_fresh(
+        json.dumps([{"kind": "x", "why_needed": "y", "suggested_need": "z"}]),
+        gaps_at, "", now
+    );
+    assert not fresh, "a 7-hour-old cache must be treated as stale";
+}
+
+test "gaps_cache_is_fresh: newer evidence than gaps_at invalidates the cache" {
+    now = datetime.now();
+    gaps_at = (now - timedelta(minutes=5)).isoformat();
+    newest_evidence = now.isoformat();   # a note captured AFTER gaps_at
+    fresh = gaps_cache_is_fresh(
+        json.dumps([{"kind": "x", "why_needed": "y", "suggested_need": "z"}]),
+        gaps_at, newest_evidence, now
+    );
+    assert not fresh, "evidence newer than gaps_at must invalidate the cache";
+}
+
+test "graph_newest_evidence_at picks up a new Fact about a known person (a new note invalidates)" {
+    me = (root ++> Me(name="CacheTest" + _uid()))[0];
+    p = (me +>:Knows(how_met="test"):+> Person(name="Cached Person" + _uid()))[0];
+
+    candidates = candidate_people(me);
+    assert len(candidates) == 1;
+    assert graph_newest_evidence_at(candidates) == "", "no facts yet -> no evidence timestamp";
+
+    now = datetime.now();
+    fact_time = now.isoformat();
+    fact = (root ++> Fact(text="raising a seed round", observed_at=fact_time))[0];
+    fact +>:FactAbout:+> p;
+
+    newest = graph_newest_evidence_at(candidates);
+    assert newest == fact_time, f"expected the fact's own observed_at, got {newest}";
+
+    gaps_at = (now - timedelta(minutes=1)).isoformat();
+    fresh = gaps_cache_is_fresh(json.dumps([{"kind": "x"}]), gaps_at, newest, now);
+    assert not fresh, "a cache from before this new fact must be invalidated";
+}
+
+test "served_from_cache marks every stored gap cached:true and round-trips fields" {
+    stored = json.dumps([
+        {"kind": "climate-tech VC", "why_needed": "a", "suggested_need": "b"},
+        {"kind": "robotics mentor", "why_needed": "c", "suggested_need": "d"}
+    ]);
+    served = served_from_cache(stored);
+    assert served is not None;
+    out = served as list[dict[str, any]];
+    assert len(out) == 2;
+    for gap in out {
+        cached_flag = gap["cached"] as bool;
+        assert cached_flag, f"every served gap must be marked cached, got {gap}";
+    }
+    assert out[0]["kind"] == "climate-tech VC";
+}
+
+test "served_from_cache returns None (not []) on corrupt stored JSON" {
+    served = served_from_cache("not json at all {{{");
+    assert served is None, "corrupt gaps_json must be reported as None, not an empty list";
 }

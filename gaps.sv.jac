@@ -7,10 +7,12 @@ person, only a kind of person.
 """
 
 import re;
+import json;
 import from llm { llm }
 import from datetime { datetime }
 import from schema { Me, Person, Goal, HasGoal, Knows, Reported, RelevantTo, FactAbout, IntentAbout }
 import from scoring { fallback_tokens, polish_reason }
+import from goals { _parse_naive_utc, newest_evidence_at }
 
 
 obj NeededKind {
@@ -150,9 +152,9 @@ for this goal). Cleans strings (also stripping the banned word 'score' /
 empty field, dedupes by lowercase kind (first occurrence wins), caps at 4.
 `known_people` defaults to `[]` so existing callers/tests that only cared
 about the covered_by check are unaffected."""
-def compute_gaps(x: GapExtraction, warm_count: int, known_people: list[dict[str, str]] | None = None) -> list[dict[str, str]] {
+def compute_gaps(x: GapExtraction, warm_count: int, known_people: list[dict[str, str]] | None = None) -> list[dict[str, any]] {
     people: list[dict[str, str]] = known_people if known_people is not None else [];
-    out: list[dict[str, str]] = [];
+    out: list[dict[str, any]] = [];
     seen: list[str] = [];
     for k in x.kinds {
         covered = False;
@@ -241,12 +243,110 @@ def warm_lines_for(me: Me, goal: Goal) -> list[str] {
     return warm_lines;
 }
 
+# ---------------------------------------------------------------- SOH-236 cache
+
+"""Same dedup pattern as `warm_lines_for`/`known_people_texts`: directly
+Known people plus their Reported ties, deduped - the candidate set whose
+newest evidence timestamp can invalidate the stored gap cache."""
+def candidate_people(me: Me) -> list[Person] {
+    known: list[Person] = [me ->:Knows:->];
+    candidates: list[Person] = [];
+    seen_ids: list[str] = [];
+    for p in known {
+        pid = jid(p);
+        if pid not in seen_ids {
+            seen_ids.append(pid);
+            candidates.append(p);
+        }
+    }
+    for p in known {
+        for rp in [p ->:Reported:->] {
+            rid = jid(rp);
+            if rid not in seen_ids {
+                seen_ids.append(rid);
+                candidates.append(rp);
+            }
+        }
+    }
+    return candidates;
+}
+
+"""The newest `goals.newest_evidence_at` timestamp across `candidates` -
+"" if nothing parses. A new Fact/Intent/Promise/Note about any of the
+caller's known-or-reported people counts as "a new note about the goal"
+for cache-invalidation purposes (SOH-236)."""
+def graph_newest_evidence_at(candidates: list[Person]) -> str {
+    best: str = "";
+    best_dt: datetime | None = None;
+    for p in candidates {
+        ts = newest_evidence_at(p);
+        dt = _parse_naive_utc(ts);
+        if dt is None {
+            continue;
+        }
+        if best_dt is None or dt > (best_dt as datetime) {
+            best_dt = dt;
+            best = ts;
+        }
+    }
+    return best;
+}
+
+"""SOH-236: true when a stored `Goal.gaps_json`/`gaps_at` is still usable
+without re-running `find_gaps`. False when there is nothing stored, when
+`gaps_at` doesn't parse, when `newest_evidence` (see
+`graph_newest_evidence_at`) postdates `gaps_at` (a new note about one of
+the goal's candidate people invalidates the cache), or when the cache is
+older than 6 hours (the documented fallback rule for a Goal with no other
+freshness signal - AGENTS.md)."""
+def gaps_cache_is_fresh(gaps_json: str, gaps_at: str, newest_evidence: str, now: datetime) -> bool {
+    if not gaps_json.strip() or not gaps_at.strip() {
+        return False;
+    }
+    gaps_dt = _parse_naive_utc(gaps_at);
+    if gaps_dt is None {
+        return False;
+    }
+    evidence_dt = _parse_naive_utc(newest_evidence);
+    if evidence_dt is not None and evidence_dt > gaps_dt {
+        return False;
+    }
+    age_seconds = (now - gaps_dt).total_seconds();
+    return age_seconds <= 6 * 3600;
+}
+
+"""Parse a stored `Goal.gaps_json` and mark every entry `cached: true` -
+the shape `GapFinder` serves on a cache hit. Returns `None` (not `[]`) when
+the stored JSON fails to parse, so the caller can tell "empty result" from
+"corrupt cache" and fall back to recomputing."""
+def served_from_cache(gaps_json: str) -> list[dict[str, any]] | None {
+    try {
+        loaded = json.loads(gaps_json);
+    } except Exception {
+        return None;
+    }
+    out: list[dict[str, any]] = [];
+    for gap in loaded {
+        g = gap as dict[str, any];
+        g["cached"] = True;
+        out.append(g);
+    }
+    return out;
+}
+
 walker:priv GapFinder {
     """Report the kinds of people a goal needs for which there is no warm
     (known/route, strong/medium) path in the caller's graph. Never names a
-    person - only kinds of people. Goal not found (or no Me yet) -> []."""
+    person - only kinds of people. Goal not found (or no Me yet) -> [].
+
+    SOH-236: results are cached on the Goal (`gaps_json`/`gaps_at`). Unless
+    `force=True`, a fresh cache (see `gaps_cache_is_fresh`) is served
+    straight back (`cached: true`) and `find_gaps` (the `by llm` call) is
+    never invoked; otherwise the model runs, the result is stored, and
+    every reported entry carries `cached: false`."""
     has goal_id: str;
-    has reports: list[dict[str, str]] = [];
+    has force: bool = False;
+    has reports: list[dict[str, any]] = [];
 
     can find with Root entry {
         me_list = [root --> [?:Me]];
@@ -270,6 +370,20 @@ walker:priv GapFinder {
         # a safe, documented cast (`jac guide jac-types`), not a bypass.
         goal: Goal = found_goal as Goal;
 
+        candidates = candidate_people(me);
+        newest_at = graph_newest_evidence_at(candidates);
+
+        served: list[dict[str, any]] | None = None;
+        if not self.force and gaps_cache_is_fresh(goal.gaps_json, goal.gaps_at, newest_at, datetime.now()) {
+            served = served_from_cache(goal.gaps_json);
+        }
+        if served is not None {
+            for gap in (served as list[dict[str, any]]) {
+                report gap;
+            }
+            disengage;
+        }
+
         warm_lines = warm_lines_for(me, goal);
         warm_count = len(warm_lines);
         warm_summary = "\n".join(warm_lines) if warm_lines else "none";
@@ -281,7 +395,13 @@ walker:priv GapFinder {
         }
 
         known_people = known_people_texts(me);
-        for gap in compute_gaps(extraction, warm_count, known_people) {
+        gaps = compute_gaps(extraction, warm_count, known_people);
+
+        goal.gaps_json = json.dumps(gaps);
+        goal.gaps_at = datetime.now().isoformat();
+
+        for gap in gaps {
+            gap["cached"] = False;
             report gap;
         }
     }
