@@ -39,6 +39,7 @@ import from .nav.TabBar { TabBar }
 import from .search.SearchBox { SearchBox }
 import from .circles.Circles { Circles }
 import from .events.Events { Events }
+import from .notes.Timeline { Timeline }
 import from ..lib.text { join_with }
 import from ..lib.utils { cn }
 sv import from ..schema { Person }
@@ -316,12 +317,13 @@ def:pub HomeView(
                 <div key="tab-people" className="flex flex-col gap-6">
                 <SearchBox on_open_person={open_person} />
                 <Tabs value={view_tab} onValueChange={set_view_tab} className="gap-6">
-                    <TabsList aria-label="People view" className="w-full">
+                    <TabsList aria-label="People view" className="w-full justify-start gap-0 overflow-x-auto [scrollbar-width:none] [&>button]:pl-1 [&>button]:pr-1">
                         <TabsTrigger value="list">List</TabsTrigger>
                         <TabsTrigger value="graph">Graph</TabsTrigger>
                         <TabsTrigger value="today">Today</TabsTrigger>
                         <TabsTrigger value="circles">Circles</TabsTrigger>
                         <TabsTrigger value="events">Events</TabsTrigger>
+                        <TabsTrigger value="notes">Notes</TabsTrigger>
                     </TabsList>
                     <TabsContent value="list" className="flex flex-col gap-3">
                         <section aria-label="People you know" className="flex flex-col gap-3">
@@ -355,6 +357,9 @@ def:pub HomeView(
                     </TabsContent>
                     <TabsContent value="events">
                         <Events on_open_person={open_person} />
+                    </TabsContent>
+                    <TabsContent value="notes">
+                        <Timeline on_open_person={open_person} />
                     </TabsContent>
                 </Tabs>
                 </div>
