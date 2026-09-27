@@ -292,6 +292,53 @@ test "build_evidence_text + map_evidence_indices: numbering round-trips, out-of-
     assert mapped[1]["id"] == "ev-a";
 }
 
+test "SOH-232 fallback_draft: a verb-led intent clause is phrased as 'what you mentioned: you <verb>...', never spliced raw after 'about'; 'author's' -> 'your'" {
+    p = (root ++> Person(name="Priya Natarajan", status="confirmed"))[0];
+    intent = (root ++> Intent(kind="offer", text="Offered to review author's pitch deck next week.", expires_at=""))[0];
+    intent +>:IntentAbout:+> p;
+
+    now = datetime.now();
+    evidence = gather_follow_up_evidence(p, now);
+    fb = fallback_draft(p, evidence);
+    draft = fb["draft"] as str;
+
+    assert draft == (
+        "Hi Priya, what you mentioned: you offered to review your pitch deck next week. "
+        "How is that going?"
+    ), f"got: {draft}";
+    assert "author" not in draft.lower(), f"'author' must never reach the draft, got: {draft}";
+    assert "about Offered" not in draft, f"must never splice a capitalized verb-led clause raw, got: {draft}";
+}
+
+test "SOH-232 fallback_draft: a non-verb-led fact is lowercased and its trailing period stripped before splicing after 'about'" {
+    p = (root ++> Person(name="Drafts-test Lowercase P", status="confirmed"))[0];
+    fact = (root ++> Fact(text="Just moved to Detroit.", observed_at="2026-09-18"))[0];
+    fact +>:FactAbout:+> p;
+
+    now = datetime.now();
+    evidence = gather_follow_up_evidence(p, now);
+    fb = fallback_draft(p, evidence);
+    draft = fb["draft"] as str;
+
+    assert draft == (
+        "Hi Drafts-test, I was thinking about what you said about just moved to Detroit. "
+        "How is that going?"
+    ), f"got: {draft}";
+}
+
+test "SOH-232 fallback_draft: a proper-noun-led fact keeps its leading capital when spliced" {
+    p = (root ++> Person(name="Drafts-test ProperNoun P", status="confirmed"))[0];
+    fact = (root ++> Fact(text="Stripe is hiring backend engineers.", observed_at="2026-09-18"))[0];
+    fact +>:FactAbout:+> p;
+
+    now = datetime.now();
+    evidence = gather_follow_up_evidence(p, now);
+    fb = fallback_draft(p, evidence);
+    draft = fb["draft"] as str;
+
+    assert "about Stripe is hiring backend engineers" in draft, f"a proper-noun-led clause must not be lowercased, got: {draft}";
+}
+
 test "DraftFollowUp: an unresolvable person_id reports not_found" {
     result = root spawn DraftFollowUp(person_id="not-a-real-person-id-at-all");
     assert len(result.reports) == 1;

@@ -17,7 +17,7 @@ root.
 
 import from dates {
     parse_due, upcoming_dates_for, _gather_promises_due, _gather_intents_expiring,
-    _gather_events, _normalize_promises, _normalize_intents
+    _gather_events, _normalize_promises, _normalize_intents, promise_display, due_label
 }
 import from schema {
     Me, Person, Note, Fact, Intent, Promise, Event,
@@ -118,6 +118,20 @@ test "_gather_promises_due: window, done-exclusion, and dedupe" {
     only = out[0];
     assert (only["to"] as Person) == p;
     assert only["due"] == "2026-10-02";
+    assert only["due_label"] == "Oct 2", f"SOH-232: got {only['due_label']}";
+}
+
+test "SOH-232 promise_display: capitalizes the first letter of a stored fragment for display, storage untouched" {
+    assert promise_display("send her the intro deck") == "Send her the intro deck";
+    assert promise_display("") == "";
+    assert promise_display("Already Capitalized") == "Already Capitalized";
+}
+
+test "SOH-232 due_label: 'Oct 3' style, current year omitted, a past/other year appended, empty/unparsable -> ''" {
+    assert due_label("2026-10-03") == "Oct 3";
+    assert due_label("2025-01-05") == "Jan 5, 2025";
+    assert due_label("") == "";
+    assert due_label("not-a-date") == "";
 }
 
 test "_gather_intents_expiring: window and 'about' (targeted vs self)" {

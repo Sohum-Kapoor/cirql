@@ -56,6 +56,28 @@ def row_str(row: dict[str, any], key: str) -> str {
     return "";
 }
 
+"""SOH-232: display-friendly source name for the import Note's text - the
+raw `source` param ("csv"/"linkedin"/"paste"/"vcard", set by the client)
+reads as broken product copy spliced into a sentence ("Imported 3 people
+from csv."). Known sources get a proper display form; anything else passes
+through unchanged."""
+def source_display(source: str) -> str {
+    low = (source or "").strip().lower();
+    if low == "csv" {
+        return "CSV";
+    }
+    if low == "linkedin" {
+        return "LinkedIn";
+    }
+    if low == "paste" {
+        return "a pasted list";
+    }
+    if low == "vcard" {
+        return "a vCard file";
+    }
+    return source;
+}
+
 # ---------------------------------------------------------------- ImportPeople
 
 walker:priv ImportPeople {
@@ -119,7 +141,7 @@ walker:priv ImportPeople {
 
         n = len(row_order);
         now = datetime.now().isoformat();
-        note = (root ++> Note(text=f"Imported {n} people from {self.source}", kind="import", captured_at=now))[0];
+        note = (root ++> Note(text=f"Imported {n} people from {source_display(self.source)}", kind="import", captured_at=now))[0];
 
         imported: list[dict[str, any]] = [];
 
