@@ -14,7 +14,7 @@ picked, so it's safe through `root spawn`.
 
 import from drafts {
     EvidenceItem, gather_follow_up_evidence, fallback_draft,
-    build_evidence_text, map_evidence_indices, DraftFollowUp
+    build_evidence_text, map_evidence_indices, DraftFollowUp, first_name
 }
 import from schema {
     Person, Note, Fact, Intent, Promise,
@@ -51,7 +51,7 @@ test "gather_follow_up_evidence + fallback_draft: an open promise is the top evi
     assert based_on[0]["id"] == jid(promise);
 }
 
-test "SOH-212 fallback_draft: promise noun-phrase template, no verb-form clash, no doubled period (judge repro)" {
+test "SOH-212 fallback_draft: promise noun-phrase template, no verb-form clash, no doubled period, first-name greeting, untrusted fact dropped (judge repro)" {
     p = (root ++> Person(name="Sarah Kim", status="confirmed"))[0];
     note = (root ++> Note(
         text="Drafts-test: told Sarah Kim I'd send company's intern posting.",
@@ -62,6 +62,9 @@ test "SOH-212 fallback_draft: promise noun-phrase template, no verb-form clash, 
     ))[0];
     promise +>:PromiseTo:+> p;
 
+    # judge3: a fact whose text does NOT start with a trusted lowercase noun
+    # phrase pattern must never be spliced after "with" (it read as a broken
+    # sentence: "with Leads team Graphwalk, who built...").
     fact = (root ++> Fact(
         text="Leads team Graphwalk, who built the winning bot after the hackathon.",
         observed_at="2026-09-18"
@@ -73,11 +76,99 @@ test "SOH-212 fallback_draft: promise noun-phrase template, no verb-form clash, 
     fb = fallback_draft(p, evidence);
     draft = fb["draft"] as str;
 
+    assert draft.startswith("Hi Sarah,"), f"greeting must use the first name only, got: {draft}";
     assert "following up on send" not in draft, f"verb-form clash must be gone, got: {draft}";
     assert "I said I'd send" in draft and "company's intern posting" in draft, f"got: {draft}";
+    assert "sending it over now." in draft, f"singular deliverable ('posting') must use 'it', got: {draft}";
     assert ".." not in draft, f"must never emit a doubled period, got: {draft}";
+    assert "Leads team Graphwalk" not in draft, f"a fact that doesn't open with a trusted noun phrase must never be spliced after 'with', got: {draft}";
+    assert draft.endswith("Hope things are going well."), f"got: {draft}";
     based_on = fb["based_on"] as list[dict[str, str]];
-    assert len(based_on) == 2, f"a short (<80 char) fact is used as the context clause, got: {based_on}";
+    assert len(based_on) == 1 and based_on[0]["kind"] == "promise", f"the untrusted fact must not be cited, got: {based_on}";
+}
+
+test "SOH-212 fallback_draft: a fact that opens with a trusted noun phrase ('the ...') is still spliced after 'with'" {
+    p = (root ++> Person(name="Trusted Fact P", status="confirmed"))[0];
+    note = (root ++> Note(text="Drafts-test filler note 3", kind="debrief", captured_at="2026-09-20T10:00:00"))[0];
+    promise = (note +>:AssertsPromise(span="send the deck"):+> Promise(text="send the deck", done=False))[0];
+    promise +>:PromiseTo:+> p;
+
+    fact = (root ++> Fact(
+        text="the team behind Graphwalk, which built the winning bot after the hackathon.",
+        observed_at="2026-09-18"
+    ))[0];
+    fact +>:FactAbout:+> p;
+
+    now = datetime.now();
+    evidence = gather_follow_up_evidence(p, now);
+    fb = fallback_draft(p, evidence);
+    draft = fb["draft"] as str;
+
+    assert "Hope things are going well with the team behind Graphwalk" in draft, f"a trusted noun-phrase fact must still be spliced, got: {draft}";
+    based_on = fb["based_on"] as list[dict[str, str]];
+    assert len(based_on) == 2, f"a short (<80 char), trusted-pattern fact is used as the context clause, got: {based_on}";
+}
+
+test "SOH-212 (judge3) fallback_draft: exact judge repro — plural deliverable, first name, fact splice dropped" {
+    p = (root ++> Person(name="Sarah Lin", status="confirmed"))[0];
+    note = (root ++> Note(
+        text="Drafts-test: told Sarah Lin I'd send the notes on the Jac teams.",
+        kind="debrief", captured_at="2026-09-20T10:00:00"
+    ))[0];
+    promise = (note +>:AssertsPromise(span="send the notes on the Jac teams"):+> Promise(
+        text="send the notes on the Jac teams", done=False
+    ))[0];
+    promise +>:PromiseTo:+> p;
+
+    fact = (root ++> Fact(
+        text="Works in ML at Google and is a fellow judge this weekend.",
+        observed_at="2026-09-18"
+    ))[0];
+    fact +>:FactAbout:+> p;
+
+    now = datetime.now();
+    evidence = gather_follow_up_evidence(p, now);
+    fb = fallback_draft(p, evidence);
+    draft = fb["draft"] as str;
+
+    assert draft == (
+        "Hi Sarah, About the notes on the Jac teams I said I'd send: "
+        "sending them over now. Hope things are going well."
+    ), f"got: {draft}";
+}
+
+test "SOH-212 (judge3) promise_noun_phrase: singular deliverable ('the ROI deck') closes with 'sending it over now.'" {
+    p = (root ++> Person(name="Singular P", status="confirmed"))[0];
+    note = (root ++> Note(text="Drafts-test filler note 4", kind="debrief", captured_at="2026-09-20T10:00:00"))[0];
+    promise = (note +>:AssertsPromise(span="send the ROI deck"):+> Promise(text="send the ROI deck", done=False))[0];
+    promise +>:PromiseTo:+> p;
+
+    now = datetime.now();
+    evidence = gather_follow_up_evidence(p, now);
+    fb = fallback_draft(p, evidence);
+    draft = fb["draft"] as str;
+    assert "About the ROI deck I said I'd send: sending it over now." in draft, f"got: {draft}";
+    assert "sending them over now." not in draft, f"got: {draft}";
+}
+
+test "SOH-212 (judge3) promise_noun_phrase: plural deliverable ('the intro notes') closes with 'sending them over now.'" {
+    p = (root ++> Person(name="Plural P", status="confirmed"))[0];
+    note = (root ++> Note(text="Drafts-test filler note 5", kind="debrief", captured_at="2026-09-20T10:00:00"))[0];
+    promise = (note +>:AssertsPromise(span="send the intro notes"):+> Promise(text="send the intro notes", done=False))[0];
+    promise +>:PromiseTo:+> p;
+
+    now = datetime.now();
+    evidence = gather_follow_up_evidence(p, now);
+    fb = fallback_draft(p, evidence);
+    draft = fb["draft"] as str;
+    assert "About the intro notes I said I'd send: sending them over now." in draft, f"got: {draft}";
+}
+
+test "SOH-212 (judge3) first_name: splits on the first space, empty/whitespace-only pass through unchanged" {
+    assert first_name("Sarah Lin") == "Sarah";
+    assert first_name("Cher") == "Cher";
+    assert first_name("") == "";
+    assert first_name("   ") == "";
 }
 
 test "SOH-212 fallback_draft: a long fact (>= 80 chars) is never used as the context clause" {
@@ -98,6 +189,7 @@ test "SOH-212 fallback_draft: a long fact (>= 80 chars) is never used as the con
     draft = fb["draft"] as str;
 
     assert "past eighty characters" not in draft, f"a long fact must not be used as the context clause, got: {draft}";
+    assert draft.endswith("Hope things are going well."), f"a dropped fact still gets the plain closer, got: {draft}";
     based_on = fb["based_on"] as list[dict[str, str]];
     assert len(based_on) == 1 and based_on[0]["kind"] == "promise";
 }
@@ -133,7 +225,7 @@ test "gather_follow_up_evidence + fallback_draft: a person with nothing gets the
     assert evidence == [], "a person with no facts/intents/promises/notes has no evidence at all";
 
     fb = fallback_draft(p, evidence);
-    assert fb["draft"] == "Hi Drafts-test Nothing P, it was good meeting you. Would love to stay in touch.";
+    assert fb["draft"] == "Hi Drafts-test, it was good meeting you. Would love to stay in touch.";
     assert fb["based_on"] == [];
 }
 

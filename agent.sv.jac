@@ -640,10 +640,11 @@ def _first_resolvable_hit(hits: list[dict[str, any]]) -> dict[str, any] | None {
 
 """Create or refresh one finding. Returns 1 when an action became newly
 visible (created), else 0. SOH-223 tune: a key already tracked by an
-AgentAction is NEVER re-proposed while that action is open, approved or
-dismissed — open is refreshed in place (title/why/evidence/payload) but
-stays the same action; approved/dismissed are left alone entirely (the
-human already decided). Only `run_agent_for`'s snoozed-reopen path and a
+AgentAction is NEVER re-proposed while that action is open, approved,
+dismissed or stale — open is refreshed in place (title/why/evidence/payload)
+but stays the same action; approved/dismissed/stale are left alone entirely
+(a human decision, or the agent's own `stale_ask_network_actions` below, was
+already recorded for it). Only `run_agent_for`'s snoozed-reopen path and a
 fresh key create/reopen an action."""
 def upsert(me: Me, f: dict[str, any], by_key: dict[str, AgentAction], now_s: str) -> int {
     key = str(f["dedup_key"]);
@@ -679,6 +680,41 @@ def upsert(me: Me, f: dict[str, any], by_key: dict[str, AgentAction], now_s: str
     return 1;
 }
 
+"""SOH-212 (judge3): an `ask_network` proposal for a goal must not stay
+`open` once that goal gets a warm path — otherwise the Inbox shows "no warm
+path" (the `ask_network` card's own `why`) directly under the `new_match`
+card(s) that just gave it one. Uses the exact same test that gates creating
+the action in the first place (`gaps.warm_lines_for`, via `gap_goals`): any
+still-`open` `ask_network` action whose `goal_id` is one of the caller's
+ACTIVE goals but is no longer in `gaps` is marked `status = "stale"` with
+`resolved_at` = now and `approval_source = "agent:warm_path_found"`.
+Idempotent — a goal that never had an `ask_network` action, or one already
+resolved (approved/dismissed/snoozed/stale), is untouched; once stale, the
+same goal's `ask_network` finding is never generated again by `step_ask_network`
+(it only proposes for goals still in `gaps`), so nothing re-opens it while
+the warm path holds."""
+def stale_ask_network_actions(me: Me, goals: list[Goal], gaps: list[Goal], now_s: str) -> int {
+    active_goal_ids = [jid(g) for g in goals];
+    gap_goal_ids = [jid(g) for g in gaps];
+    count = 0;
+    for a in [me ->:HasAction:->] {
+        if a.kind != "ask_network" or a.status != "open" {
+            continue;
+        }
+        if not a.goal_id or a.goal_id not in active_goal_ids {
+            continue;
+        }
+        if a.goal_id in gap_goal_ids {
+            continue;   # still no warm path -> stays open
+        }
+        a.status = "stale";
+        a.resolved_at = now_s;
+        a.approval_source = "agent:warm_path_found";
+        count += 1;
+    }
+    return count;
+}
+
 """Deterministic core of RunAgent, callable on any `me` (tests)."""
 def run_agent_for(me: Me, reason: str, now: datetime) -> dict[str, any] {
     now_s = now.isoformat();
@@ -707,6 +743,7 @@ def run_agent_for(me: Me, reason: str, now: datetime) -> dict[str, any] {
     findings: list[dict[str, any]] = [];
     findings.extend(step_new_match(goals, prior, current, seen_before));
     gaps = gap_goals(me, goals);
+    stale_ask_network_actions(me, goals, gaps, now_s);
     findings.extend(step_ask_network(me, gaps));
     findings.extend(step_route(me, gaps));
     findings.extend(step_tend(me, now));

@@ -17,11 +17,12 @@ import shutil;
 import tempfile;
 import sys;
 import json;
+import from datetime { datetime }
 import from agent {
     make_finding, _rank, _clip, step_new_match, _answer_ask_hits,
-    _answer_ask_match_tokens, _first_resolvable_hit
+    _answer_ask_match_tokens, _first_resolvable_hit, run_agent_for
 }
-import from schema { AgentAction, Me, Person, Goal, HasGoal, RelevantTo, Note, Fact, Asserts, FactAbout }
+import from schema { AgentAction, Me, Person, Goal, HasGoal, RelevantTo, Note, Fact, Asserts, FactAbout, Knows }
 
 glob AG_REPO_ROOT = os.path.dirname(os.path.abspath(__file__));
 
@@ -261,6 +262,18 @@ def _nm_seed(goal: Goal, name: str, strength: str, observed_at: str) -> str {
     return jid(p);
 }
 
+"""SOH-212 (judge3): a warm path per `gaps.warm_lines_for` — a person `me`
+actually `Knows`, with a `RelevantTo(label="known", strength="strong")` edge
+into `goal`. Deliberately NO evidence on the edge, so `step_new_match` never
+turns this into its own `new_match` finding — this seed exists only to flip
+`gaps.warm_lines_for(me, goal)` from empty to non-empty."""
+def _warm_seed(me: Me, goal: Goal, name: str, source_note_id: str) -> str {
+    p = (root ++> Person(name=name, status="confirmed"))[0];
+    me +>:Knows(status="confirmed", source_note=source_note_id):+> p;
+    p +>:RelevantTo(reason=f"{name} matches", strength="strong", label="known"):+> goal;
+    return jid(p);
+}
+
 test "agent tune: step_new_match caps the first run at 3, strong before medium, newest evidence breaks ties" {
     me = (root ++> Me(name="Tune-test FirstRun Me"))[0];
     goal = (me +>:HasGoal:+> Goal(text="Tune-test firstrun goal", created_at="2026-01-01T00:00:00"))[0];
@@ -433,4 +446,42 @@ test "agent tune (review fix 4): a bad evidence id on the top hit falls through 
 
     # every hit's evidence fails to resolve -> None, not an exception
     assert _first_resolvable_hit([bad_hit]) is None;
+}
+
+test "SOH-212 (judge3) run_agent_for: an open ask_network action goes stale once its goal gets a warm path; a third run does not re-propose it" {
+    me = (root ++> Me(name="Tune-test AskStale Me"))[0];
+    goal = (me +>:HasGoal:+> Goal(
+        text="Tune-test askstale goal needs a robotics mentor", created_at="2026-01-01T00:00:00"
+    ))[0];
+
+    now = datetime.now();
+
+    # ---- first run: no warm path yet -> ask_network open
+    run1 = run_agent_for(me, "test", now);
+    print(f"[agent-askstale] run1 {run1}");
+    an1 = [a for a in [me ->:HasAction:->] if a.kind == "ask_network" and a.goal_id == jid(goal)];
+    assert len(an1) == 1, [a.status for a in an1];
+    assert an1[0].status == "open";
+
+    # ---- give the goal a warm path (a known, strong, "known"-label RelevantTo)
+    note = (root ++> Note(text="Tune-test askstale note", kind="debrief", captured_at="2026-01-02T00:00:00"))[0];
+    _warm_seed(me, goal, "Tune AskStale P1", jid(note));
+
+    # ---- second run: the action goes stale; no NEW ask_network is proposed
+    run2 = run_agent_for(me, "test", now);
+    print(f"[agent-askstale] run2 {run2}");
+    an2 = [a for a in [me ->:HasAction:->] if a.kind == "ask_network" and a.goal_id == jid(goal)];
+    assert len(an2) == 1, an2;
+    assert an2[0].status == "stale", an2[0].status;
+    assert an2[0].approval_source == "agent:warm_path_found", an2[0].approval_source;
+    assert an2[0].resolved_at, "resolved_at must be stamped when an action goes stale";
+    open_after_run2 = [a for a in [me ->:HasAction:->] if a.kind == "ask_network" and a.goal_id == jid(goal) and a.status == "open"];
+    assert open_after_run2 == [], "no open ask_network must remain for a goal with a warm path";
+
+    # ---- third run: the warm path still holds -> still stale, never re-proposed
+    run3 = run_agent_for(me, "test", now);
+    print(f"[agent-askstale] run3 {run3}");
+    an3 = [a for a in [me ->:HasAction:->] if a.kind == "ask_network" and a.goal_id == jid(goal)];
+    assert len(an3) == 1, "a third run must not re-propose ask_network while the warm path exists";
+    assert an3[0].status == "stale";
 }

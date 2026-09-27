@@ -185,6 +185,19 @@ glob PROMISE_ARTICLE_PREFIXES: list[str] = [
     "the ", "a ", "an ", "your ", "my ", "our ", "his ", "her ", "their ", "its "
 ];
 
+"""SOH-212 (judge3 pass): plural-vs-singular deliverable check for the
+"sending it/them over now" clause. Keep it simple: the noun phrase's last
+word ending in 's' means plural ("the intro notes" -> them), except a short
+list of nouns that end in 's' but are singular ("news")."""
+glob KNOWN_SINGULAR_S_WORDS: list[str] = ["news"];
+
+"""SOH-212 (judge3 pass): a related Fact is only safe to splice straight
+after "with" when its own text reads as a lowercase noun phrase (starts with
+one of these) — otherwise "Hope things are going well with <fact>." can read
+as a broken sentence (the fact text can start mid-clause, e.g. "Works in ML
+at Google...")."""
+glob FACT_CONTEXT_PREFIXES: list[str] = ["the ", "your ", "her ", "his ", "their "];
+
 """Strip one trailing run of '.'/'!'/'?'/whitespace - never anything in the
 middle - so composing this text into a new sentence never produces a
 doubled ".."."""
@@ -206,13 +219,55 @@ def _needs_article(rest: str) -> bool {
     return True;
 }
 
+"""The caller's first name only ("Sarah Lin" -> "Sarah") — a full name in a
+greeting reads as a form letter. Whitespace-only/empty names pass through
+unchanged."""
+def first_name(name: str) -> str {
+    n = (name or "").strip();
+    if not n {
+        return n;
+    }
+    return n.split()[0];
+}
+
+"""True when the noun phrase's head (last) word looks plural: ends in 's'
+and is not one of the short known-singular exceptions."""
+def _looks_plural(rest: str) -> bool {
+    words = rest.split();
+    if not words {
+        return False;
+    }
+    last = words[-1].lower().strip(".,!?;:\"'");
+    if last in KNOWN_SINGULAR_S_WORDS {
+        return False;
+    }
+    return last.endswith("s");
+}
+
+"""True only when `fact_text` opens with a lowercase noun-phrase pattern we
+trust to read naturally after "Hope things are going well with " — never a
+capitalized clause fragment like "Works in ML at Google...", which is what
+produced the judge3 splice bug."""
+def _fact_is_spliceable(fact_text: str) -> bool {
+    low = fact_text.lower();
+    for pfx in FACT_CONTEXT_PREFIXES {
+        if low.startswith(pfx) {
+            return True;
+        }
+    }
+    return False;
+}
+
 """Render a promise's concrete-deliverable text as a noun phrase instead of
 a raw verb-first clause. When the text starts with one of a short list of
 common commitment verbs, everything after the verb reads naturally as "the
 X" ("send company's intern posting" -> "the company's intern posting I said
 I'd send"; "send the ROI deck" -> already has its own article, so it is not
-doubled). Anything else (no recognized verb, or nothing after it) has no
-clean noun phrase to extract, so the whole text is quoted plainly instead."""
+doubled). The closing clause is "sending it over now." for a singular
+deliverable and "sending them over now." when the noun phrase's head word
+looks plural (SOH-212 judge3). Anything else (no recognized verb, or nothing
+after it) has no clean noun phrase to extract, so the whole text is quoted
+plainly instead."""
 def promise_noun_phrase(text: str) -> str {
     t = _strip_trailing_stop(text);
     words = t.split();
@@ -223,7 +278,8 @@ def promise_noun_phrase(text: str) -> str {
             if _needs_article(rest) {
                 rest = "the " + rest;
             }
-            return f"About {rest} I said I'd {verb}: here it is.";
+            closing = "sending them over now." if _looks_plural(rest) else "sending it over now.";
+            return f"About {rest} I said I'd {verb}: {closing}";
         }
     }
     return f"About what I said I'd do: {t}.";
@@ -250,35 +306,42 @@ def fallback_draft(p: Person, evidence: list[EvidenceItem]) -> dict[str, any] {
         }
     }
 
+    greeting_name = first_name(p.name);
+
     if promise_item is not None {
         pi = promise_item as EvidenceItem;
         used: list[EvidenceItem] = [pi];
         promise_sentence = promise_noun_phrase(pi.span);
         # SOH-212: the context clause is optional and only added for a SHORT
-        # fact (< 80 chars); its own trailing stop is stripped first so the
-        # sentence we append never produces "..".
+        # fact (< 80 chars) whose own text is a trusted lowercase noun phrase
+        # (judge3: NEVER splice a fact after "with" otherwise — it can read
+        # as a broken sentence, e.g. "with Works in ML at Google..."); its
+        # own trailing stop is stripped first so the sentence we append
+        # never produces "..".
         tail = "";
         if fact_item is not None {
             fi = fact_item as EvidenceItem;
             fact_text = _strip_trailing_stop(fi.span);
-            if fact_text and len(fact_text) < 80 {
+            if fact_text and len(fact_text) < 80 and _fact_is_spliceable(fact_text) {
                 tail = f" Hope things are going well with {fact_text}.";
                 used.append(fi);
+            } else {
+                tail = " Hope things are going well.";
             }
         } elif p.org {
             tail = f" Hope things are going well with {p.org}.";
         }
-        draft = f"Hi {p.name}, {promise_sentence}{tail}";
+        draft = f"Hi {greeting_name}, {promise_sentence}{tail}";
         return {"draft": draft, "based_on": [item_to_dict(i) for i in used]};
     }
 
     if fact_or_intent_item is not None {
         fi2 = fact_or_intent_item as EvidenceItem;
-        draft = f"Hi {p.name}, I was thinking about what you said about {fi2.span}. How is that going?";
+        draft = f"Hi {greeting_name}, I was thinking about what you said about {fi2.span}. How is that going?";
         return {"draft": draft, "based_on": [item_to_dict(fi2)]};
     }
 
-    draft = f"Hi {p.name}, it was good meeting you. Would love to stay in touch.";
+    draft = f"Hi {greeting_name}, it was good meeting you. Would love to stay in touch.";
     return {"draft": draft, "based_on": []};
 }
 
