@@ -442,7 +442,7 @@ def:pub Circles(on_open_person: Callable[[str], None]) -> JsxElement {
 
     return
         <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-3 pr-3 shadow-edge">
                 <Input
                     value={create_name}
                     onChange={edit_create}
@@ -450,8 +450,8 @@ def:pub Circles(on_open_person: Callable[[str], None]) -> JsxElement {
                     placeholder="New circle: family, the robotics lab…"
                     aria-label="New circle name"
                 />
-                <Button size="icon-lg" disabled={create_busy or not create_name.strip()} aria-label="Create circle" onClick={handle_create}>
-                    <PlusIcon />
+                <Button disabled={create_busy or not create_name.strip()} onClick={handle_create} className="self-end">
+                    <PlusIcon /> {"Adding…" if create_busy else "Add circle"}
                 </Button>
             </div>
             {create_error and <p role="alert" className="text-body-sm text-destructive">{create_error}</p>}
@@ -467,7 +467,7 @@ def:pub Circles(on_open_person: Callable[[str], None]) -> JsxElement {
                 </div>
             } elif len(circles) == 0 and not load_error {
                 <p className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm text-muted-foreground">
-                    Circles are your own labels: family, the robotics lab, investors. Never a score.
+                    Circles are your own labels: family, the robotics lab, investors. Group people however you think about them.
                 </p>
             } else {
                 <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">

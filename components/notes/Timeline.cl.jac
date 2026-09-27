@@ -54,12 +54,55 @@ def _count_line(counts: dict) -> str {
         parts = parts + [str(facts) + " fact" + ("" if facts == 1 else "s")];
     }
     if intents > 0 {
-        parts = parts + [str(intents) + " intent" + ("" if intents == 1 else "s")];
+        parts = parts + [str(intents) + " want" + ("" if intents == 1 else "s")];
     }
     if promises > 0 {
         parts = parts + [str(promises) + " promise" + ("" if promises == 1 else "s")];
     }
     return join_with(parts, " · ");
+}
+
+def _is_word_char(ch: str) -> bool {
+    return ch in "abcdefghijklmnopqrstuvwxyz0123456789";
+}
+
+"""Case-insensitive, whole-word replace of `word` with `replacement` inside
+`text` - used only to capitalise a known source name for DISPLAY; the caller
+never writes the result back to the Note."""
+def _replace_whole_word(text: str, word: str, replacement: str) -> str {
+    lower_text: str = text.lower();
+    result: str = "";
+    i = 0;
+    n = len(text);
+    wl = len(word);
+    while i < n {
+        matched = False;
+        if i + wl <= n and lower_text[i:i + wl] == word {
+            before_ok = (i == 0) or (not _is_word_char(text[i - 1]));
+            after_ok = (i + wl >= n) or (not _is_word_char(lower_text[i + wl]));
+            if before_ok and after_ok {
+                matched = True;
+            }
+        }
+        if matched {
+            result = result + replacement;
+            i = i + wl;
+        } else {
+            result = result + text[i];
+            i = i + 1;
+        }
+    }
+    return result;
+}
+
+"""Known import-source names capitalised for display ("from csv" -> "from
+CSV") - the stored Note.text (server text) is never mutated."""
+def _capitalize_sources(text: str) -> str {
+    out: str = text;
+    out = _replace_whole_word(out, "linkedin", "LinkedIn");
+    out = _replace_whole_word(out, "csv", "CSV");
+    out = _replace_whole_word(out, "paste", "Paste");
+    return out;
 }
 
 """"YYYY-MM-DDTHH:MM:SSZ" -> "Today" | "Yesterday" | "Sep 24" (local calendar day)."""
@@ -177,9 +220,9 @@ def:pub NoteRow(
         <li data-row={nid} className="flex flex-col gap-2 pt-3 pb-3 pl-4 pr-4">
             <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                    <Badge variant="outline" className="self-start">{_kind_badge(kind, text)}</Badge>
+                    <Badge variant="secondary" className="self-start">{_kind_badge(kind, text)}</Badge>
                     <p className={cn("text-body-sm", "" if is_expanded else "line-clamp-2")}>
-                        {text if is_expanded else preview}
+                        {_capitalize_sources(text) if is_expanded else _capitalize_sources(preview)}
                     </p>
                     {can_expand and
                         <Button variant="link" size="inline" className="self-start text-caption" onClick={handle_toggle}>
