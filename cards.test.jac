@@ -27,7 +27,7 @@ def _cards_harness(tmp_dir: str) -> str {
     }
     harness_path = os.path.join(tmp_dir, "app.jac");
     f = open(harness_path, "w");
-    f.write("import from cards { PublishCard, get_card }\n");
+    f.write("import from cards { PublishCard, get_card, MyCard }\n");
     f.close();
     t = open(os.path.join(tmp_dir, "jac.toml"), "w");
     t.write(
@@ -55,6 +55,15 @@ def _publish(client: JacTestClient, token: str, body: dict[str, any]) -> dict[st
     assert resp.ok, f"PublishCard failed: {resp.status_code} {resp.text}";
     reports = list(resp.data["reports"]);
     assert len(reports) == 1, f"PublishCard reported {len(reports)} items: {reports}";
+    return dict(reports[0]);
+}
+
+def _my_card(client: JacTestClient, token: str) -> dict[str, any] {
+    client.set_auth_token(token);
+    resp = client.post("/walker/MyCard", json={});
+    assert resp.ok, f"MyCard failed: {resp.status_code} {resp.text}";
+    reports = list(resp.data["reports"]);
+    assert len(reports) == 1, f"MyCard reported {len(reports)} items: {reports}";
     return dict(reports[0]);
 }
 
@@ -182,6 +191,111 @@ test "cards 4: partial republish updates the same Card in place; empty args keep
         assert str(second["headline"]) == "First headline", "empty headline should not overwrite";
         assert str(second["about"]) == "Second about", "non-empty about should overwrite";
         assert str(second["handle"]) == str(first["handle"]), "handle must stay stable";
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "cards 5: MyCard before any PublishCard reports found:false with empty fields" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_cards_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "cards_a5@example.com");
+
+        out = _my_card(cl, a);
+        print(f"[cards 5] MyCard before publish -> {out}");
+        assert not out["found"], f"expected not found: {out}";
+        assert str(out["handle"]) == "";
+        card = dict(out["card"]);
+        assert set(card.keys()) == {
+            "name", "handle", "headline", "about", "looking_for",
+            "can_offer", "links", "contact_pref", "updated_at", "visibility"
+        }, f"unexpected card keys: {sorted(card.keys())}";
+        assert str(card["headline"]) == "";
+        assert str(card["visibility"]) == "";
+        assert list(card["looking_for"]) == [];
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "cards 6: MyCard after PublishCard reports found:true with headline and visibility" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_cards_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "cards_a6@example.com");
+
+        published = _publish(cl, a, {
+            "headline": "Robotics @ UMich",
+            "about": "I build accessible robots.",
+            "visibility": "link",
+            "name": "Ada"
+        });
+
+        out = _my_card(cl, a);
+        print(f"[cards 6] MyCard after link publish -> {out}");
+        assert out["found"], f"expected found: {out}";
+        assert str(out["handle"]) == str(published["handle"]);
+        card = dict(out["card"]);
+        assert str(card["headline"]) == "Robotics @ UMich";
+        assert str(card["visibility"]) == "link";
+        assert str(card["handle"]) == str(published["handle"]);
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "cards 7: MyCard still returns a handshake_only card to its own owner" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_cards_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "cards_a7@example.com");
+
+        _publish(cl, a, {"headline": "h", "visibility": "link", "name": "Ada"});
+        _publish(cl, a, {"visibility": "handshake_only"});
+
+        out = _my_card(cl, a);
+        print(f"[cards 7] MyCard after handshake_only publish -> {out}");
+        assert out["found"], f"owner should still see their own handshake_only card: {out}";
+        card = dict(out["card"]);
+        assert str(card["visibility"]) == "handshake_only";
+        assert str(card["headline"]) == "h";
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "cards 8: MyCard isolation — B's MyCard never sees A's card" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_cards_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "cards_a8@example.com");
+        b = _reg(cl, "cards_b8@example.com");
+
+        _publish(cl, a, {"headline": "A's card", "visibility": "link", "name": "Ada"});
+
+        out_b = _my_card(cl, b);
+        print(f"[cards 8] B's MyCard while only A has published -> {out_b}");
+        assert not out_b["found"], f"B should not see A's card: {out_b}";
+        assert str(out_b["handle"]) == "";
+        card_b = dict(out_b["card"]);
+        assert str(card_b["headline"]) == "";
+
+        out_a = _my_card(cl, a);
+        assert out_a["found"], f"A should still see their own card: {out_a}";
+        assert str(dict(out_a["card"])["headline"]) == "A's card";
     } finally {
         if client is not None { client.close(); }
         shutil.rmtree(tmp_dir, ignore_errors=True);
