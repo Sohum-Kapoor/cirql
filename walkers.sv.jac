@@ -80,14 +80,39 @@ walker:priv ListPeople {
     has circle_id: str = "";
     has event_id: str = "";
     has include_archived: bool = False;
-    has reports: list[Person] = [];
+    has reports: list[dict[str, any]] = [];
 
     can collect with Root entry {
-        people: list[Person] = [root --> [?:Me] ->:Knows:->];
+        mes: list[Me] = [root --> [?:Me]];
+        if not mes {
+            return;
+        }
+        me = mes[0];
+        people: list[Person] = [me ->:Knows:->];
         for p in filter_people(people, self.circle_id, self.event_id, self.include_archived) {
-            report p;
+            report person_row(me, p);
         }
     }
+}
+
+"""One ListPeople row: the Person's own fields (same keys the client already
+reads) plus the caller's `Knows.last_contact` and `how_met` (SOH-226, display
+only: nothing ranks or decays on `last_contact`)."""
+def person_row(me: Me, p: Person) -> dict[str, any] {
+    last_contact = "";
+    how_met = "";
+    kes = [edge me ->:Knows:-> p];
+    if kes {
+        last_contact = kes[0].last_contact;
+        how_met = kes[0].how_met;
+    }
+    return {
+        "_jac_type": "Person", "_jac_id": jid(p), "_jac_archetype": "node",
+        "name": p.name, "org": p.org, "title": p.title, "status": p.status,
+        "archived": p.archived, "email": p.email, "phone": p.phone,
+        "links": p.links, "location": p.location, "identity_tokens": p.identity_tokens,
+        "last_contact": last_contact, "how_met": how_met
+    };
 }
 
 walker:priv ListGoals {
