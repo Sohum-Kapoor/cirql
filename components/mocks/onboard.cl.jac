@@ -1,17 +1,20 @@
-"""Mock for `OnboardMe(about: str)` — SOH-164. OWNER: Person B.
+"""Mock for `OnboardMe(about: str, name: str = "")` — SOH-164/SOH-227. OWNER: Person B.
 
 Returns EXACTLY the contract shape (contracts/walkers.md, v1.1):
 { me, interests, goals, intents, card, note_id }. Exactly one goal is active.
 Pseudonymous demo persona: a student founder raising a climate-tech pre-seed.
-Delete this file when OnboardMe is live.
+`name` (the signup step 1 field), when non-empty, wins over the demo persona's
+name — mirrors OnboardMe's real "name wins" rule. Delete this file when OnboardMe
+no longer needs a mock fallback under ?mock=1.
 """
 
-def:pub mock_onboardme(about: str) -> dict {
+def:pub mock_onboardme(about: str, name: str = "") -> dict {
     now: str = "2026-09-26T16:05:00Z";
+    display_name: str = name.strip() or "Rowan Vale";
     return {
         "me": {
             "_jac_id": "mock-me-rowan",
-            "name": "Rowan Vale",
+            "name": display_name,
             "about": about
         },
         "interests": [

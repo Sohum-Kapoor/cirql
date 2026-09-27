@@ -67,15 +67,17 @@ async def fake_delay(ms: int) {
     await new(Promise, lambda(resolve: any, reject: any) { setTimeout(resolve, ms); });
 }
 
-"""OnboardMe(about) -> { me, interests, goals, intents, card, note_id }"""
-async def:pub onboard_me(about: str) -> dict {
+"""OnboardMe(about, name) -> { me, interests, goals, intents, card, note_id }.
+`name` (the signup step 1 field) wins over anything the walker extracts from
+`about` — it drives the card handle via onboard.sv.jac's `handle_from_name`."""
+async def:pub onboard_me(about: str, name: str = "") -> dict {
     out: dict = {};
     if mocks_on() {
         await fake_delay(MOCK_DELAY_MS);
-        out = mock_onboardme(about);
+        out = mock_onboardme(about, name);
         return out;
     }
-    result = root spawn OnboardMe(about=about);
+    result = root spawn OnboardMe(about=about, name=name);
     if not result.reports {
         raise Exception("OnboardMe returned no report");
     }

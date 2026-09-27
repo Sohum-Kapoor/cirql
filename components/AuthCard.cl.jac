@@ -25,6 +25,9 @@ def:pub AuthCard(
     }
 
     can_submit: bool = len(email) > 0 and len(password) > 0 and not pending;
+    # "logged out" is the after-logout status, not an error — replaced below
+    # by the trust line (SOH-227); a real signup/login failure still shows.
+    show_status: str = "" if status == "logged out" else status;
 
     return
         <div className="flex flex-col gap-8 pt-10">
@@ -71,7 +74,10 @@ def:pub AuthCard(
                     </form>
                 </CardContent>
             </Card>
-            {status and <p role="status" className="text-body-sm text-muted-foreground">{status}</p>}
+            <p className="text-body-sm text-muted-foreground">
+                Your notes stay yours: export any time, delete in one tap, only a card you write is ever shared.
+            </p>
+            {show_status and <p role="status" className="text-body-sm text-muted-foreground">{show_status}</p>}
             <p className="text-caption text-muted-foreground">Each account's graph is isolated by construction.</p>
         </div>;
 }

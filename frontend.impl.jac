@@ -153,13 +153,21 @@ impl app.refresh -> None {
 
 # ---------------------------------------------------------------- onboarding
 
-"""Step 1 -> OnboardMe(about)."""
+"""Step 1 -> OnboardMe(about, name). `name` (the signup field) wins over
+anything the walker extracts from `about` — the card handle is derived from
+it, so `me-xxxx` never reaches the graph centre node."""
 impl app.submit_about -> None {
     out: dict = {};
     about_pending = True;
     about_error = "";
+    clean_name: str = onboard_name.strip();
+    if not clean_name {
+        about_pending = False;
+        about_error = "Your name is required.";
+        return;
+    }
     try {
-        out = await onboard_me(about);
+        out = await onboard_me(about, clean_name);
     } except Exception as e {
         about_pending = False;
         about_error = "Couldn't read that. " + str(e);
@@ -167,7 +175,8 @@ impl app.submit_about -> None {
     }
     onboard = out;
     card = (out["card"] or {}) as dict;
-    me_name = ((out["me"] or {})["name"] or "") as str;
+    reported_name: str = ((out["me"] or {})["name"] or "") as str;
+    me_name = reported_name or clean_name;
     me_about = about;
     about_pending = False;
     step = 2;
