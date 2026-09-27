@@ -347,11 +347,11 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                         variant="outline"
                         disabled={contacts_busy}
                         onClick={run_export_contacts}
-                        aria-label="Export contacts as vCard file"
                         className="w-full focus-visible:ring-inset"
                     >
-                        {"Exporting…" if contacts_busy else "Export contacts (.vcf)"}
+                        {"Exporting…" if contacts_busy else "Export contacts"}
                     </Button>
+                    <p className="text-caption text-muted-foreground">A .vcf file every phone imports</p>
                 </CardContent>
             </Card>
 
@@ -390,12 +390,8 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
 
             <h3 className="text-eyebrow text-muted-foreground">Danger zone</h3>
             <Card className="border-destructive/30">
-                <CardHeader>
-                    <CardTitle className="text-destructive">Danger zone</CardTitle>
-                </CardHeader>
                 <CardContent className="flex flex-col gap-4">
                     <div className="flex flex-col gap-2">
-                        <p className="text-body-sm font-medium">Delete my data</p>
                         <p className="text-caption text-muted-foreground">
                             Removes everything: your people, notes and card. Your export is the only copy after this.
                         </p>
@@ -406,7 +402,6 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                     </div>
                     <Separator />
                     <div className="flex flex-col gap-2">
-                        <p className="text-body-sm font-medium">Delete account</p>
                         <p className="text-caption text-muted-foreground">
                             Removes your people and disables this login. Your username is freed up;
                             nothing is kept on the server.
@@ -422,7 +417,7 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                         <AlertDialogTitle>Delete your account?</AlertDialogTitle>
                         <AlertDialogDescription>
                             Removes everything: your people, notes and card and disables this login. You
-                            will be signed out. Export first if you want a copy. Type DELETE to confirm.
+                            will be signed out. Export first if you want a copy.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <div className="flex flex-col gap-1.5">
@@ -456,7 +451,7 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                         <AlertDialogTitle>Delete all your data?</AlertDialogTitle>
                         <AlertDialogDescription>
                             Removes everything: your people, notes and card. Your export is the only
-                            copy after this. Type DELETE to confirm.
+                            copy after this.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <div className="flex flex-col gap-1.5">
@@ -478,7 +473,7 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                             disabled={delete_busy or delete_text != "DELETE"}
                             onClick={do_delete}
                         >
-                            {"Deleting…" if delete_busy else "Delete everything"}
+                            {"Deleting…" if delete_busy else "Delete my data"}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

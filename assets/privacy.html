@@ -6,18 +6,28 @@
 <title>Cirql privacy</title>
 <link rel="icon" href="/static/icon/icon-32.png">
 <style>
-:root{color-scheme:light dark;--bg:#fafafa;--ink:#18181b;--muted:#6b6f80}
-@media (prefers-color-scheme:dark){:root{--bg:#0e1018;--ink:#f4f5fa;--muted:#9a9fb5}}
+:root{color-scheme:light dark;--bg:#ffffff;--card:#f5f6f6;--ink:#18181b;--muted:#62666d;--accent:#5e6ad2}
+@media (prefers-color-scheme:dark){:root:not(.light){--bg:#010102;--card:#0f1011;--ink:#f4f5fa;--muted:#8a8f98}}
+:root.dark{--bg:#010102;--card:#0f1011;--ink:#f4f5fa;--muted:#8a8f98}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif}
 main{max-width:640px;margin:0 auto;padding:40px 16px 64px}
+a{color:var(--accent)}
+.back{display:inline-block;margin:0 0 20px;font-size:14px}
 h1{font-size:24px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 8px}
 p,li{margin:0 0 10px}.muted{color:var(--muted);font-size:14px}ul{padding-left:20px}
 </style>
+<script>
+try {
+  var t = localStorage.getItem('cirql-theme');
+  if (t === 'dark' || t === 'light') { document.documentElement.classList.add(t); }
+} catch (e) {}
+</script>
 </head>
 <body>
 <main>
+<a class="back" href="/">&larr; Back to Cirql</a>
 <h1>Cirql privacy</h1>
-<p class="muted">Last updated 2026-09-27. Cirql is a personal relationship graph you fill from your own notes. This page says what the app stores, what leaves it, and what you can do about it.</p>
+<p class="muted">Last updated Sep 27. Cirql is a personal contacts app you fill from your own notes. This page says what the app stores, what leaves it, and what you can do about it.</p>
 
 <h2>What is stored</h2>
 <ul>
@@ -25,12 +35,12 @@ p,li{margin:0 0 10px}.muted{color:var(--muted);font-size:14px}ul{padding-left:20
 <li>What you type or say: notes and voice memos, the people, facts, wants and promises extracted from them, your goals, your card, and the contact details you add by hand.</li>
 <li>Every extracted claim keeps a pointer to the words it came from, so you can always see why the app believes something.</li>
 </ul>
-<p>Each account's graph is isolated by construction: your data lives under your own root and the code that runs for another user cannot traverse into it.</p>
+<p>Each account's data is isolated by construction: it lives under your own account and the code that runs for another user cannot reach into it.</p>
 
 <h2>What leaves the app</h2>
 <ul>
 <li>Note text, your about-me text and goal text go to Google (Gemini) to extract people and rank them for a goal. Audio goes to a speech-to-text provider (ElevenLabs) when you use voice capture. Web enrichment sends a person's name and the context you captured to Google Search grounding, and attaches a fact only with its source URL.</li>
-<li>Between accounts, only a card you wrote crosses over, granted read-only to one specific person you chose. An exchange request carries a need, one line about you and your handle, never a name from your graph. Replies carry blinded identity tokens (hashes), never names.</li>
+<li>Between accounts, only a card you wrote crosses over, granted read-only to one specific person you chose. A network request carries a need, one line about you and your handle, never a name from your contacts. Replies carry blinded identity tokens (hashes), never names.</li>
 <li>Nothing is sent on your behalf. The app drafts; you send.</li>
 <li>No analytics SDK, no advertising, no data brokers. Nothing is fetched from LinkedIn or any platform whose terms forbid it.</li>
 </ul>
@@ -39,7 +49,7 @@ p,li{margin:0 0 10px}.muted{color:var(--muted);font-size:14px}ul{padding-left:20
 <ul>
 <li>Export everything as one JSON file, and import it back.</li>
 <li>Archive or forget a person, delete a note and only what it alone supported, block a handle, choose who can read your card.</li>
-<li>Delete my data wipes your graph. Delete account also removes your login.</li>
+<li>Delete my data wipes everything you've stored. Delete account also removes your login.</li>
 </ul>
 
 <h2>What we do not claim</h2>
