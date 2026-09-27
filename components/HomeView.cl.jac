@@ -44,6 +44,7 @@ import from .search.SearchBox { SearchBox }
 import from .circles.Circles { Circles }
 import from .events.Events { Events }
 import from .notes.Timeline { Timeline }
+import from .people.ImportPeople { ImportPeople }
 import from ..lib.text { join_with }
 import from ..lib.utils { cn }
 sv import from ..schema { Person }
@@ -377,6 +378,7 @@ def:pub HomeView(
                         <TabsTrigger value="circles">Circles</TabsTrigger>
                         <TabsTrigger value="events">Events</TabsTrigger>
                         <TabsTrigger value="notes">Notes</TabsTrigger>
+                        <TabsTrigger value="import">Import</TabsTrigger>
                     </TabsList>
                     <TabsContent value="list" className="flex flex-col gap-3">
                         <section aria-label="People you know" className="flex flex-col gap-3">
@@ -413,6 +415,9 @@ def:pub HomeView(
                     </TabsContent>
                     <TabsContent value="notes">
                         <Timeline on_open_person={open_person} />
+                    </TabsContent>
+                    <TabsContent value="import">
+                        <ImportPeople on_open_person={open_person} />
                     </TabsContent>
                 </Tabs>
                 </div>

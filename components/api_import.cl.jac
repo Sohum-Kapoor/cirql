@@ -1,0 +1,89 @@
+"""ImportPeople / ConfirmPerson / SkipPerson wrappers (SOH-181; server half
+SOH-180, `imports.sv.jac`, already wired into `main.jac`).
+
+Kept OUT of `components/api.cl.jac` on purpose — SOH-181's note said other
+branches are appending to that file tonight; this module is this screen's own
+swap point, same `mocks_on()` idiom as the rest of `api.cl.jac`. Live path:
+`sv import` + `root spawn`, matching `capture`/`onboard_me`/`goal_rank`.
+"""
+
+import from .mocks.import { mock_import_people, mock_confirm_person, mock_skip_person }
+import from .api { mocks_on }
+sv import from ..imports { ImportPeople, ConfirmPerson, SkipPerson }
+
+glob IMPORT_DELAY_MS: int = 500;
+
+async def fake_delay_import(ms: int) {
+    await new(Promise, lambda(resolve: any, reject: any) { setTimeout(resolve, ms); });
+}
+
+"""The first report of a list, or None."""
+def _first_import_any(rows: any) -> any {
+    found: list[any] = (rows or []) as list[any];
+    if len(found) > 0 {
+        return found[0];
+    }
+    return None;
+}
+
+"""The first report of a list, cast to a dict — or `{ error: "no_report" }`."""
+def _first_import_or_error(rows: any) -> dict {
+    first: any = _first_import_any(rows);
+    if first is None {
+        return {"error": "no_report"};
+    }
+    return first as dict;
+}
+
+"""ImportPeople(rows, source) -> { note_id, imported: [{person, is_new}], skipped: [{name, reason}] }.
+`rows` are already parsed client-side into `{ name, org, title, how_met, email }`
+dicts (contracts/walkers.md) — this screen's paste/CSV/vCard parsers do that."""
+async def:pub import_people(rows: list[dict], source: str = "csv") -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay_import(IMPORT_DELAY_MS);
+        out = mock_import_people(rows, source);
+        return out;
+    }
+    result = root spawn ImportPeople(rows=rows, source=source);
+    first: any = _first_import_any(result.reports);
+    if first is None {
+        raise Exception("ImportPeople returned no report");
+    }
+    out = first as dict;
+    return out;
+}
+
+"""ConfirmPerson(person_id, how_met) -> Person | { error: "not_found" }."""
+async def:pub confirm_person(person_id: str, how_met: str = "") -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay_import(IMPORT_DELAY_MS);
+        out = _first_import_or_error(mock_confirm_person(person_id, how_met));
+        return out;
+    }
+    result = root spawn ConfirmPerson(person_id=person_id, how_met=how_met);
+    out = _first_import_or_error(result.reports);
+    return out;
+}
+
+"""SkipPerson(person_id) -> { ok: true } | { error: "not_proposed"|"not_found" }.
+The walker reports the plain string "skipped" on success (contracts/walkers.md);
+normalized here to a dict so callers only ever check `out["error"]`."""
+async def:pub skip_person(person_id: str) -> dict {
+    first: any = None;
+    if mocks_on() {
+        await fake_delay_import(IMPORT_DELAY_MS);
+        first = _first_import_any(mock_skip_person(person_id));
+    } else {
+        result = root spawn SkipPerson(person_id=person_id);
+        first = _first_import_any(result.reports);
+    }
+    if first is None {
+        return {"error": "no_report"};
+    }
+    if first == "skipped" {
+        return {"ok": True};
+    }
+    return first as dict;
+}
