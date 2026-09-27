@@ -16,15 +16,14 @@ fields, never `visibility`, and refuses anything but `visibility=="link"` —
 useless for an owner editing a handshake_only card) and can't reuse
 `PublishCard` either (it ALWAYS applies `visibility`, defaulting to "link" —
 calling it with empty args to "just read" would silently flip a
-handshake_only card public). `ExportGraph`'s own `card` field is the one safe
-read: a pure own-root read with no side effect, and its shape already
-carries `visibility` (contracts/walkers.md, SOH-210).
+handshake_only card public). `MyCard` (cards.sv.jac, SOH-179) is the owner-side
+read built for exactly this: same field set `get_card` returns plus
+`visibility`, returned regardless of visibility, no write (contracts/walkers.md).
 """
 
 import from .mocks.card { mock_my_card, mock_publish_card_full, mock_get_card }
 import from .api { mocks_on }
-sv import from ..cards { PublishCard, get_card as sv_get_card }
-sv import from ..export { ExportGraph }
+sv import from ..cards { PublishCard, get_card as sv_get_card, MyCard }
 
 glob MOCK_FAST_MS: int = 150;
 
@@ -40,23 +39,23 @@ def _first(result: any, name: str) -> any {
     return result.reports[0];
 }
 
-"""The caller's own Card as the editor should see it — `{id, handle, name,
+"""The caller's own Card as the editor should see it — `{handle, name,
 headline, about, looking_for, can_offer, links, contact_pref, visibility,
 updated_at}`, or `None` before the first `PublishCard` ever ran. Read-only:
-goes through `ExportGraph`, never `PublishCard` or `get_card` (see module
-docstring)."""
+goes through `MyCard` (cards.sv.jac, SOH-179), never `PublishCard` or
+`get_card` (see module docstring)."""
 async def:pub my_card() -> dict | None {
     if mocks_on() {
         await fake_delay(MOCK_FAST_MS);
         return mock_my_card();
     }
-    result = root spawn ExportGraph();
-    out: dict = _first(result, "ExportGraph") as dict;
-    raw: any = out["card"];
-    if not raw {
+    result = root spawn MyCard();
+    out: dict = _first(result, "MyCard") as dict;
+    if not (out["found"] as bool) {
         return None;
     }
-    return raw as dict;
+    card: dict = out["card"] as dict;
+    return card;
 }
 
 """PublishCard(...) -> the saved Card, same shape as `my_card()`. The editor

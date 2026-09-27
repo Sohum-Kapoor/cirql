@@ -201,6 +201,62 @@ walker:priv PublishCard {
     }
 }
 
+def empty_my_card() -> dict[str, object] {
+    return {
+        "found": False,
+        "card": {
+            "name": "", "handle": "", "headline": "", "about": "",
+            "looking_for": [], "can_offer": [], "links": [], "contact_pref": "",
+            "updated_at": "", "visibility": ""
+        },
+        "handle": ""
+    };
+}
+
+walker:priv MyCard {
+    """SOH-179: the card editor's own-root read. Unlike `get_card`, this
+    returns the caller's Card regardless of `visibility` (a `handshake_only`
+    card must still be editable by its owner) — and unlike `PublishCard`, it
+    never writes anything. Resolution idiom is `PublishCard`'s own:
+    `[root --> [?:Me]]` then the Me->Card `Owns` edge, both own-root so the
+    typed traversal is safe (AGENTS.md's "typed traversal after a restart"
+    gotcha only applies to containers OTHER users attach to, e.g.
+    root.shared/CardDirectory — not a caller's own Me/Card). `found: false`
+    with empty fields when there is no Me yet or no Card yet."""
+    has reports: list[dict[str, object]] = [];
+
+    can go with Root entry {
+        existing_me = [root --> [?:Me]];
+        if not existing_me {
+            report empty_my_card();
+            return;
+        }
+        me = existing_me[0];
+        existing_card = [me ->:Owns:-> [?:Card]];
+        if not existing_card {
+            report empty_my_card();
+            return;
+        }
+        card = existing_card[0];
+        report {
+            "found": True,
+            "card": {
+                "name": card.name,
+                "handle": card.handle,
+                "headline": card.headline,
+                "about": card.about,
+                "looking_for": card.looking_for,
+                "can_offer": card.can_offer,
+                "links": card.links,
+                "contact_pref": card.contact_pref,
+                "updated_at": card.updated_at,
+                "visibility": card.visibility
+            },
+            "handle": card.handle
+        };
+    }
+}
+
 """The ONE public read. `def:pub` — no JWT required; per `jac guide
 jac-sv-auth`, an anonymous caller's `root` IS `root.shared`, but a caller who
 DOES send a valid token runs on their own root instead — so this reaches the

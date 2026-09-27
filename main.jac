@@ -14,7 +14,7 @@ import from scoring { ScoreAgainstNeed }
 import from intros { AdvanceIntroduction, DevProposeIntroduction }
 import from exchange { PostRequest, ListIncomingRequests, ReplyToRequest, ListMyRequests, ApproveReply, OptIn, Reveal, ClaimReveal, DeclineRequest, DeclineReply, ListMyReplies, DevMakeCard, DevSeedMatch, ListFriends, BlockHandle, UnblockHandle }
 import from reverse { WhoNeedsWhatIHave }
-import from cards { PublishCard, get_card }
+import from cards { PublishCard, get_card, MyCard }
 import from reads { Receipt, ListPromises, CompletePromise, GraphView }
 import from imports { ImportPeople, ConfirmPerson, SkipPerson }
 import from drafts { DraftFollowUp }
