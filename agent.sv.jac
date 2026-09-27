@@ -21,7 +21,7 @@ Rules this file obeys:
 import json;
 import from datetime { datetime, timedelta }
 import from schema {
-    Me, Person, Goal, Owns, HasGoal, RelevantTo, Reported, Knows,
+    Me, Person, Goal, Intent, Owns, HasGoal, RelevantTo, Reported, Knows,
     AgentAction, AgentRun, HasAction, HasAgentRun, IntroRequest, Promise,
     Note, Fact, Asserts, FactAbout, AssertsPromise, PromiseTo, Mentions
 }
@@ -85,11 +85,19 @@ def active_goals(me: Me) -> list[Goal] {
     return [g for g in [me ->:HasGoal:->] if g.active];
 }
 
-"""Evidence ids that resolve to a node the caller owns (Fact/Intent/Note)."""
+"""Evidence ids that resolve, via reads.my_node (readable AND owned by the
+caller), to one of the caller's own Fact/Intent/Note/Goal/Promise nodes."""
 def resolvable(ids: list[str]) -> list[str] {
     out: list[str] = [];
     for i in ids {
-        if i and i not in out and evidence_item_from_jid(i) is not None {
+        if not i or i in out {
+            continue;
+        }
+        n = my_node(i);   # readable AND owned by the caller's root, else None
+        if n is None {
+            continue;
+        }
+        if isinstance(n, Fact) or isinstance(n, Intent) or isinstance(n, Note) or isinstance(n, Goal) or isinstance(n, Promise) {
             out.append(i);
         }
     }
@@ -420,14 +428,17 @@ def step_answer_ask(me: Me, now: datetime) -> list[dict[str, any]] {
         quote = text_by_id[ev[0]] if ev[0] in text_by_id else "";
         n = len(hits);
         word = "person" if n == 1 else "people";
-        out.append(make_finding(
+        af = make_finding(
             "answer_ask",
             f"Answer an ask: {_clip(req.need, 100)}",
             f"{req.from_handle} is looking for \"{_clip(req.need, 120)}\"; {n} {word} in your graph may fit: \"{_clip(quote, 160)}\". Replying shares a count and a strength, no names.",
             ev, str(hits[0]["person_id"]), "", rid, "",
-            {"need": req.need, "from_handle": req.from_handle},
+            {"need": req.need, "from_handle": req.from_handle, "top_person_id": str(hits[0]["person_id"])},
             "ReplyToRequest", "", True
-        ));
+        );
+        # One key per request: a dismissed ask stays dismissed even when the top candidate changes.
+        af["dedup_key"] = "answer_ask|" + rid;
+        out.append(af);
     }
     return out;
 }
@@ -544,6 +555,11 @@ def evidence_view(ids: list[str]) -> list[dict[str, str]] {
         if n is None {
             continue;
         }
+        if isinstance(n, Goal) {
+            g = n as Goal;
+            out.append({"id": jid(g), "kind": "goal", "observed_at": g.created_at, "span": g.text});
+            continue;
+        }
         r = receipt_for(n);
         if "error" in r {
             continue;
@@ -622,7 +638,7 @@ def approve(a: AgentAction, edited_draft: str, complete: bool) -> dict[str, any]
         }
         _mark(a, "approved");
         a.request_id = jid(posted);
-        return {"step": "PostRequest", "request": posted};
+        return {"step": "posted", "request": posted};
     }
     if a.kind == "answer_ask" {
         replied = reply_to_request(a.request_id);
@@ -630,7 +646,7 @@ def approve(a: AgentAction, edited_draft: str, complete: bool) -> dict[str, any]
             return replied;
         }
         _mark(a, "approved");
-        return {"step": "ReplyToRequest", "reply": replied};
+        return {"step": "replied", "reply": replied};
     }
     if a.kind == "promise_due" {
         if complete {
