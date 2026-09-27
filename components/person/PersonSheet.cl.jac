@@ -84,7 +84,7 @@ def:pub PersonSection(title: str, count: int, default_open: bool = False, childr
     return
         <Collapsible defaultOpen={default_open} className="overflow-hidden rounded-lg border bg-card shadow-edge">
             <CollapsibleTrigger
-                aria-label={title + " — expand or collapse"}
+                aria-label={title + " · expand or collapse"}
                 className={cn(
                     buttonVariants().call(None, {"variant": "ghost", "size": "row"}),
                     "flex-row items-center justify-between rounded-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 [&[data-state=open]>span>svg]:rotate-90"
@@ -212,7 +212,7 @@ def:pub PersonContactEditor(
                 </EditorField>
             </div>
             <EditorField label="How you met" htmlFor={"ps-met-" + pid}>
-                <Input id={"ps-met-" + pid} value={met} disabled={busy} placeholder="e.g. coffee chat — Ross café" onChange={ch_met} />
+                <Input id={"ps-met-" + pid} value={met} disabled={busy} placeholder="e.g. coffee chat, Ross café" onChange={ch_met} />
             </EditorField>
             <div className="grid grid-cols-2 gap-2">
                 <EditorField label="Email" htmlFor={"ps-email-" + pid}>
@@ -503,7 +503,7 @@ def:pub PersonSheet(
                 if b64 {
                     brief_audio = "data:" + ((reply["mime"] or "audio/mpeg") as str) + ";base64," + b64;
                 } elif reply["voice_error"] {
-                    brief_note = "Voice unavailable — text only.";
+                    brief_note = "Voice unavailable. Text only.";
                 }
             }
         } except Exception as err {
@@ -601,7 +601,7 @@ def:pub PersonSheet(
             );
             if out["error"] {
                 detail = before;
-                edit_error = "Couldn't save — try again.";
+                edit_error = "Couldn't save. Try again.";
                 editing = True;
             }
         } except Exception as err {
@@ -731,7 +731,7 @@ def:pub PersonSheet(
                                 </Button>}
                         </div>
                         <SheetDescription>
-                            {join_with([s for s in [sub, ("met: " + how_met_display) if how_met_display else ""] if s], " — ") or "No details yet"}
+                            {join_with([s for s in [sub, ("met: " + how_met_display) if how_met_display else ""] if s], " · ") or "No details yet"}
                         </SheetDescription>
                     </SheetHeader>
                     <SheetBody className="gap-4">
@@ -758,7 +758,7 @@ def:pub PersonSheet(
                         {draft_error and <p role="alert" className="text-body-sm text-destructive">{draft_error}</p>}
                         {draft_text and
                             <div className="flex flex-col gap-2">
-                                <span className="text-eyebrow text-muted-foreground">Draft — copy it; nothing sends</span>
+                                <span className="text-eyebrow text-muted-foreground">Draft · copy it; nothing sends</span>
                                 <Textarea aria-label="Follow-up draft" value={draft_text} onChange={edit_draft} />
                                 <Button size="sm" variant="outline" className="self-end" onClick={copy_draft}>
                                     {"Copied" if copied else "Copy"}

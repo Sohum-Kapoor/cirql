@@ -60,7 +60,7 @@ def:pub PhotoCapture(
             return;
         }
         if file.size > MAX_BYTES {
-            message = "That photo is over 10 MB — try a smaller one.";
+            message = "That photo is over 10 MB. Try a smaller one.";
             return;
         }
         message = "";
@@ -79,11 +79,11 @@ def:pub PhotoCapture(
         }
         set_busy(False);
         if out["error"] == "no_person" {
-            message = "No name found on that photo — try again or type it.";
+            message = "No name found on that photo. Try again or type it.";
             return;
         }
         if out["error"] {
-            message = "Couldn't read that photo (" + str(out["error"]) + ") — try again or type it.";
+            message = "Couldn't read that photo (" + str(out["error"]) + "). Try again or type it.";
             return;
         }
         read: dict = (out["read"] or {}) as dict;

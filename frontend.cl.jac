@@ -169,10 +169,10 @@ def agent_map_put(key: str, aid: str, value: any) -> None {
 
 def agent_err_text(code: str) -> str {
     if code == "not_found" {
-        return "That suggestion is gone — check again.";
+        return "That suggestion is gone. Check again.";
     }
     if code == "invalid_state" {
-        return "That was already handled — nothing changed.";
+        return "That was already handled. Nothing changed.";
     }
     if code == "not_live" {
         return "Cirql isn't switched on yet.";
@@ -180,7 +180,7 @@ def agent_err_text(code: str) -> str {
     if code == "not_visible" {
         return "That ask isn't visible to you anymore.";
     }
-    return "Couldn't save that — try again.";
+    return "Couldn't save that. Try again.";
 }
 
 """A ResolveAgentAction failure code: a top-level { error } (not_found /
@@ -225,13 +225,13 @@ def friend_put(rid: str, ent: dict) -> None {
 
 def err_text(code: str) -> str {
     if code == "no_card" {
-        return "You need a card first — finish onboarding.";
+        return "You need a card first. Finish onboarding.";
     }
     if code == "not_found" {
         return "That ask is gone (withdrawn or expired).";
     }
     if code == "invalid_state" {
-        return "That step already happened or isn't possible yet — go back and reopen it.";
+        return "That step already happened or isn't possible yet. Go back and reopen it.";
     }
     if code == "forbidden" {
         return "That isn't yours to change.";

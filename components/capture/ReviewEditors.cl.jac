@@ -112,7 +112,7 @@ def:pub PersonEditor(
                 </EditorField>
             </div>
             <EditorField label="How you met" htmlFor={"pe-met-" + pid}>
-                <Input id={"pe-met-" + pid} value={met} disabled={busy} placeholder="e.g. coffee chat — Ross café" onChange={ch_met} />
+                <Input id={"pe-met-" + pid} value={met} disabled={busy} placeholder="e.g. coffee chat, Ross café" onChange={ch_met} />
             </EditorField>
             <EditorFooter
                 busy={busy}

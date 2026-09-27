@@ -68,7 +68,7 @@ def:pub CardStep(
             <div className="flex flex-col gap-1">
                 <h2 className="text-card-title">Your card</h2>
                 <p className="text-body-sm text-muted-foreground">
-                    Preview — you'll publish it later. A card is the only thing that can be granted read-only to someone else.
+                    Preview: you'll publish it later. A card is the only thing that can be granted read-only to someone else.
                 </p>
                 <p className="text-caption text-muted-foreground">
                     {"Off by default · nobody can read this yet. You grant it one person at a time." if visibility == "handshake_only" else "Once published, anyone with your link can read this card."}

@@ -56,7 +56,7 @@ def:pub mock_onboardme(about: str, name: str = "") -> dict {
         "card": {
             "_jac_id": "mock-card-rowan",
             "handle": "rowan-kiln",
-            "headline": "Founder, Kiln Labs — thermal batteries for small factories",
+            "headline": "Founder, Kiln Labs: thermal batteries for small factories",
             "about": "Student founder building low-cost thermal storage so small manufacturers can run on cheap off-peak power.",
             "looking_for": [
                 "Pre-seed investors in climate hardware",

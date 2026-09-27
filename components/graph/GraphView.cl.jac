@@ -127,7 +127,7 @@ def node_tip(n: any) -> str {
     if n["status"] == "proposed" {
         label = label + " (proposed)";
     }
-    return label + (" — " + sub if sub else "");
+    return label + (" · " + sub if sub else "");
 }
 
 def short_label(n: any) -> str {
@@ -156,7 +156,7 @@ def end_id(end: any) -> str {
     return (end["id"] if end and end["id"] else end) as str;
 }
 
-"""Text form of every tie touching `nid`: "Maya Okafor — knows · proposed"."""
+"""Text form of every tie touching `nid`: "Maya Okafor · knows · proposed"."""
 def tie_lines(nid: str, by_id: dict, edges: list[dict]) -> list[str] {
     out: list[str] = [];
     for e in edges {
@@ -168,7 +168,7 @@ def tie_lines(nid: str, by_id: dict, edges: list[dict]) -> list[str] {
         }
         if other {
             on: dict = (by_id[other] or {}) as dict;
-            out = out + [((on["label"] or "someone") as str) + " — " + edge_label(e)];
+            out = out + [((on["label"] or "someone") as str) + " · " + edge_label(e)];
         }
     }
     return out;

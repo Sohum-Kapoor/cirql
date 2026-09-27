@@ -190,7 +190,7 @@ def:pub GoalPicker(
                 {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
                 {len(others) > 0 and
                     <div className="flex flex-col gap-2">
-                        <span className="text-eyebrow text-muted-foreground">Earlier goals — tap to reopen</span>
+                        <span className="text-eyebrow text-muted-foreground">Earlier goals · tap to reopen</span>
                         <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-md border bg-background">
                             {for g in others {
                                 <GoalOption key={_gid(g)} goal={g} is_active={False} disabled={busy} onPick={pick} />
@@ -258,7 +258,7 @@ def:pub GoalPicker(
                     <AlertDialogHeader>
                         <AlertDialogTitle>Close this goal?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            {"“" + (active["text"] as str) + "” — its ranking is cleared; the goal stays in your list to reopen."}
+                            {"“" + (active["text"] as str) + "”: its ranking is cleared; the goal stays in your list to reopen."}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

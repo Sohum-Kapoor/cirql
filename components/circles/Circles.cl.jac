@@ -447,7 +447,7 @@ def:pub Circles(on_open_person: Callable[[str], None]) -> JsxElement {
                     value={create_name}
                     onChange={edit_create}
                     onKeyDown={handle_create_key}
-                    placeholder="New circle — family, the robotics lab…"
+                    placeholder="New circle: family, the robotics lab…"
                     aria-label="New circle name"
                 />
                 <Button size="icon-lg" disabled={create_busy or not create_name.strip()} aria-label="Create circle" onClick={handle_create}>
@@ -467,7 +467,7 @@ def:pub Circles(on_open_person: Callable[[str], None]) -> JsxElement {
                 </div>
             } elif len(circles) == 0 and not load_error {
                 <p className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm text-muted-foreground">
-                    Circles are your own labels — family, the robotics lab, investors. Never a score.
+                    Circles are your own labels: family, the robotics lab, investors. Never a score.
                 </p>
             } else {
                 <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">

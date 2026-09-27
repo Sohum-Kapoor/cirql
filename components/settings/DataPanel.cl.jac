@@ -323,7 +323,7 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                 <CardHeader>
                     <CardTitle>Export my data</CardTitle>
                     <CardDescription>
-                        Download everything about your people as one JSON file — every person, fact,
+                        Download everything about your people as one JSON file: every person, fact,
                         intent, promise, and note, with where it came from.
                     </CardDescription>
                 </CardHeader>

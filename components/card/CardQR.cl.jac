@@ -74,7 +74,7 @@ def:pub CardQR(handle: str, visibility: str) -> JsxElement {
                 <CardHeader>
                     <CardTitle>Share by QR</CardTitle>
                     <CardDescription>
-                        A QR code needs "Anyone with the link" turned on above — right now this card is only handed over one at a time.
+                        A QR code needs "Anyone with the link" turned on above. Right now this card is only handed over one at a time.
                     </CardDescription>
                 </CardHeader>
             </Card>;
@@ -86,7 +86,7 @@ def:pub CardQR(handle: str, visibility: str) -> JsxElement {
                 <CardHeader>
                     <CardTitle>Share by QR</CardTitle>
                     <CardDescription>
-                        Open Cirql on the web to get a shareable QR for this card — this app session has no reachable web link.
+                        Open Cirql on the web to get a shareable QR for this card. This app session has no reachable web link.
                     </CardDescription>
                 </CardHeader>
             </Card>;
@@ -96,7 +96,7 @@ def:pub CardQR(handle: str, visibility: str) -> JsxElement {
         <Card>
             <CardHeader>
                 <CardTitle>Share by QR</CardTitle>
-                <CardDescription>Anyone who scans this opens your card — no login needed.</CardDescription>
+                <CardDescription>Anyone who scans this opens your card. No login needed.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-3">
                 <div className="rounded-md p-3" style={{"backgroundColor": "#ffffff"}}>

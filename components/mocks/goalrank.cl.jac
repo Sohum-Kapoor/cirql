@@ -46,12 +46,12 @@ def _pilot_rows() -> list[dict[str, any]] {
             "person": _person("mock-person-sam", "Sam Ruiz", "Ruiz Castings", "Plant manager"),
             "label": "cold",
             "strength": "strong",
-            "reason": "His card says he wants to cut peak-hour energy costs — exactly what a pilot would test.",
+            "reason": "His card says he wants to cut peak-hour energy costs: exactly what a pilot would test.",
             "evidence": [
                 _ev("mock-card-sam", "card", "2026-08-30T12:00:00Z", "Looking for: ways to cut peak-hour energy costs")
             ],
             "days_since_contact": None,
-            "opener": "Sam — your card mentions peak-hour energy costs. Could I show you what a thermal battery would save?"
+            "opener": "Sam, your card mentions peak-hour energy costs. Could I show you what a thermal battery would save?"
         },
         {
             "person": _person("mock-person-lena", "Lena Park", "Campus Energy Club", "President"),
@@ -63,7 +63,7 @@ def _pilot_rows() -> list[dict[str, any]] {
                 _ev("mock-intent-lena", "intent", "2026-09-20T15:30:00Z", "Lena offered to connect founders with speaker-series VCs.")
             ],
             "days_since_contact": 6,
-            "opener": "Lena — would one of the plant-tour facilities managers take a 15-minute call about a pilot?"
+            "opener": "Lena, would one of the plant-tour facilities managers take a 15-minute call about a pilot?"
         },
         {
             "person": _person("mock-person-dev", "Dev Okafor", "Great Lakes Angels", "Associate"),
@@ -85,10 +85,10 @@ def _partial_rows() -> list[dict[str, any]] {
             "strength": "medium",
             "reason": "Ranking unavailable right now; ordered by the evidence in your notes.",
             "evidence": [
-                _ev("mock-fact-maya-1", "fact", "2026-09-26T16:10:00Z", "Maya Chen — worked together at Stripe.")
+                _ev("mock-fact-maya-1", "fact", "2026-09-26T16:10:00Z", "Maya Chen: worked together at Stripe.")
             ],
             "days_since_contact": 3,
-            "opener": "Hi Maya Chen, I was thinking about what you mentioned about Maya Chen — worked together at Stripe.."
+            "opener": "Hi Maya Chen, I was thinking about what you mentioned about Maya Chen: worked together at Stripe.."
         },
         {
             "person": _person("mock-person-dev", "Dev Okafor", "Great Lakes Angels", "Associate"),
@@ -113,7 +113,7 @@ def _generic_rows(goal_text: str) -> list[dict[str, any]] {
                 _ev("mock-intent-lena", "intent", "2026-09-20T15:30:00Z", "Lena offered to connect founders with speaker-series VCs.")
             ],
             "days_since_contact": 6,
-            "opener": "Lena — is anyone from the speaker series a fit for what I'm working on next?"
+            "opener": "Lena, is anyone from the speaker series a fit for what I'm working on next?"
         },
         {
             "person": _person("mock-person-maya", "Maya Chen", "Stripe Climate", "Carbon removal lead"),
@@ -172,7 +172,7 @@ def _raise_rows() -> list[dict[str, any]] {
                     "id": "mock-fact-maya-1",
                     "kind": "fact",
                     "observed_at": "2026-09-26T16:10:00Z",
-                    "span": "Maya Chen — worked together at Stripe."
+                    "span": "Maya Chen: worked together at Stripe."
                 },
                 {
                     "id": "mock-intent-maya",
@@ -182,7 +182,7 @@ def _raise_rows() -> list[dict[str, any]] {
                 }
             ],
             "days_since_contact": 3,
-            "opener": "Maya — I'm raising a pre-seed for Kiln Labs. Which climate hardware funds would you ask first?"
+            "opener": "Maya, I'm raising a pre-seed for Kiln Labs. Which climate hardware funds would you ask first?"
         },
         {
             "person": {
@@ -204,7 +204,7 @@ def _raise_rows() -> list[dict[str, any]] {
                 }
             ],
             "days_since_contact": 14,
-            "opener": "Dev — you mentioned your group wants more energy deals. Could I send a two-page Kiln Labs memo?"
+            "opener": "Dev, you mentioned your group wants more energy deals. Could I send a two-page Kiln Labs memo?"
         },
         {
             "person": {
@@ -226,7 +226,7 @@ def _raise_rows() -> list[dict[str, any]] {
                 }
             ],
             "days_since_contact": 6,
-            "opener": "Lena — would either of the speaker-series VCs be open to a 20-minute Kiln Labs call?"
+            "opener": "Lena, would either of the speaker-series VCs be open to a 20-minute Kiln Labs call?"
         },
         {
             "person": {
@@ -248,7 +248,7 @@ def _raise_rows() -> list[dict[str, any]] {
                 }
             ],
             "days_since_contact": None,
-            "opener": "Sam — your card mentions peak-hour energy costs. Could I show you what a thermal battery would save?"
+            "opener": "Sam, your card mentions peak-hour energy costs. Could I show you what a thermal battery would save?"
         }
     ];
 }

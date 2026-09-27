@@ -444,7 +444,7 @@ def:pub ImportPeople(
         parsed: dict = parse_pasted_text(paste_text);
         err: str = (parsed["error"] or "") as str;
         if err {
-            parse_error = "Paste at least one name — one person per line, or a CSV with a name column.";
+            parse_error = "Paste at least one name: one person per line, or a CSV with a name column.";
             return;
         }
         parsed_rows = parsed["rows"] as list[dict];
@@ -603,7 +603,7 @@ def:pub ImportPeople(
         if out["error"] {
             reason: str = (out["error"] or "") as str;
             next_err2: dict = {**row_error};
-            next_err2[person_id] = "Already confirmed — can't skip." if reason == "not_proposed" else "Couldn't skip that person.";
+            next_err2[person_id] = "Already confirmed. Can't skip." if reason == "not_proposed" else "Couldn't skip that person.";
             row_error = next_err2;
             return;
         }
@@ -668,7 +668,7 @@ def:pub ImportPeople(
                     <div className="flex flex-col gap-1">
                         <h2 className="text-eyebrow text-muted-foreground">Import people</h2>
                         <p className="text-body-sm text-muted-foreground">
-                            Paste a list, one person per line — "Name", "Name, Org", "Name, Org, Title", or "Name &lt;email&gt;" — or a CSV with a header row. You can also upload a .csv or .vcf export from your contacts.
+                            Paste a list, one person per line: "Name", "Name, Org", "Name, Org, Title", or "Name &lt;email&gt;", or a CSV with a header row. You can also upload a .csv or .vcf export from your contacts.
                         </p>
                     </div>
                     <Textarea

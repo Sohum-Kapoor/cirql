@@ -27,7 +27,7 @@ glob _NOTES: list[dict[str, any]] = [
          {
              "id": "mock-note-3", "captured_at": "2026-09-25T19:40:00Z", "kind": "paste",
              "audio_ref": "",
-             "text": "Dev Okafor — Associate at Great Lakes Angels. Screens energy deals for an angel group that writes pre-seed checks.",
+             "text": "Dev Okafor, Associate at Great Lakes Angels. Screens energy deals for an angel group that writes pre-seed checks.",
              "people": [{"id": "mock-person-dev", "name": "Dev Okafor"}],
              "counts": {"facts": 1, "intents": 0, "promises": 0}
          },

@@ -306,7 +306,7 @@ def:pub FactItem(
                 kind=""
                 busy={st["busy"] as bool}
                 error={st["error"] as str}
-                note="Saving keeps the old version as stale — nothing is silently overwritten."
+                note="Saving keeps the old version as stale. Nothing is silently overwritten."
                 onSave={save}
                 onCancel={onCancel}
                 onRemove={remove}
@@ -355,7 +355,7 @@ def:pub IntentItem(
             onEdit={onEdit}
             editor={<TextEditor
                 row_id={iid}
-                label={_name(names, row["about"] as str) + " —"}
+                label={_name(names, row["about"] as str) + ":"}
                 text={intent["text"] as str}
                 kind={kind}
                 busy={st["busy"] as bool}
@@ -511,12 +511,12 @@ def:pub drop_person(result: dict, pid: str) -> dict {
 
 def:pub edit_error_text(code: str) -> str {
     if code == "not_found" {
-        return "Couldn't find that any more — it may already be gone.";
+        return "Couldn't find that any more. It may already be gone.";
     }
     if code == "bad_kind" {
         return "That kind isn't allowed.";
     }
-    return "Couldn't save that — try again. (" + code + ")";
+    return "Couldn't save that. Try again. (" + code + ")";
 }
 
 def:pub Review(
@@ -580,11 +580,11 @@ def:pub Review(
         try {
             out = await update_person(person, name, org, title, how_met);
         } except Exception as e {
-            fail(key, "Couldn't save that — try again.");
+            fail(key, "Couldn't save that. Try again.");
             return;
         }
         if out["error"] {
-            fail(key, "Couldn't save that — try again.");
+            fail(key, "Couldn't save that. Try again.");
             return;
         }
         new_row: dict = {**row};
@@ -608,7 +608,7 @@ def:pub Review(
         try {
             out = await apply_correction(pid, text, fid, "fact");
         } except Exception as e {
-            fail(key, "Couldn't save that — try again.");
+            fail(key, "Couldn't save that. Try again.");
             return;
         }
         if out["error"] or not out["fact"] {
@@ -633,7 +633,7 @@ def:pub Review(
         try {
             out = await apply_correction(pid, text, "", kind);
         } except Exception as e {
-            fail(key, "Couldn't save that — try again.");
+            fail(key, "Couldn't save that. Try again.");
             return;
         }
         if out["error"] or not out["intent"] {
@@ -666,11 +666,11 @@ def:pub Review(
         try {
             out = await update_promise(promise, text, due);
         } except Exception as e {
-            fail(key, "Couldn't save that — try again.");
+            fail(key, "Couldn't save that. Try again.");
             return;
         }
         if out["error"] {
-            fail(key, "Couldn't save that — try again.");
+            fail(key, "Couldn't save that. Try again.");
             return;
         }
         new_row: dict = {**row};
@@ -705,7 +705,7 @@ def:pub Review(
         try {
             out = await forget(nid);
         } except Exception as e {
-            fail(key, "Couldn't remove that — try again.");
+            fail(key, "Couldn't remove that. Try again.");
             return;
         }
         if out["error"] and out["error"] != "not_found" {
@@ -779,7 +779,7 @@ def:pub Review(
             } elif total == 0 {
                 <div className="flex flex-col gap-3">
                     <p role="status" className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm">
-                        Saved your note. Cirql couldn't pull out people this time — it's kept, and you can try again.
+                        Saved your note. Cirql couldn't pull out people this time. It's kept, and you can try again.
                     </p>
                     <SourceQuote span={note_text} note_text="" />
                     <Button variant="secondary" className="w-full" onClick={handle_retry}>Try again</Button>
@@ -894,7 +894,7 @@ def:pub Review(
                             {(
                                 "Cirql forgets them and every fact, intent and promise only about them. The note itself is kept."
                                 if confirm_kind == "person"
-                                else "“" + confirm_label + "” — Cirql forgets it. The note it came from is kept."
+                                else "“" + confirm_label + "”: Cirql forgets it. The note it came from is kept."
                             )}
                         </AlertDialogDescription>
                     </AlertDialogHeader>

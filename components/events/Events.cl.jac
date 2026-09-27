@@ -413,7 +413,7 @@ def:pub Events(on_open_person: Callable[[str], None]) -> JsxElement {
                 <Input
                     value={create_name}
                     onChange={edit_create_name}
-                    placeholder="New event — where you met people"
+                    placeholder="New event: where you met people"
                     aria-label="New event name"
                 />
                 <div className="flex gap-2">
@@ -437,7 +437,7 @@ def:pub Events(on_open_person: Callable[[str], None]) -> JsxElement {
                 </div>
             } elif len(sorted_events) == 0 and not load_error {
                 <p className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm text-muted-foreground">
-                    Events are where you met people — a hackathon, a pitch night, a panel. Never a score.
+                    Events are where you met people: a hackathon, a pitch night, a panel. Never a score.
                 </p>
             } else {
                 <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">

@@ -51,7 +51,7 @@ def:pub AboutPanel() -> JsxElement {
     return
         <Collapsible className="overflow-hidden rounded-md">
             <CollapsibleTrigger
-                aria-label="How Cirql works — expand or collapse"
+                aria-label="How Cirql works · expand or collapse"
                 className={cn(
                     buttonVariants().call(None, {"variant": "ghost", "size": "row"}),
                     "flex-row items-center justify-between rounded-md focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 [&[data-state=open]>span>svg]:rotate-90"
@@ -68,7 +68,7 @@ def:pub AboutPanel() -> JsxElement {
                         <h3 className="text-eyebrow text-muted-foreground">What Cirql is</h3>
                         <p>
                             Cirql is a relationship graph you talk into. Every fact, want, and
-                            promise points back at the words you said — tap a source chip to
+                            promise points back at the words you said. Tap a source chip to
                             see them.
                         </p>
                     </section>
@@ -84,7 +84,7 @@ def:pub AboutPanel() -> JsxElement {
                             Across accounts, the only thing that ever crosses is a card you
                             wrote, granted read-only to one specific person, and, on the
                             exchange, a need, one line about you, and your handle. Blinded
-                            identity tokens — hashes, not names — let two friends' replies be
+                            identity tokens (hashes, not names) let two friends' replies be
                             recognized as the same person without a name crossing.
                         </p>
                     </section>

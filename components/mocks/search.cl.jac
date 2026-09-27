@@ -32,7 +32,7 @@ glob _ROWS: list[dict[str, any]] = [
      "span": "Carbon removal lead, Stripe Climate", "observed_at": "2026-09-23T18:40:00Z"},
     {"kind": "fact", "id": "mock-fact-maya-1", "text": "Worked together at Stripe",
      "person_id": "mock-person-maya", "person_name": "Maya Chen",
-     "span": "Maya Chen — worked together at Stripe.", "observed_at": "2026-07-12T16:10:00Z"},
+     "span": "Maya Chen: worked together at Stripe.", "observed_at": "2026-07-12T16:10:00Z"},
     {"kind": "intent", "id": "mock-intent-maya", "text": "Intros to climate hardware funds",
      "person_id": "mock-person-maya", "person_name": "Maya Chen",
      "span": "Maya said she'd happily intro founders to the climate hardware funds she buys alongside.",

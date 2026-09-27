@@ -323,7 +323,7 @@ def:pub VoiceCapture(
                     </p>}
                 <div className="flex flex-col gap-1">
                     <label htmlFor="voice-transcript" className="text-eyebrow text-muted-foreground">
-                        {"Type what happened" if err and not voice["text"] else "Check the transcript — fix names before Cirql reads it"}
+                        {"Type what happened" if err and not voice["text"] else "Check the transcript: fix names before Cirql reads it"}
                     </label>
                     <Textarea
                         id="voice-transcript"
