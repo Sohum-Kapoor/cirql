@@ -469,7 +469,7 @@ def:pub app -> JsxElement {
     async def load_incoming -> None;
     def poll_home -> None;
     def poll_request -> None;
-    async def post_ask(need: str, about_line: str, audience: str = "everyone") -> None;
+    async def post_ask(need: str, about_line: str, audience: str = "everyone", goal_text: str = "") -> None;
     async def load_friends -> None;
     def open_request(rid: str) -> None;
     async def cancel_request(rid: str) -> None;

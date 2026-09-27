@@ -812,7 +812,7 @@ impl app.poll_request -> None {
 (PostRequest reports no_card) gets one via PublishCard, then it retries once.
 (Gap-alert path only; an agent's ask_network card posts via ResolveAgentAction.)
 `audience` (SOH-218): "everyone" (default) | "friends"."""
-impl app.post_ask(need: str, about_line: str, audience: str = "everyone") -> None {
+impl app.post_ask(need: str, about_line: str, audience: str = "everyone", goal_text: str = "") -> None {
     if not need {
         return;
     }
@@ -821,7 +821,7 @@ impl app.post_ask(need: str, about_line: str, audience: str = "everyone") -> Non
     ask_busy = True;
     ask_error = "";
     try {
-        out = await post_request(need, about_line, audience);
+        out = await post_request(need, about_line, audience, goal_text);
         if (out["error"] or "") == "no_card" {
             made = await publish_card(me_name or "me", about_line, me_about);
             if made["error"] {
@@ -829,7 +829,7 @@ impl app.post_ask(need: str, about_line: str, audience: str = "everyone") -> Non
                 ask_error = err_text(made["error"] as str);
                 return;
             }
-            out = await post_request(need, about_line, audience);
+            out = await post_request(need, about_line, audience, goal_text);
         }
     } except Exception as e {
         ask_busy = False;
