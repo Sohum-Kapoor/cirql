@@ -48,6 +48,7 @@ import from schema {
 }
 import from exchange { owner_root, my_me, card_of, my_card, load, readable, now_iso }
 import from cards { listed_cards }
+import from identity { fill_contact }
 
 # ---------------------------------------------------------------- helpers
 
@@ -119,6 +120,7 @@ def get_or_create_person_from_card(me: Me, card: Card, now: str) -> Person {
     person = (me +>:Knows(how_met="handshake", last_contact=now, status="confirmed", source_note=""):+> Person(
         name=card.name, org=org, title=title, status="confirmed"
     ))[0];
+    fill_contact(person, "", "", list(card.links));  # SOH-215
 
     try {
         person +>:FromCard(handle=card.handle, received_at=now):+> card;

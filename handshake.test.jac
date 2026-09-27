@@ -40,7 +40,7 @@ def _hs_harness(tmp_dir: str) -> str {
     for name in [
         "handshake.sv.jac", "schema.sv.jac", "exchange.sv.jac", "onboard.sv.jac",
         "cards.sv.jac", "scoring.sv.jac", "freshness.sv.jac", "walkers.sv.jac",
-        "reads.sv.jac"
+        "reads.sv.jac", "identity.sv.jac", "names.sv.jac"
     ] {
         shutil.copyfile(os.path.join(HS_REPO_ROOT, name), os.path.join(tmp_dir, name));
     }
@@ -331,7 +331,7 @@ def _make_restart_harness(tmp_dir: str) -> str {
     for name in [
         "handshake.sv.jac", "schema.sv.jac", "exchange.sv.jac", "onboard.sv.jac",
         "cards.sv.jac", "scoring.sv.jac", "freshness.sv.jac", "walkers.sv.jac",
-        "reads.sv.jac", "llm.sv.jac"
+        "reads.sv.jac", "llm.sv.jac", "identity.sv.jac", "names.sv.jac"
     ] {
         shutil.copyfile(os.path.join(HS_REPO_ROOT, name), os.path.join(tmp_dir, name));
     }

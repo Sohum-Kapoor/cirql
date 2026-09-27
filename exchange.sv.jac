@@ -36,6 +36,7 @@ import from schema {
 import from cards { listed_cards, list_card, handle_taken }
 import from scoring { score_against_need }
 import from onboard { handle_from_name, jid_suffix }
+import from identity { tokens_for, group_same_person }
 
 
 # ---------------------------------------------------------------- LLM (ClaimReveal only)
@@ -401,7 +402,16 @@ walker:priv ListMyRequests {
             rid = jid(req);
             replies = [r for r in visible if r.request_id == rid];
             req.status = derive_status(req, replies, now);
-            report {"request": req, "replies": [view(r) for r in replies]};
+            # SOH-215: same-person signal from blinded tokens; tokens never leave this walker.
+            same = group_same_person([{"id": jid(r), "tokens": list(r.match_tokens)} for r in replies]);
+            views: list[dict[str, object]] = [];
+            for r in replies {
+                v = view(r);
+                v["same_as"] = (same["same_as"] as dict[str, list[str]])[jid(r)];
+                v["same_reason"] = (same["same_reason"] as dict[str, str])[jid(r)];
+                views.append(v);
+            }
+            report {"request": req, "replies": views, "same_person_groups": same["groups"]};
         }
     }
 }
@@ -673,6 +683,10 @@ walker:priv ReplyToRequest {
             strength=strength,
             status="pending"
         ))[0];
+        top = my_person(person_id) if person_id else None;
+        if top is not None {
+            reply.match_tokens = tokens_for(top as Person);  # SOH-215: hashes only, never a name
+        }
         Jac.allow_root(reply, UUID(owner_root(req)), ReadPerm);  # jac:ignore[E1053]
         root ++> ReplyPrivate(reply_id=jid(reply), match_person_id=person_id, why=why);
         reply +>:RepliedTo:+> req;  # kept for the graph view; nothing reads it

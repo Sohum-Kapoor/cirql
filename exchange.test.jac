@@ -31,7 +31,7 @@ import from scoring { NeedMatch, NeedMatches }
 glob EX_REPO_ROOT = os.path.dirname(os.path.abspath(__file__));
 
 def _ex_harness(tmp_dir: str) -> str {
-    for name in ["exchange.sv.jac", "schema.sv.jac", "scoring.sv.jac", "onboard.sv.jac", "walkers.sv.jac", "cards.sv.jac", "llm.sv.jac", "freshness.sv.jac", "goals.sv.jac", "reads.sv.jac", "handshake.sv.jac"] {
+    for name in ["exchange.sv.jac", "schema.sv.jac", "scoring.sv.jac", "onboard.sv.jac", "walkers.sv.jac", "cards.sv.jac", "llm.sv.jac", "freshness.sv.jac", "goals.sv.jac", "reads.sv.jac", "handshake.sv.jac", "identity.sv.jac", "names.sv.jac"] {
         shutil.copyfile(os.path.join(EX_REPO_ROOT, name), os.path.join(tmp_dir, name));
     }
     harness_path = os.path.join(tmp_dir, "exapp.jac");
@@ -345,7 +345,7 @@ test "exchange: state machine refuses skipped or foreign transitions" {
         assert _err(_run(cl, b, "ApproveReply", {"reply_id": reply_id})) == "invalid_state";
         mine = _run(cl, a, "ListMyRequests", {});
         assert str(mine[0]["replies"][0]["status"]) == "declined";
-        assert set(mine[0]["replies"][0].keys()) == {"_jac_id", "request_id", "from_handle", "match_count", "strength", "status"};
+        assert set(mine[0]["replies"][0].keys()) == {"_jac_id", "request_id", "from_handle", "match_count", "strength", "status", "same_as", "same_reason"};
 
         assert _err(_run(cl, b, "DeclineRequest", {"request_id": req_id})) in ["not_found", "forbidden"];
         assert _run(cl, a, "DeclineRequest", {"request_id": req_id}) == ["declined"];
@@ -632,7 +632,7 @@ test "exchange: B's reply is visible to A after a real server restart" {
         assert str(replies[0]["_jac_id"]) == reply_id, replies;
         assert str(replies[0]["status"]) == "pending", replies;
         assert str(mine[0]["request"]["status"]) == "replied", mine;
-        assert set(replies[0].keys()) == {"_jac_id", "request_id", "from_handle", "match_count", "strength", "status"}, replies;
+        assert set(replies[0].keys()) == {"_jac_id", "request_id", "from_handle", "match_count", "strength", "status", "same_as", "same_reason"}, replies;
 
         # B's own request (B did not create the Exchange) survives the restart too.
         a_in = [str(r["_jac_id"]) for r in _ex_call(base2, a2, "ListIncomingRequests", {})];

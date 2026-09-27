@@ -485,3 +485,13 @@ Bounded traversal over the caller's own root: every Note (text capped at 300 cha
     { handle: str, person: Person, since: str }   # since = FromCard.received_at, "" for the source_note marker
     ```
   - `BlockHandle(handle: str)` / `UnblockHandle(handle: str)` → `[{ blocked: [str] }]` (the full list after the change; idempotent). Errors: `{ error: "bad_handle" }` (blank), `{ error: "no_me" }` (not onboarded).
+- 2026-09-26 — SOH-215 Identity layer 2: blinded identity tokens (`identity.sv.jac`).
+  - **`Person.identity_tokens: [str]`** (already in the schema) is now filled: `"<kind>:<32 hex>"`, HMAC-SHA256 under a server salt (`IDENTITY_SALT`, else `JWT_SECRET`, else a dev default; never reported). Kinds: `n` = name|org (org with legal suffixes like Inc/Corp/LLC dropped), `n0` = name alone when org is empty, `e` = email, `p` = phone (digits, >= 7), `u` = link (lower, no scheme/www/query/trailing slash). Recomputed when Capture creates a person, when CaptureImage reads a badge (also fills empty `email`/`phone` and absent `links` from the read), when Enrich lands web facts (each fact's `source_url` is appended to `links` if its canonical form is absent; grounding redirects are never stored), and when a handshake creates a person from a Card (`links` from the Card). Tokens appear on the owner's own Person objects only.
+  - **`RefreshIdentityTokens()`** `:priv`, own root, no model → `[{ updated: int }]` (people whose tokens changed).
+  - **`ListMyRequests()`** — each entry gains `same_person_groups`, each reply view gains `same_as` and `same_reason`:
+    ```
+    { request: IntroRequest,
+      replies: [ { ...ReplyView (unchanged keys)..., same_as: [reply_id], same_reason: "contact" | "name+org" | "name" | "" } ],
+      same_person_groups: [ [reply_id, ...] ] }   // only groups of >= 2 replies whose top matches look like the same person
+    ```
+    `same_reason`: `contact` = an email/phone/link token matched; `name+org` = the name|org token matched; `name` = only the name-alone token matched (both sides have no org; "likely", not "same"). `same_as` = the other replies in the same group (empty when none). Tokens never appear in any report: `IntroReply.match_tokens` (set by `ReplyToRequest` from the friend's top match, hashes only) stays server-side and is not in ReplyView.
