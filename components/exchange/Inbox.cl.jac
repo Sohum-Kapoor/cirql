@@ -44,9 +44,9 @@ collapse into one "<N> people are looking for …" row with its own expand.
 import from ..ui.button { Button }
 import from ..ui.skeleton { Skeleton }
 import from ..ui.icons { ChevronLeftIcon, ChevronDownIcon, ChevronRightIcon }
-import from .common { StatusChip, DraftBlock, reply_label, ask_title, asker_label, need_sentence, goal_approved_line, handle_caption, need_group_key, same_ask_group }
+import from .common { StatusChip, DraftBlock, reply_label, ask_title, asker_label, asker_subject, asker_object, same_asker_label, need_sentence, goal_approved_line, handle_caption, need_group_key, same_ask_group }
 import from .Requests { match_phrase }
-import from ..agent.common { friend_status, is_zero_match, split_asks }
+import from ..agent.common { friend_status, is_zero_match, split_asks, resolve_ask_entry }
 import from ...lib.utils { cn }
 import from ...lib.toast { toast }
 import from ...lib.text { join_with }
@@ -118,7 +118,7 @@ def:pub AskRow(
                 <div className="flex flex-col gap-2 pt-1 pb-3 pl-3 pr-3">
                     {about_line and
                         <p className="text-body-sm text-muted-foreground">
-                            {"About " + asker_label(from_name, from_handle) + ": " + about_line}
+                            {"About " + asker_object(from_name, from_handle) + ": " + about_line}
                         </p>}
                     {approved and <p className="text-body-sm text-muted-foreground">{approved}</p>}
                     <p className="text-body-sm">{status_line}</p>
@@ -133,14 +133,18 @@ def:pub AskRow(
 }
 
 """One requester line inside an expanded group: their name/handle, status,
-and their own "Offer an intro". No per-requester detail, just the action."""
-def:pub AskRequesterLine(ent: dict, friend: dict, onOffer: Callable[[str], None]) -> JsxElement {
+and their own "Offer an intro". SOH-232 item 2: when the whole group is the
+SAME asker (the group title already names them once), `show_need` renders
+this row's own need text instead of repeating that name on every line."""
+def:pub AskRequesterLine(ent: dict, friend: dict, onOffer: Callable[[str], None], show_need: bool = False) -> JsxElement {
     req: dict = (ent["request"] or {}) as dict;
     rid: str = (req["_jac_id"] or "") as str;
-    fent: dict = (friend[rid] or {}) as dict;
+    fent: dict = resolve_ask_entry(req, friend);
     status: str = friend_status(fent);
     from_name: str = (req["from_name"] or "") as str;
     from_handle: str = (req["from_handle"] or "") as str;
+    need: str = ((req["need"] or "") as str).strip();
+    label_text: str = need if show_need and need else asker_label(from_name, from_handle);
 
     def handle_offer(e: MouseEvent) {
         onOffer(rid);
@@ -148,7 +152,7 @@ def:pub AskRequesterLine(ent: dict, friend: dict, onOffer: Callable[[str], None]
 
     return
         <li className="flex items-center justify-between gap-2 pt-2 pb-2 pl-1 pr-2">
-            <span className="min-w-0 truncate text-body-sm">{asker_label(from_name, from_handle)}</span>
+            <span className="min-w-0 truncate text-body-sm">{label_text}</span>
             <div className="flex shrink-0 items-center gap-2">
                 <StatusChip status={status} label={reply_label(status)} />
                 <Button size="xs" onClick={handle_offer}>Offer an intro</Button>
@@ -176,7 +180,7 @@ def:pub AskGroupRow(
         only: dict = entries[0] if len(entries) == 1 else {};
         req: dict = (only["request"] or {}) as dict;
         rid: str = (req["_jac_id"] or "") as str;
-        ent: dict = (friend[rid] or {}) as dict;
+        ent: dict = resolve_ask_entry(req, friend);
         return
             <AskRow
                 req={req}
@@ -190,6 +194,18 @@ def:pub AskGroupRow(
     group_id: str = "group:" + group_key;
     is_open: bool = expanded_key == group_id;
     need0: str = title_need;
+    # SOH-232 item 2: a group where every requester is the SAME person names
+    # them once ("Quinn is looking for ... (2 asks)") instead of the generic
+    # "<N> people" — the needs differ (that's why they didn't merge into one
+    # ask_title line already), so the heading doesn't try to summarize them;
+    # the expanded rows show each one's own need text instead.
+    req_list: list[dict] = [];
+    for e in entries {
+        req_list = req_list + [(e["request"] or {}) as dict];
+    }
+    same_asker: str = same_asker_label(req_list);
+    count_word: str = "1 ask" if len(entries) == 1 else (str(len(entries)) + " asks");
+    title_text: str = (same_asker + " is looking for … (" + count_word + ")") if same_asker else (str(len(entries)) + " people are looking for " + need_sentence(need0) + ".");
 
     def handle_toggle(e: MouseEvent) {
         onToggle(group_id);
@@ -199,7 +215,7 @@ def:pub AskGroupRow(
         <li className="flex flex-col">
             <Button variant="ghost" size="row" aria-expanded={is_open} onClick={handle_toggle}>
                 <div className="flex items-center justify-between gap-2">
-                    <span className="min-w-0 text-body-sm">{str(len(entries)) + " people are looking for " + need_sentence(need0) + "."}</span>
+                    <span className="min-w-0 text-body-sm">{title_text}</span>
                     {<ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" /> if is_open else <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />}
                 </div>
             </Button>
@@ -211,6 +227,7 @@ def:pub AskGroupRow(
                             ent={e}
                             friend={friend}
                             onOffer={onOffer}
+                            show_need={bool(same_asker)}
                         />
                     }}
                 </ul>
@@ -218,24 +235,28 @@ def:pub AskGroupRow(
         </li>;
 }
 
-"""One count-0 ask, collapsed: no Approve, just the honest line."""
-def:pub OtherAskRow(req: dict) -> JsxElement {
+"""One count-0 ask, collapsed: no Approve, just the honest line. SOH-232
+item 2: the "found no match" line moved up to ONE caption under the whole
+"Other asks" heading (`OtherAsksSection`) instead of repeating per row."""
+def:pub OtherAskRow(req: dict, show_need: bool = False) -> JsxElement {
     from_name: str = (req["from_name"] or "") as str;
     from_handle: str = (req["from_handle"] or "") as str;
+    need: str = ((req["need"] or "") as str).strip();
+    label_text: str = need if show_need and need else ask_title(from_name, from_handle, (req["need"] or "") as str);
     return
         <li className="flex flex-col gap-1 pt-2.5 pb-2.5 pl-3 pr-3">
             <div className="flex items-start justify-between gap-2">
-                <span className="min-w-0 text-body-sm text-muted-foreground">{ask_title(from_name, from_handle, (req["need"] or "") as str)}</span>
+                <span className="min-w-0 text-body-sm text-muted-foreground">{label_text}</span>
             </div>
             {req["about_line"] and <span className="text-caption text-muted-foreground">{req["about_line"] as str}</span>}
-            <span className="text-caption text-ink-muted">Cirql found no match; nothing to approve.</span>
         </li>;
 }
 
 """SOH-229: same grouping as the primary list applies here too — `split_asks`
 only decides which SECTION a zero-match ask lands in, not whether it groups
 with a sibling ask for the same need. A group of one still renders as a
-plain `OtherAskRow`."""
+plain `OtherAskRow`. SOH-232 item 2: same "same asker" title rule as
+`AskGroupRow` above."""
 def:pub OtherAskGroupRow(group: dict) -> JsxElement {
     has open: bool = False;
 
@@ -251,18 +272,30 @@ def:pub OtherAskGroupRow(group: dict) -> JsxElement {
         return <OtherAskRow req={(only["request"] or {}) as dict} />;
     }
 
+    req_list: list[dict] = [];
+    for e in entries {
+        req_list = req_list + [(e["request"] or {}) as dict];
+    }
+    same_asker: str = same_asker_label(req_list);
+    count_word: str = "1 ask" if len(entries) == 1 else (str(len(entries)) + " asks");
+    title_text: str = (same_asker + " is looking for … (" + count_word + ")") if same_asker else (str(len(entries)) + " people are looking for " + need_sentence(title_need) + ".");
+
     return
         <li className="flex flex-col">
             <Button variant="ghost" size="row" aria-expanded={open} onClick={toggle}>
                 <div className="flex items-center justify-between gap-2">
-                    <span className="min-w-0 text-body-sm text-muted-foreground">{str(len(entries)) + " people are looking for " + need_sentence(title_need) + "."}</span>
+                    <span className="min-w-0 text-body-sm text-muted-foreground">{title_text}</span>
                     {<ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" /> if open else <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />}
                 </div>
             </Button>
             {if open {
                 <ul className="flex flex-col divide-y divide-border border-t bg-secondary/40">
                     {for e in entries {
-                        <OtherAskRow key={((e["request"] or {})["_jac_id"] or "") as str} req={(e["request"] or {}) as dict} />
+                        <OtherAskRow
+                            key={((e["request"] or {})["_jac_id"] or "") as str}
+                            req={(e["request"] or {}) as dict}
+                            show_need={bool(same_asker)}
+                        />
                     }}
                 </ul>
             }}
@@ -297,6 +330,7 @@ def:pub OtherAsksSection(other: list[dict]) -> JsxElement {
                 <span>{"Other asks (" + str(len(other)) + ")"}</span>
                 {<ChevronDownIcon className="size-4" /> if open else <ChevronRightIcon className="size-4" />}
             </Button>
+            <p className="px-1 text-caption text-ink-muted">Cirql found no match; nothing to approve.</p>
             {if open {
                 <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card">
                     {for g in groups {
@@ -418,14 +452,11 @@ def:pub AsksSection(
     split: dict = split_asks(incoming, friend, []);
     all_needs: list[dict] = (split["needs"] or []) as list[dict];
     other: list[dict] = (split["other"] or []) as list[dict];
+    # SOH-232: `pending` is a COUNT only (`split_asks` never puts an
+    # unchecked ask into `needs`/`other` any more) — the "Checking N…" line
+    # below is the only thing an unchecked ask renders as, no row.
+    pending: int = (split["pending"] or 0) as int;
     needs: list[dict] = [e for e in all_needs if (((e["request"] or {})["_jac_id"] or "") as str) not in hidden_ids];
-    checking_now: int = 0;
-    for e in needs {
-        rid: str = ((e["request"] or {})["_jac_id"] or "") as str;
-        if friend_status((friend[rid] or {}) as dict) == "checking" {
-            checking_now = checking_now + 1;
-        }
-    }
     groups: list[dict] = _group_asks(needs);
 
     def toggle_expand(k: str) -> None {
@@ -454,14 +485,14 @@ def:pub AsksSection(
         toast("Ask hidden", "info", do_undo);
     }
 
-    if len(all_needs) == 0 and len(other) == 0 {
+    if len(all_needs) == 0 and len(other) == 0 and pending == 0 {
         return <span hidden={True} />;
     }
     return
         <div className="flex flex-col gap-3">
-            {checking_now > 0 and
+            {pending > 0 and
                 <p role="status" className="text-caption text-muted-foreground">
-                    {"Checking " + str(checking_now) + (" ask" if checking_now == 1 else " asks") + " against your people…"}
+                    {"Checking " + str(pending) + (" ask" if pending == 1 else " asks") + " against your people…"}
                 </p>}
             {if len(groups) > 0 {
                 <section aria-label={title} className="flex flex-col gap-3">
@@ -503,7 +534,10 @@ def:pub ApprovalView(
     from_name: str = (req["from_name"] or "") as str;
     from_handle: str = (req["from_handle"] or "") as str;
     goal_text: str = (req["goal_text"] or "") as str;
-    asker: str = asker_label(from_name, from_handle);
+    # SOH-232 item 3: "Someone on Cirql"/"them", never the raw handle, when
+    # no name has been shared yet.
+    asker: str = asker_subject(from_name, from_handle);
+    asker_obj: str = asker_object(from_name, from_handle);
     approved: str = goal_approved_line(from_name, from_handle, goal_text);
     caption: str = handle_caption(from_name, from_handle);
     n: int = (reply["match_count"] or 0) as int;
@@ -557,7 +591,7 @@ def:pub ApprovalView(
                         <StatusChip status={status} label={reply_label(status)} />
                     </div>
                     <h2 className="text-subhead font-medium">{ask_title(from_name, from_handle, (req["need"] or "") as str)}</h2>
-                    {req["about_line"] and <p className="text-body-sm text-muted-foreground">{"About " + asker + ": " + (req["about_line"] as str)}</p>}
+                    {req["about_line"] and <p className="text-body-sm text-muted-foreground">{"About " + asker_obj + ": " + (req["about_line"] as str)}</p>}
                     {approved and <p className="text-body-sm text-muted-foreground">{approved}</p>}
                     {if status == "new" or status == "checking" {
                         if busy {

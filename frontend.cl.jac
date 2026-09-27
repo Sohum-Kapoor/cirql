@@ -63,7 +63,7 @@ import from .components.mocks.exchange { mock_as_friend, mock_set_as_friend }
 import from .components.exchange.common { Poller, req_active }
 import from .components.exchange.Requests { RequestDetail }
 import from .components.exchange.Inbox { ApprovalView }
-import from .components.agent.common { asks_needing_count, pick_unchecked, payload_of }
+import from .components.agent.common { asks_needing_count, pick_unchecked, payload_of, resolve_ask_entry }
 import from .components.ui.toaster { Toaster }
 import from .components.card.PublicCard { PublicCard }
 import from .lib.text { join_lines, today_month_day, join_with }
@@ -559,7 +559,20 @@ def:pub app -> JsxElement {
             open_item = item;
         }
     }
-    open_ask_entry: dict = ((ex["friend"] or {})[open_ask_id] or {}) as dict if open_ask_id else {};
+    # SOH-232: resolve through `my_reply` (ListIncomingRequests now carries
+    # this account's own past reply on the request itself) so a manually-
+    # opened ask shows its already-checked state on a fresh page load, not
+    # "Check my network" for one this account already answered.
+    open_ask_raw: dict = ((ex["friend"] or {})[open_ask_id] or {}) as dict if open_ask_id else {};
+    open_ask_req: dict = (open_ask_raw["request"] or {}) as dict;
+    if open_ask_id and not open_ask_req["_jac_id"] {
+        for r in ((ex["incoming"] or []) as list[dict]) {
+            if r["_jac_id"] == open_ask_id {
+                open_ask_req = r;
+            }
+        }
+    }
+    open_ask_entry: dict = resolve_ask_entry(open_ask_req, (ex["friend"] or {}) as dict) if open_ask_req["_jac_id"] else open_ask_raw;
     agent_rows: list[dict] = (agent_view["rows"] or []) as list[dict];
     covered: list[str] = covered_requests(agent_rows);
     incoming_shown: list[dict] = [r for r in ((ex["incoming"] or []) as list[dict]) if r["_jac_id"] not in covered];

@@ -4,12 +4,19 @@ Header: "Agent ran 2 min ago · 3 new" (or a running line) and *Run agent now*.
 Below it the open AgentActions as cards, filterable by kind with small pill tabs
 (All · Asks · Routes · Follow-ups · Matches); while a run is in flight two
 skeleton cards sit on top. Approve routes by kind:
-  ask_network -> the existing *Ask my network* sheet (GapAlert's AskSheet),
-                 prefilled from the payload; *Post request* = ResolveAgentAction
+  ask_network -> the existing *Ask your network* sheet (GapAlert's AskSheet),
+                 prefilled from the payload; *Post this ask* = ResolveAgentAction
                  (approve, edited_draft=<need>), which posts it server-side
   answer_ask  -> the existing friend reply flow for that request
   otherwise   -> ResolveAgentAction(approve, edited draft)
 The shell owns the rows and every resolve (optimistic, rolled back on error).
+
+SOH-232 item 4: Dismiss/"Not now" used to call the walker immediately and
+permanently — no undo, unlike the Exchange Inbox's local "Ask hidden · Undo"
+hide. Both now behave the same way: the row hides right away with a
+toast + Undo; the real (walker) dismiss only fires once the toast's window
+passes without an Undo tap, matching `AsksSection`'s local-hide idiom rather
+than assuming the walker can revive an already-dismissed action.
 """
 
 import from react { useEffect }
@@ -22,6 +29,7 @@ import from .common { FILTERS, in_filter, payload_of, ago_words, AgentIcon }
 import from .common { load_inbox_seen_ms, mark_inbox_seen_now, new_since_seen }
 import from .common { group_answer_ask_rows, find_answer_ask_group }
 import from ...lib.utils { cn }
+import from ...lib.toast { toast, DEFAULT_DURATION_MS }
 
 def:pub AgentSkeleton() -> JsxElement {
     return
@@ -109,6 +117,7 @@ def:pub AgentInbox(
         need: str = "",
         about_line: str = "",
         ask_kind: str = "",
+        hidden_ids: list[str] = [],
         seen_ms: int = load_inbox_seen_ms();
 
     # This mount = "the Inbox tab opened" (SOH-226): `seen_ms` (read above,
@@ -148,8 +157,23 @@ def:pub AgentInbox(
         onResolve(aid, "approve", draft);
     }
 
+    def unhide(aid: str) -> None {
+        hidden_ids = [h for h in hidden_ids if h != aid];
+    }
+
+    """SOH-232 item 4: Dismiss/"Not now" hides the row right away, same as
+    the Exchange Inbox's "Ask hidden · Undo" — the actual (walker) dismiss
+    is deferred until the toast's own window passes with no Undo tap; Undo
+    just cancels that timer and un-hides, so nothing is ever sent to
+    ResolveAgentAction unless the user really lets it go."""
     def dismiss(aid: str) -> None {
-        onResolve(aid, "dismiss", "");
+        hidden_ids = hidden_ids + [aid];
+        t: any = setTimeout(lambda { onResolve(aid, "dismiss", ""); }, DEFAULT_DURATION_MS);  # jac:ignore[W2001]
+        def do_undo() -> None {
+            clearTimeout(t);  # jac:ignore[W2001,E1053]
+            unhide(aid);
+        }
+        toast("Hidden", "info", do_undo);
     }
 
     def snooze(aid: str) -> None {
@@ -178,7 +202,14 @@ def:pub AgentInbox(
     }
 
     open_rows: list[dict] = [r for r in rows if ((r["action"] or {})["status"] or "open") == "open"];
-    shown: list[dict] = [r for r in rows if in_filter(((r["action"] or {})["kind"] or "") as str, filt)];
+    # SOH-232 item 4: a row this session dismissed (awaiting the deferred
+    # ResolveAgentAction call, or already undone) never renders — same
+    # local-hide idiom the Exchange Inbox's "Not now" already uses.
+    shown: list[dict] = [
+        r for r in rows
+        if in_filter(((r["action"] or {})["kind"] or "") as str, filt)
+        and ((r["action"] or {})["_jac_id"] or "") not in hidden_ids
+    ];
     counts: dict = {};
     for (key, label) in FILTERS {
         n: int = 0;
@@ -265,12 +296,16 @@ def:pub AgentInbox(
             </div>
             {len(rows) > 0 and
                 <Tabs value={filt} onValueChange={set_filter} className="gap-0">
-                    <TabsList aria-label="Filter by kind" className="-ml-4 -mr-4 w-[calc(100%+2rem)] justify-start overflow-x-auto rounded-none border-0 bg-transparent pl-4 pr-4 [scrollbar-width:none]">
+                    <TabsList aria-label="Filter by kind" className="-ml-4 -mr-4 w-[calc(100%+2rem)] justify-start gap-1.5 overflow-x-auto rounded-none border-0 bg-transparent pl-4 pr-4 [scrollbar-width:none]">
                         {for f in FILTERS {
-                            <TabsTrigger key={f[0]} value={f[0]} className="flex-none border-border pl-3 pr-3 text-caption">
+                            <TabsTrigger
+                                key={f[0]}
+                                value={f[0]}
+                                className="h-8 flex-none rounded-full border-transparent bg-secondary pl-3 pr-3 text-xs font-medium text-muted-foreground data-active:border-transparent data-active:bg-primary data-active:text-primary-foreground"
+                            >
                                 {f[1]}
                                 {(counts[f[0]] or 0) > 0 and f[0] != "all" and
-                                    <span className="tabular-nums text-ink-tertiary">{str(counts[f[0]])}</span>}
+                                    <span className="tabular-nums">{str(counts[f[0]])}</span>}
                             </TabsTrigger>
                         }}
                     </TabsList>
@@ -281,7 +316,7 @@ def:pub AgentInbox(
                 </ul>
             } elif len(rows) == 0 and not running {
                 <p className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm text-muted-foreground">
-                    Capture a conversation and Cirql will look for introductions, gaps and follow-ups — you approve everything. Nothing sends on its own.
+                    Nothing to approve yet. When Cirql finds a match, a gap or a follow-up, it lands here. Nothing sends on its own.
                 </p>
             } else {
                 <ul className="flex flex-col gap-3" aria-busy={running}>

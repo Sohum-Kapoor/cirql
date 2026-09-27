@@ -16,7 +16,7 @@ import from ..ui.dropdown_menu { DropdownMenu, DropdownMenuTrigger, DropdownMenu
 import from ..goals.RankList { EvidenceChip }
 import from ..capture.Review { SourceQuote }
 import from .common { KindIcon, kind_label, approve_label, dismiss_label, resolved_label, ago_words, since_iso, promise_due_label, payload_of }
-import from ..exchange.common { ask_title, need_sentence }
+import from ..exchange.common { ask_title, need_sentence, same_asker_label }
 import from ...lib.text { join_with }
 import from ...lib.utils { cn }
 
@@ -32,15 +32,43 @@ def _ordinal_label(kind: str, n: int) -> str {
     return kind + " " + str(n);
 }
 
+"""SOH-232 judge pass item 6: a chip built off `ev["text"]` alone (no
+`span`) is the whole note, not a quote about this specific connector — a
+blind 40-char cut can land anywhere. Cut at the first sentence end
+(., !, or ?) instead when one shows up early enough; otherwise fall back to
+the same 60-char cap `span` chips already use, just wider (a spanless note
+tends to run long before its first sentence break)."""
+def _first_sentence(text: str) -> str {
+    t: str = text.strip();
+    if not t {
+        return t;
+    }
+    cut: int = -1;
+    for i in range(len(t)) {
+        ch: str = t[i:i + 1];
+        if ch == "." or ch == "!" or ch == "?" {
+            cut = i;
+            break;
+        }
+    }
+    if cut >= 0 and cut < 120 {
+        return t[0:cut + 1];
+    }
+    return t[0:60] + ("…" if len(t) > 60 else "");
+}
+
 def _evidence_chip_view(evidence: list[dict]) -> list[dict] {
     counts: dict = {};
     out: list[dict] = [];
     for ev in evidence {
         kind: str = (ev["kind"] or "fact") as str;
-        raw: str = ((ev["span"] or ev["text"] or "") as str).strip();
+        span_raw: str = ((ev["span"] or "") as str).strip();
+        text_raw: str = ((ev["text"] or "") as str).strip();
         ev2: dict = {**ev};
-        if raw {
-            ev2["kind"] = raw[0:40] + ("…" if len(raw) > 40 else "");
+        if span_raw {
+            ev2["kind"] = span_raw[0:40] + ("…" if len(span_raw) > 40 else "");
+        } elif text_raw {
+            ev2["kind"] = _first_sentence(text_raw);
         } else {
             n: int = ((counts[kind] or 0) as int) + 1;
             counts[kind] = n;
@@ -86,6 +114,7 @@ def:pub ActionPerson(person: dict, onOpen: Callable[[str], None]) -> JsxElement 
 def:pub ResolvedRow(act: dict) -> JsxElement {
     status: str = (act["status"] or "") as str;
     positive: bool = status == "approved" or status == "done";
+    title: str = (act["title"] or "") as str;
     return
         <li
             data-action-id={act["_jac_id"] as str}
@@ -100,26 +129,37 @@ def:pub ResolvedRow(act: dict) -> JsxElement {
             }}
             <span className="min-w-0 truncate text-body-sm">
                 <span className="font-medium">{resolved_label(act["kind"] as str, status)}</span>
-                <span className="text-muted-foreground">{" · " + (act["title"] as str)}</span>
+                {title and <span className="text-muted-foreground">{" · " + title}</span>}
             </span>
         </li>;
 }
 
 """One requester's line inside a grouped `answer_ask` card — its own title,
-"Review intro" / "Not now", or (once handled) a one-line receipt."""
+"Review intro" / "Not now", or (once handled) a one-line receipt. SOH-232
+item 2: when the whole group is the SAME asker (the card's own heading
+already names them once), `show_need` renders this row's own need text
+instead of repeating "<Name> is looking for ..." on every line."""
 def:pub AnswerAskRequesterRow(
     row: dict,
     pending: bool,
     error: str,
     onApprove: Callable[[str, str], None],
-    onDismiss: Callable[[str], None]
+    onDismiss: Callable[[str], None],
+    show_need: bool = False
 ) -> JsxElement {
     act: dict = (row["action"] or {}) as dict;
     aid: str = (act["_jac_id"] or "") as str;
     status: str = (act["status"] or "open") as str;
     payload: dict = payload_of(act);
     need: str = (payload["need"] or "") as str;
-    title: str = ask_title((payload["from_name"] or "") as str, (payload["from_handle"] or "") as str, need) if need else ((act["title"] or "") as str);
+    title: str = "";
+    if show_need and need.strip() {
+        title = need.strip();
+    } elif need {
+        title = ask_title((payload["from_name"] or "") as str, (payload["from_handle"] or "") as str, need);
+    } else {
+        title = (act["title"] or "") as str;
+    }
 
     def handle_approve(e: MouseEvent) {
         onApprove(aid, "");
@@ -144,7 +184,7 @@ def:pub AnswerAskRequesterRow(
                 }}
                 <span className="min-w-0 truncate">
                     <span className="font-medium">{resolved_label("answer_ask", status)}</span>
-                    <span className="text-muted-foreground">{" · " + title}</span>
+                    {title and <span className="text-muted-foreground">{" · " + title}</span>}
                 </span>
             </li>;
     }
@@ -181,10 +221,23 @@ def:pub AnswerAskGroupCard(
         open = not open;
     }
 
+    # SOH-232 item 2: name the shared asker once ("Quinn is looking for ...
+    # (2 asks)") instead of "<N> people", when every row in this group is
+    # the same person — the needs differ (that's why the walker didn't
+    # already fold them into one), so the heading doesn't guess at them.
+    payload_list: list[dict] = [];
+    for r in rows {
+        act_r: dict = (r["action"] or {}) as dict;
+        payload_list = payload_list + [payload_of(act_r)];
+    }
+    same_asker: str = same_asker_label(payload_list);
+    count_word: str = "1 ask" if len(rows) == 1 else (str(len(rows)) + " asks");
+
     resolved: list[dict] = [r for r in rows if ((r["action"] or {})["status"] or "open") != "open"];
     if len(resolved) > 0 {
         act0: dict = (resolved[0]["action"] or {}) as dict;
         status0: str = (act0["status"] or "") as str;
+        summary: str = (same_asker + " was looking for … (" + count_word + ")") if same_asker else (str(len(rows)) + " people were looking for " + need_sentence(title_need) + ".");
         return
             <li
                 role="status"
@@ -194,12 +247,12 @@ def:pub AnswerAskGroupCard(
                 <KindIcon kind="answer_ask" className="size-4 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 truncate text-body-sm">
                     <span className="font-medium">{resolved_label("answer_ask", status0)}</span>
-                    <span className="text-muted-foreground">
-                        {" · " + str(len(rows)) + " people were looking for " + need_sentence(title_need) + "."}
-                    </span>
+                    <span className="text-muted-foreground">{" · " + summary}</span>
                 </span>
             </li>;
     }
+
+    heading: str = (same_asker + " is looking for … (" + count_word + ")") if same_asker else (str(len(rows)) + " people are looking for " + need_sentence(title_need) + ".");
 
     return
         <li className="flex flex-col gap-3 rounded-lg border bg-card pt-3 pb-4 pl-4 pr-2 shadow-edge">
@@ -215,7 +268,7 @@ def:pub AnswerAskGroupCard(
                 </span>
                 {<ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" /> if open else <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />}
             </button>
-            <h3 className="pr-2 text-body font-medium">{str(len(rows)) + " people are looking for " + need_sentence(title_need) + "."}</h3>
+            <h3 className="pr-2 text-body font-medium">{heading}</h3>
             {if open {
                 <ul className="mr-2 flex flex-col divide-y divide-border rounded-md border bg-secondary/40">
                     {for r in rows {
@@ -224,6 +277,7 @@ def:pub AnswerAskGroupCard(
                             row={r}
                             pending={True if pending[(r["action"] or {})["_jac_id"]] else False}
                             error={(errors[(r["action"] or {})["_jac_id"]] or "") as str}
+                            show_need={bool(same_asker)}
                             onApprove={onApprove}
                             onDismiss={onDismiss}
                         />
@@ -312,7 +366,15 @@ def:pub ActionCard(
         return <ResolvedRow act={act} />;
     }
 
+    # SOH-232 judge pass item 5: an `ask_network` card's draft is this
+    # account's OWN need text going to its network, not a message drafted to
+    # a person (there is no recipient) — "Draft to X"/"Draft" read as if one
+    # was missing. Label it for what it is instead, with a caption that says
+    # where it actually goes.
+    is_ask_network: bool = kind == "ask_network";
     draft_to: str = ("Draft to " + first_name) if first_name else "Draft";
+    draft_label: str = "Your ask" if is_ask_network else (draft_to + " · edit freely");
+    draft_caption: str = "Goes to your network as a need, one line about you and your handle." if is_ask_network else "Nothing sends. Copy it into your own message.";
     return
         <li
             data-action-id={aid}
@@ -325,7 +387,10 @@ def:pub ActionCard(
                 <span className="flex min-w-0 items-center gap-1.5 text-eyebrow text-muted-foreground" title={created_title}>
                     <KindIcon kind={kind} />
                     <span className="truncate">{eyebrow_text}</span>
-                    {(ago and kind != "promise_due") and <span className="shrink-0 font-normal normal-case tracking-normal text-ink-tertiary">{"· " + ago}</span>}
+                    {ago and
+                        <span className="shrink-0 text-caption font-normal normal-case tracking-normal text-ink-tertiary">
+                            {("· " + ago) if eyebrow_text else ago}
+                        </span>}
                 </span>
                 <DropdownMenu modal={False}>
                     <DropdownMenuTrigger
@@ -367,9 +432,9 @@ def:pub ActionCard(
                     {open_key and <SourceQuote span={open_span} note_text="" />}
                 </div>}
             {if act["draft"] {
-                <div className="flex flex-col gap-2 rounded-md border bg-secondary pt-3 pb-3 pl-3 pr-3 mr-2">
+                <div className="flex flex-col gap-2 pr-2">
                     <div className="flex items-center justify-between gap-2">
-                        <label htmlFor={"draft-" + aid} className="text-eyebrow text-muted-foreground">{draft_to + " · edit freely"}</label>
+                        <label htmlFor={"draft-" + aid} className="text-eyebrow text-muted-foreground">{draft_label}</label>
                         <Button size="xs" variant="secondary" onClick={do_copy}>{"Copied" if copied else "Copy"}</Button>
                     </div>
                     <Textarea
@@ -378,9 +443,9 @@ def:pub ActionCard(
                         value={draft_text}
                         disabled={pending}
                         onChange={handle_draft}
-                        className="bg-card text-body-sm"
+                        className="resize-none"
                     />
-                    <span className="text-caption text-muted-foreground">Nothing sends. Copy it into your own message.</span>
+                    <span className="text-caption text-muted-foreground">{draft_caption}</span>
                 </div>
             }}
             {error and <p role="alert" className="pr-2 text-body-sm text-destructive">{error}</p>}
