@@ -142,6 +142,52 @@ test "ImportPeople -> ConfirmPerson -> SkipPerson: the full swipe flow" {
     assert err6["error"] == "not_found";
 }
 
+test "ImportPeople: email/phone/location (SOH-216) kept on a new person, filled-when-blank on reuse" {
+    suffix = _uid();
+    name = f"Priya {suffix} Sundaram";
+
+    r1 = root spawn ImportPeople(
+        rows=[{"name": name, "email": "priya@example.com", "phone": "555-0100", "location": "Ann Arbor"}],
+        source="csv"
+    );
+    result1 = r1.reports[0] as dict[str, any];
+    imported1 = result1["imported"] as list[dict[str, any]];
+    assert len(imported1) == 1;
+    p = imported1[0]["person"] as Person;
+    assert p.email == "priya@example.com";
+    assert p.phone == "555-0100";
+    assert p.location == "Ann Arbor";
+
+    # Re-import the same name with a location only: email/phone (already
+    # set) are left alone; location (already set) is ALSO left alone -
+    # fill-blank-only, same rule org/title already use.
+    r2 = root spawn ImportPeople(
+        rows=[{"name": name, "location": "Detroit"}],
+        source="csv"
+    );
+    result2 = r2.reports[0] as dict[str, any];
+    imported2 = result2["imported"] as list[dict[str, any]];
+    assert len(imported2) == 1;
+    p_again = imported2[0]["person"] as Person;
+    assert jid(p_again) == jid(p);
+    assert p_again.email == "priya@example.com", "reuse must never overwrite an existing non-blank field";
+    assert p_again.location == "Ann Arbor", "reuse must never overwrite an existing non-blank field";
+
+    # A second, previously-blank person: reuse fills email from the row.
+    suffix2 = _uid();
+    name2 = f"Dana {suffix2} Osei";
+    seed = root spawn ImportPeople(rows=[{"name": name2}], source="csv");
+    seed_result = seed.reports[0] as dict[str, any];
+    seeded_person = (seed_result["imported"] as list[dict[str, any]])[0]["person"] as Person;
+    assert seeded_person.email == "";
+
+    fill = root spawn ImportPeople(rows=[{"name": name2, "phone": "555-0200"}], source="csv");
+    fill_result = fill.reports[0] as dict[str, any];
+    filled_person = (fill_result["imported"] as list[dict[str, any]])[0]["person"] as Person;
+    assert jid(filled_person) == jid(seeded_person);
+    assert filled_person.phone == "555-0200";
+}
+
 test "ImportPeople: over-limit rows are bounded and reported as skipped" {
     suffix = _uid();
     rows: list[dict[str, any]] = [];

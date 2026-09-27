@@ -50,7 +50,8 @@ test "person_detail_for: every section present, right age_days, expired, and rel
 
     me = (root ++> Me(name="Person-test Me"))[0];
     p = (me +>:Knows(how_met="conference", last_contact="2026-09-20T00:00:00", status="confirmed", source_note=""):+> Person(
-        name="Person-test Target", status="confirmed", org="Acme", title="Engineer"
+        name="Person-test Target", status="confirmed", org="Acme", title="Engineer",
+        email="target@example.com", phone="555-0199", links=["https://target.example.com"], location="Detroit"
     ))[0];
 
     # One fact, observed exactly 10 days ago.
@@ -105,6 +106,13 @@ test "person_detail_for: every section present, right age_days, expired, and rel
     view = person_detail_for(me, p);
 
     assert (view["person"] as Person).name == "Person-test Target";
+    # SOH-216: contact fields are plain fields on the Person node, so they
+    # already serialize through `person` with no extra code in this module.
+    person_out = view["person"] as Person;
+    assert person_out.email == "target@example.com";
+    assert person_out.phone == "555-0199";
+    assert person_out.links == ["https://target.example.com"];
+    assert person_out.location == "Detroit";
     assert view["how_met"] == "conference";
     assert view["knows_status"] == "confirmed";
     assert view["last_contact"] == "2026-09-20T00:00:00";

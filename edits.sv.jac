@@ -4,10 +4,18 @@ OWNER: Person A. See contracts/walkers.md for the exact report shapes and
 AGENTS.md for the working rules this file must obey:
   - Both walkers are `:priv` (own-root only, JWT required).
   - Only NON-EMPTY (stripped) args overwrite a field; an omitted/blank arg
-    leaves the existing value alone.
+    leaves the existing value alone. Exception: `links` (SOH-216) REPLACES
+    the whole list when the caller passes a non-empty list — there is no
+    per-item "blank means unchanged" for a list argument.
   - `UpdatePerson` never touches `Person.status`, `Knows.last_contact`, or
     any edge other than the caller's own `Knows` edge to that person (and
     only its `how_met` field, at that).
+  - SOH-216 adds contact fields (`email`, `phone`, `links`, `location`) to
+    `UpdatePerson`, all optional, all landing on the `Person` node itself
+    (never crosses accounts — same rule as `org`/`title`). After any of
+    them changes, `refresh_person_tokens(p)` (SOH-215's `identity.sv.jac`)
+    is called IF that module exists on `main` at rebase time; it doesn't
+    yet, so this is a `# TODO(SOH-215)` for now.
   - No `by llm` in this module.
 
 `person_id` is resolved directly among `[me ->:Knows:->]` — same idiom
@@ -43,11 +51,16 @@ def _not_found() -> dict[str, str] {
 # ---------------------------------------------------------------- UpdatePerson
 
 """Find `person_id` among `[me ->:Knows:->]`; on a match, overwrite every
-non-empty (stripped) of `name`/`org`/`title` on the `Person` node and
-`how_met` on the caller's own `Knows` edge to them, then return the
+non-empty (stripped) of `name`/`org`/`title`/`email`/`phone`/`location` on
+the `Person` node, REPLACE `links` when the caller passes a non-empty list,
+and set `how_met` on the caller's own `Knows` edge to them, then return the
 (mutated, same) `Person`. Never touches `status`/`last_contact`/any other
 edge. Returns `{"error": "not_found"}` when `person_id` doesn't match."""
-def update_person_for(me: Me, person_id: str, name: str, org: str, title: str, how_met: str) -> object {
+def update_person_for(
+    me: Me, person_id: str, name: str, org: str, title: str, how_met: str,
+    email: str = "", phone: str = "", links: list[str] | None = None, location: str = ""
+) -> object {
+    effective_links: list[str] = links if links is not None else [];
     target: Person | None = None;
     target_edge: Knows | None = None;
     for p in [me ->:Knows:->] {
@@ -80,6 +93,24 @@ def update_person_for(me: Me, person_id: str, name: str, org: str, title: str, h
         p.title = stripped_title;
     }
 
+    stripped_email = email.strip();
+    if stripped_email {
+        p.email = stripped_email;
+    }
+    stripped_phone = phone.strip();
+    if stripped_phone {
+        p.phone = stripped_phone;
+    }
+    if effective_links {
+        p.links = effective_links;
+    }
+    stripped_location = location.strip();
+    if stripped_location {
+        p.location = stripped_location;
+    }
+    # TODO(SOH-215): once identity.sv.jac lands, call
+    # refresh_person_tokens(p) here when any contact field above changed.
+
     stripped_how_met = how_met.strip();
     if stripped_how_met and target_edge is not None {
         e = target_edge as Knows;
@@ -91,16 +122,21 @@ def update_person_for(me: Me, person_id: str, name: str, org: str, title: str, h
 
 walker:priv UpdatePerson {
     """Overwrite non-empty (stripped) fields on one of the caller's own
-    people. `name`/`org`/`title` land on the `Person` node; `how_met` lands
-    on the caller's own `Knows` edge to that person. Never touches
-    `status`, `last_contact`, or any other edge. Reports `[Person]`, or
-    `[{error: "not_found"}]` when `person_id` isn't one of the caller's own
-    `[me ->:Knows:->]` people."""
+    people. `name`/`org`/`title`/`email`/`phone`/`location` land on the
+    `Person` node (`links` REPLACES when the caller passes a non-empty
+    list); `how_met` lands on the caller's own `Knows` edge to that person.
+    Never touches `status`, `last_contact`, or any other edge. Reports
+    `[Person]`, or `[{error: "not_found"}]` when `person_id` isn't one of
+    the caller's own `[me ->:Knows:->]` people."""
     has person_id: str;
     has name: str = "";
     has org: str = "";
     has title: str = "";
     has how_met: str = "";
+    has email: str = "";
+    has phone: str = "";
+    has links: list[str] = [];
+    has location: str = "";
     has reports: list[object] = [];
 
     can run with Root entry {
@@ -111,7 +147,10 @@ walker:priv UpdatePerson {
         }
         me = existing_me[0];
 
-        result = update_person_for(me, self.person_id, self.name, self.org, self.title, self.how_met);
+        result = update_person_for(
+            me, self.person_id, self.name, self.org, self.title, self.how_met,
+            self.email, self.phone, self.links, self.location
+        );
         report result;
     }
 }

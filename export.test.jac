@@ -49,7 +49,8 @@ test "build_export: Me/goal/card/2 people (Knows + Reported)/fact/intent/promise
     ))[0];
 
     priya = (me +>:Knows(how_met="summit", status="confirmed", source_note=jid(note)):+> Person(
-        name="Export-test Priya", org="Acme Climate", title="Founder", status="confirmed"
+        name="Export-test Priya", org="Acme Climate", title="Founder", status="confirmed",
+        email="priya@example.com", phone="555-0111", links=["https://priya.example.com"], location="Ann Arbor"
     ))[0];
     note +>:Mentions(span="met Priya at the summit"):+> priya;
 
@@ -98,6 +99,11 @@ test "build_export: Me/goal/card/2 people (Knows + Reported)/fact/intent/promise
     assert priya_out["name"] == "Export-test Priya";
     assert priya_out["org"] == "Acme Climate";
     assert priya_out["status"] == "confirmed";
+    # SOH-216
+    assert priya_out["email"] == "priya@example.com";
+    assert priya_out["phone"] == "555-0111";
+    assert priya_out["links"] == ["https://priya.example.com"];
+    assert priya_out["location"] == "Ann Arbor";
 
     # knows
     knows_to_priya = [k for k in (out["knows"] as list[dict[str, any]]) if k["to"] == jid(priya)];

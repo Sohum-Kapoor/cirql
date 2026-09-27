@@ -98,6 +98,40 @@ test "update_person_for: whitespace-only args are treated as empty" {
     assert out.org == "Keep Co";
 }
 
+test "update_person_for: contact fields (email/phone/location) overwrite non-empty only" {
+    me = (root ++> Me(name="Edits-test Me 5"))[0];
+    p = (me +>:Knows(how_met="conference", status="confirmed"):+> Person(
+        name="Edits-test Contact P", email="", phone="", location="", status="confirmed"
+    ))[0];
+
+    result = update_person_for(me, jid(p), "", "", "", "", "old@example.com", "", [], "");
+    out = result as Person;
+    assert out.email == "old@example.com";
+    assert out.phone == "";
+    assert out.location == "";
+
+    result2 = update_person_for(me, jid(p), "", "", "", "", "", "555-1234", [], "Ann Arbor");
+    out2 = result2 as Person;
+    assert out2.email == "old@example.com", "empty email arg must leave the existing value alone";
+    assert out2.phone == "555-1234";
+    assert out2.location == "Ann Arbor";
+}
+
+test "update_person_for: links REPLACES the whole list when non-empty, left alone when empty" {
+    me = (root ++> Me(name="Edits-test Me 6"))[0];
+    p = (me +>:Knows(status="confirmed"):+> Person(
+        name="Edits-test Links P", links=["https://old.example.com"], status="confirmed"
+    ))[0];
+
+    unchanged = update_person_for(me, jid(p), "", "", "", "", "", "", [], "");
+    out_unchanged = unchanged as Person;
+    assert out_unchanged.links == ["https://old.example.com"], "empty links arg must leave the existing list alone";
+
+    replaced = update_person_for(me, jid(p), "", "", "", "", "", "", ["https://new.example.com", "https://second.example.com"], "");
+    out_replaced = replaced as Person;
+    assert out_replaced.links == ["https://new.example.com", "https://second.example.com"];
+}
+
 test "update_person_for: unknown person_id reports not_found" {
     me = (root ++> Me(name="Edits-test Me 4"))[0];
     result = update_person_for(me, "not-a-real-person-id-at-all", "Nope", "", "", "");
@@ -197,11 +231,19 @@ test "isolation: A's person is not_found from B's UpdatePerson, found from A's o
         person_id = str(seeded[0]["_jac_id"]);
         print(f"[edits isolation] A seeded person_id={person_id}");
 
-        a_update = _edits_call(cl, a, "UpdatePerson", {"person_id": person_id, "org": "A's Co"});
+        a_update = _edits_call(cl, a, "UpdatePerson", {
+            "person_id": person_id, "org": "A's Co",
+            "email": "a@example.com", "phone": "555-0100",
+            "links": ["https://a.example.com"], "location": "Ann Arbor"
+        });
         print(f"[edits isolation] A's own UpdatePerson -> {a_update}");
         a_entry = a_update[0] as dict[str, any];
         assert len(a_update) == 1 and "error" not in a_entry, f"A must be able to edit its own person: {a_update}";
         assert str(a_entry["org"]) == "A's Co";
+        assert str(a_entry["email"]) == "a@example.com";
+        assert str(a_entry["phone"]) == "555-0100";
+        assert str(a_entry["location"]) == "Ann Arbor";
+        assert list(a_entry["links"]) == ["https://a.example.com"];
 
         b_update = _edits_call(cl, b, "UpdatePerson", {"person_id": person_id, "org": "B's Co"});
         print(f"[edits isolation] B's UpdatePerson on A's person -> {b_update}");

@@ -11,6 +11,9 @@ plain JSON-serialisable. `Knows.last_contact` is copied verbatim (it is the
 user's own export of their own data) and never read to compute or rank
 anything, per AGENTS.md.
 
+SOH-216: `person_dict` gains `email`/`phone`/`links`/`location` — plain
+fields on the `Person` node, never crossing accounts, same as `org`/`title`.
+
 `build_export(me, cap)` is the deterministic, testable core (mirrors
 `reads.sv.jac`'s `graph_view_for` / `list_promises_raw` pattern): the
 walker resolves "the" caller's `Me` via `[root --> [?:Me]][0]` (ambiguous
@@ -54,7 +57,10 @@ def card_dict(c: Card) -> dict[str, any] {
 }
 
 def person_dict(p: Person) -> dict[str, any] {
-    return {"id": jid(p), "name": p.name, "org": p.org, "title": p.title, "status": p.status};
+    return {
+        "id": jid(p), "name": p.name, "org": p.org, "title": p.title, "status": p.status,
+        "email": p.email, "phone": p.phone, "links": p.links, "location": p.location
+    };
 }
 
 def note_dict(n: Note) -> dict[str, any] {

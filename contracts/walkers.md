@@ -495,3 +495,26 @@ Bounded traversal over the caller's own root: every Note (text capped at 300 cha
       same_person_groups: [ [reply_id, ...] ] }   // only groups of >= 2 replies whose top matches look like the same person
     ```
     `same_reason`: `contact` = an email/phone/link token matched; `name+org` = the name|org token matched; `name` = only the name-alone token matched (both sides have no org; "likely", not "same"). `same_as` = the other replies in the same group (empty when none). Tokens never appear in any report: `IntroReply.match_tokens` (set by `ReplyToRequest` from the friend's top match, hashes only) stays server-side and is not in ReplyView.
+- 2026-09-26 — SOH-216, `search.sv.jac` (`Search`) lands: keyword search across the caller's own people, facts, intents, promises, and notes, plus contact fields (`email`, `phone`, `links`, `location`) added to `UpdatePerson` (`edits.sv.jac`), `ImportPeople` (`imports.sv.jac`), `PersonDetail` (`person.sv.jac`), and `ExportGraph` (`export.sv.jac`). `Search` is `:priv`, own-root only, no `by llm`, deterministic. Schema: no changes (all fields already landed with SOH-215/220's `Person.email/phone/links/location`).
+
+  ### `Search(query: str, limit: int = 25, kinds: list[str] = [])` — SOH-216
+  Reports one dict:
+  ```
+  { query: str, total: int,
+    results: [{ kind: "person"|"fact"|"intent"|"promise"|"note", id: str,
+                text: str, person_id: str, person_name: str, span: str,
+                score: int, observed_at: str }] }
+  ```
+  Own-root only: only `[me ->:Knows:->]` people (and what hangs off them) are ever considered; an archived person, and every Fact/Intent/Promise/Note reached only through them, is skipped entirely. Deterministic scoring: tokenize `query` (lowercase, alnum runs of length >= 2, stopwords dropped); per candidate row, `score = sum over tokens of (3 if the token is a PREFIX of one of the person's name words, 2 if the token appears anywhere in org/title/location/email, 1 per occurrence of the token in the row's own text)`; the whole stripped-lowercased `query`, if it appears as a substring anywhere across name/org/title/location/email/text, DOUBLES the row's score. A row scoring 0 is dropped. A `person` row's own `text` is the person's `name` (so a description-only `Person.name`, e.g. "tall girl from the climbing gym", is found by its own words). `kinds` (empty = every kind) filters which row kinds are built at all. Sort: score descending; ties broken `person` rows first, then newest first (`_parse_naive_utc` on the row's `observed_at` — a `fact`'s own `observed_at`, an `intent`/`promise`'s asserting Note's `captured_at`, a `note`'s own `captured_at`; a `person` row has none, but the kind tie-break already puts it first regardless). `limit` clamped to `[0, 100]` (default 25); `total` counts every scored row BEFORE that clamp. No `Me` yet -> `{ query, results: [], total: 0 }`. `main.jac`: `import from search { Search }`.
+
+  ### `UpdatePerson(...)` gains `email: str = ""`, `phone: str = ""`, `links: list[str] = []`, `location: str = ""` — SOH-216
+  Same non-empty-overwrite rule as `name`/`org`/`title`, except `links`: a non-empty list REPLACES the whole list (no per-item merge). Never crosses accounts. `refresh_person_tokens(p)` (SOH-215's `identity.sv.jac`) is a `# TODO(SOH-215)` in `edits.sv.jac` — that module doesn't exist yet.
+
+  ### `ImportPeople(rows, source)` — unchanged shape, `rows` now also reads `email`/`phone`/`location`
+  Kept on a NEW person (written straight onto the `Person` node, never crossing accounts); on a REUSED person (exact lowercase name match), filled only when the row has a value AND the existing field is still blank — same fill-blank-on-reuse rule `org`/`title` already use.
+
+  ### `PersonDetail(person_id)` — shape unchanged
+  `person.email`/`.phone`/`.links`/`.location` already serialize through the reported `Person` node (plain fields, no code change needed beyond confirming it).
+
+  ### `ExportGraph()` — `people[]` entries gain `email`, `phone`, `links`, `location`
+  Plain fields on the `Person` node, copied the same way `org`/`title`/`status` already are.
