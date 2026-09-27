@@ -12,6 +12,7 @@ import from ..capture.Review { ReviewRow }
 import from ..api { list_promises, complete_promise }
 import from ...lib.text { short_date, ics_for_promise }
 import from ...lib.utils { cn }
+import from ...lib.toast { toast }
 
 def _s(d: any, key: str) -> str {
     if not d {
@@ -67,6 +68,7 @@ def:pub TodayRow(
         ics: str = ics_for_promise(text, due, desc, prid);
         if ics {
             _download_ics(ics, "cirql-promise.ics");
+            toast("Calendar event downloaded", "success");
         }
     }
 

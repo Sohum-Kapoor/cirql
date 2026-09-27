@@ -323,8 +323,8 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                 <CardHeader>
                     <CardTitle>Export my data</CardTitle>
                     <CardDescription>
-                        Download your whole graph as one JSON file — every person, fact, intent,
-                        promise, and note, with where it came from.
+                        Download everything about your people as one JSON file — every person, fact,
+                        intent, promise, and note, with where it came from.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-2">
@@ -397,7 +397,7 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                     <div className="flex flex-col gap-2">
                         <p className="text-body-sm font-medium">Delete my data</p>
                         <p className="text-caption text-muted-foreground">
-                            Removes everything in your graph. Your export is the only copy after this.
+                            Removes everything: your people, notes and card. Your export is the only copy after this.
                         </p>
                         {Boolean(len(list(delete_result.keys())) if delete_result else 0) and (
                             <p className="text-body-sm text-muted-foreground">{"Deleted " + _counts_line(delete_result) + "."}</p>
@@ -408,7 +408,7 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                     <div className="flex flex-col gap-2">
                         <p className="text-body-sm font-medium">Delete account</p>
                         <p className="text-caption text-muted-foreground">
-                            Removes your graph and disables this login. Your username is freed up;
+                            Removes your people and disables this login. Your username is freed up;
                             nothing is kept on the server.
                         </p>
                         <Button variant="destructive" className="w-full focus-visible:ring-inset" onClick={ask_account}>Delete account</Button>
@@ -421,8 +421,8 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                     <AlertDialogHeader>
                         <AlertDialogTitle>Delete your account?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Removes everything in your graph and disables this login. You will be
-                            signed out. Export first if you want a copy. Type DELETE to confirm.
+                            Removes everything: your people, notes and card and disables this login. You
+                            will be signed out. Export first if you want a copy. Type DELETE to confirm.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <div className="flex flex-col gap-1.5">
@@ -455,8 +455,8 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
                     <AlertDialogHeader>
                         <AlertDialogTitle>Delete all your data?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Removes everything in your graph. Your export is the only copy after this.
-                            Type DELETE to confirm.
+                            Removes everything: your people, notes and card. Your export is the only
+                            copy after this. Type DELETE to confirm.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <div className="flex flex-col gap-1.5">
