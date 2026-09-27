@@ -676,6 +676,41 @@ async def:pub delete_my_data(confirm: str) -> dict {
     out = _first_or_error(data["reports"] if data else []);
     return out;
 }
+
+# ---------------------------------------------------------------- Notes timeline (SOH-222, client, brief C notes)
+# ListNotes / DeleteNote are live (notes.sv.jac, SOH-219) -- root spawn below.
+sv import from ..notes { ListNotes, DeleteNote }
+import from .mocks.notes { mock_list_notes, mock_delete_note }
+
+"""ListNotes(limit, before, kind) -> [{ note: Note, people: [{id,name}],
+counts: {facts,intents,promises}, text_preview }], newest first. `kind` "" = every
+kind; `before` (an ISO captured_at) pages older rows, exclusive."""
+async def:pub list_notes(limit: int = 50, before: str = "", kind: str = "") -> list[dict] {
+    rows: list[dict] = [];
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        rows = mock_list_notes(limit, before, kind);
+        return rows;
+    }
+    result = root spawn ListNotes(limit=limit, before=before, kind=kind);
+    rows = result.reports as list[dict];
+    return rows;
+}
+
+"""DeleteNote(note_id) -> { deleted: {facts,intents,promises}, kept_people: int } | { error: "not_found" }.
+The Note and only the facts/intents/promises reachable from it alone are removed; people stay."""
+async def:pub delete_note(note_id: str) -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_delete_note(note_id));
+        return out;
+    }
+    result = root spawn DeleteNote(note_id=note_id);
+    out = _first_or_error(result.reports);
+    return out;
+}
+
 # ---------------------------------------------------------------- Circles + Events (SOH-222 A4)
 # CreateCircle/RenameCircle/DeleteCircle/AddToCircle/RemoveFromCircle/ListCircles and
 # CreateEvent/ListEvents/AddToEvent/RemoveFromEvent/EventPeople/UpdateEvent live on a

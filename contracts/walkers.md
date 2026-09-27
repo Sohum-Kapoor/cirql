@@ -665,3 +665,20 @@ Bounded traversal over the caller's own root: every Note (text capped at 300 cha
 - 2026-09-26 — SOH-222 A5 (`components/search/SearchBox.cl.jac`, OWNER: Person B). Client-only change, no walker shape touched — noted here since it's the first consumer of `Search`:
   - `components/api.cl.jac` gains `search(query, limit=25, kinds=[])` and `recall(question, max_items=40)`. Both are now live: `search()` calls `sv import from ..search { Search }` (`root spawn`, SOH-216 landed on `main`); `recall()` calls the live `sv import from ..recall { Recall }` (`root spawn`, SOH-189). No client shape change needed either way — the mocks (`components/mocks/search.cl.jac`) already matched the documented shapes exactly.
   - Both gated by the existing `mocks_on()`/`?mock=1` switch; `components/mocks/search.cl.jac` adds `mock_search`/`mock_recall` fixtures reusing the SAME pseudonymous people `components/mocks/person.cl.jac`/`goalrank.cl.jac` already use (Maya Chen, Dev Okafor, Lena Park, Sam Ruiz), so a result's person link or a Recall citation chip opens a person sheet with real data instead of two mocks disagreeing on ids.
+- 2026-09-26 — SOH-222 (client, brief C notes): `components/notes/Timeline.cl.jac` needs a notes timeline. These two walkers do not exist on any `*.sv.jac` branch yet — built against this shape via `components/mocks/notes.cl.jac` and `jacSpawn("ListNotes"/"DeleteNote", ...)` in `components/api.cl.jac` (same not-yet-live pattern as `PersonDetail`/`Brief`). A: please build to this shape, or comment on SOH-160 with a different one.
+
+  ### `ListNotes(limit: int = 50, before: str = "", kind: str = "")`
+  Reports one row per Note the caller owns, newest first by `captured_at`:
+  ```
+  [{ note: Note, people: [{ id: str, name: str }],
+     counts: { facts: int, intents: int, promises: int }, text_preview: str }]
+  ```
+  `kind` ∈ `"" | about_me | debrief | paste | import | enrich` (`""` = every kind). `before`, when set, is an ISO `captured_at`: only rows strictly OLDER than it are returned (exclusive), for "Load older" paging. `people` is every Person the note `Mentions` (their current name); `counts` are how many Facts/Intents/Promises this note is the sole source of (see `DeleteNote`). `text_preview` is the note's first ~160 chars (+ `"…"` if truncated) for the collapsed row; the client shows the full `note.text` on expand.
+
+  ### `DeleteNote(note_id: str)`
+  Reports one object:
+  ```
+  { deleted: { facts: int, intents: int, promises: int }, kept_people: [str] } | { error: "not_found" }
+  ```
+  Deletes the Note itself, plus every Fact/Intent/Promise reachable from it via a single `Asserts*` edge that has no OTHER Note asserting the same claim (a fact/intent/promise with two source notes loses only the `Asserts*` edge to this one and survives). Every Person the note `Mentions` is kept regardless — `kept_people` lists their ids. `not_found` when `note_id` isn't a Note the caller owns.
+- 2026-09-26 — SOH-222 correction (client, brief C notes): the `ListNotes`/`DeleteNote` shape drafted above (before `notes.sv.jac`, SOH-219, landed on `main`) got one field wrong — `DeleteNote`'s `kept_people` is an `int` (count), not `[str]`. `components/api.cl.jac` now calls the live walkers via `sv import` + `root spawn`; `components/mocks/notes.cl.jac` updated to match. `Timeline.cl.jac` never rendered `kept_people`, so this was a documentation-only fix. Everything else (both `ListNotes` and `DeleteNote`) matches as shipped.
