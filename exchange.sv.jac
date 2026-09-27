@@ -81,6 +81,23 @@ def now_iso() -> str {
     return datetime.now().isoformat();
 }
 
+"""SOH-229 (judge pass): a need stored as its own sentence ("Someone who
+invests in climate startups and hires university interns.") reads badly
+spliced mid-sentence ("...is looking for Someone who invests...interns..").
+Strips one trailing period (never producing "..") and lowercases the first
+letter UNLESS the need looks like it starts with a proper noun (its second
+character is uppercase, e.g. an acronym or name)."""
+def need_for_interpolation(need: str) -> str {
+    t = need.strip().rstrip(".").rstrip();
+    if not t {
+        return t;
+    }
+    if len(t) >= 2 and t[1].isupper() {
+        return t;
+    }
+    return t[0].lower() + t[1:];
+}
+
 """Root id (dash-less hex) of whoever created node n."""
 def owner_root(n: object) -> str {
     return str(getattr(n, "__jac__").root).replace("-", "");
@@ -112,6 +129,39 @@ def my_card() -> Card | None {
         return None;
     }
     return card_of(me as Me);
+}
+
+"""SOH-229: get-or-create the caller's own Card, the same way PublishCard
+does it (name from Me.name, handle = handle_from_name + jid_suffix, default
+visibility "link" -- PublishCard's own default), so an ask posted before the
+requester ever ran PublishCard still resolves a `from_name` for whoever
+reads the request. It is the requester's OWN Card; nothing crosses
+accounts."""
+def get_or_create_my_card() -> Card {
+    m = my_me();
+    if m is None {
+        me = (root ++> Me(name="me"))[0];
+    } else {
+        me = m as Me;
+    }
+    existing = card_of(me);
+    if existing is not None {
+        card = existing as Card;
+    } else {
+        handle = handle_from_name(me.name or "me") + "-" + jid_suffix(jid(me));
+        card = (me +>:Owns:+> Card(handle=handle, name=me.name, visibility="link"))[0];
+    }
+    # SOH-229: list (and, for a link-visible card, grant) every time, not
+    # only on first creation -- `OnboardMe` already get-or-creates a Card
+    # from `Me.name` but never lists/grants it (that is `PublishCard`'s job),
+    # so a requester who onboarded with a name but never ran PublishCard
+    # still gets a discoverable `from_name`. An existing card's OWN chosen
+    # visibility is never overridden here.
+    list_card(card);
+    if card.visibility == "link" {
+        grant(card, level=ReadPerm);
+    }
+    return card;
 }
 
 """Get-or-create the one Exchange under root.shared (ConnectPerm container)."""
@@ -358,7 +408,11 @@ def visible_to_me(req: IntroRequest) -> bool {
 
 glob NEED_KEY_STOPWORDS: list[str] = [
     "a", "an", "the", "who", "someone", "that", "for", "in", "and", "with",
-    "of", "to", "is", "are", "or"
+    "of", "to", "is", "are", "or",
+    # SOH-229 (judge pass): connective ask-phrasing words only -- job-title
+    # generics like "director" stay IN the key, these do not.
+    "intro", "introduction", "warm", "willing", "want", "need", "looking",
+    "help", "find", "meet", "talk", "speak", "connect", "person", "people"
 ];
 
 """Char-scan tokenizer (same idiom as scoring.fallback_tokens): lowercased
@@ -439,11 +493,9 @@ SOH-229: `goal_text` is stored through `goals.goal_noun_phrase` (already
 imported everywhere it's needed) so it reads as a noun phrase, same as a
 Goal's own stored text."""
 def post_request(need: str, about_line: str, ttl_days: int, audience: str, goal_text: str) -> object {
-    card = my_card();
-    if card is None {
-        return err("no_card");
-    }
-    c = card as Card;
+    # SOH-229: get-or-create rather than error, so a requester who never ran
+    # PublishCard still gets a `from_name` (their own Card, name from Me.name).
+    c = get_or_create_my_card();
     now = datetime.now();
     ex = get_exchange();
     gt = goal_noun_phrase(goal_text.strip()) if goal_text.strip() else "";
@@ -770,7 +822,7 @@ def reply_to_request(request_id: str) -> object {
     kept = [x for x in matches if x["strength"] == "strong" or x["strength"] == "medium"];
     strength = "weak";
     person_id = "";
-    why = "No strong match in your graph.";
+    why = "No strong match among your people.";
     if kept {
         strength = str(kept[0]["strength"]);
         person_id = str(kept[0]["person_id"]);
@@ -897,8 +949,9 @@ walker:priv OptIn {
             basis = facts[0].text.strip().rstrip(".").strip();
         }
         reply.status = "opted_in";
+        need_text = need_for_interpolation(need);
         draft = (
-            f"Hi {person.name}, a friend of mine is looking for {need}. "
+            f"Hi {person.name}, a friend of mine is looking for {need_text}. "
             f"From what you've told me ({basis}), you'd be a great fit. "
             "Would you be open to an intro? No pressure either way."
         );

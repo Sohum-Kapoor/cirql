@@ -410,8 +410,9 @@ test "agent tune: answer_ask needs real token overlap; a real 2-token match name
         assert len(aa2) == 1, rows2;   # only the nurse candidate qualifies, capped list stays at 1
         assert str(aa2[0]["action"]["request_id"]) == req_id;
         why = str(aa2[0]["action"]["why"]);
-        assert "matches:" in why, why;
         assert "nurse" in why.lower() and "detroit" in why.lower(), why;
+        assert "of your people may fit" in why, why;
+        assert "No names are shared until you approve." in why, why;
     } finally {
         shutil.rmtree(tmp_dir, ignore_errors=True);
     }
@@ -524,10 +525,20 @@ test "agent SOH-229: answer_ask title is '<from_name> is looking for <need>.' wh
         _ag_run(cl, a, "DevMakeCard", {"handle": "title-alice", "name": "Alice"});
         # B publishes a link-visible Card -> resolvable via cards.get_card.
         _ag_run(cl, b, "PublishCard", {"visibility": "link", "name": "Bob Jones"});
-        # C never publishes (DevMakeCard only lists nothing) -> falls back to "@handle".
-        c_handle = str(_ag_run(cl, c, "DevMakeCard", {"handle": "title-carol", "name": "Carol"})[0]["handle"]);
+        # C explicitly chooses NOT to be discoverable (handshake_only) ->
+        # falls back to "@handle". (SOH-229: PostRequest's own get-or-create
+        # now lists/grants ANY link-visible card -- including a DevMakeCard-
+        # only one that never ran PublishCard -- so only an explicit
+        # handshake_only choice still exercises the "@handle" fallback.)
+        c_handle = str(_ag_run(cl, c, "PublishCard", {"visibility": "handshake_only", "name": "Carol"})[0]["handle"]);
         seed = dict(_ag_run(cl, a, "DevSeedAgent", {"tag": "title1"})[0]);
         print(f"[agent-title] seed {seed}");
+        # A separate candidate, with resolvable Fact evidence, for C's
+        # differently-worded, differently-matched need below.
+        _ag_run(cl, a, "DevAddPerson", {"name": "Umich Buddy"});
+        _ag_run(cl, a, "DevSeedMatch", {
+            "name": "Umich Buddy", "fact": "Works as a student researcher at the University of Michigan, Umich", "offer": ""
+        });
 
         posted_b = _ag_run(cl, b, "PostRequest", {
             "need": "a climate battery investor", "about_line": "", "audience": "everyone",
@@ -535,8 +546,11 @@ test "agent SOH-229: answer_ask title is '<from_name> is looking for <need>.' wh
         });
         req_b = str(posted_b[0]["_jac_id"]);
 
+        # SOH-229: a DIFFERENT need naming a DIFFERENT candidate (Dev, known
+        # directly via `Knows`, not Maya the investor) -- same need/candidate
+        # as B's would now fold into one action (see the dedup test below).
         posted_c = _ag_run(cl, c, "PostRequest", {
-            "need": "a climate battery investor", "about_line": "", "audience": "everyone"
+            "need": "a student at Umich", "about_line": "", "audience": "everyone"
         });
         req_c = str(posted_c[0]["_jac_id"]);
 
@@ -551,7 +565,7 @@ test "agent SOH-229: answer_ask title is '<from_name> is looking for <need>.' wh
         act_c = by_req[req_c];
 
         assert str(act_b["title"]) == "Bob is looking for a climate battery investor.", act_b;
-        assert str(act_c["title"]) == f"@{c_handle} is looking for a climate battery investor.", act_c;
+        assert str(act_c["title"]) == f"@{c_handle} is looking for a student at Umich.", act_c;
 
         pl_b = json.loads(str(act_b["payload_json"]));
         assert str(pl_b["from_name"]) == "Bob", pl_b;
@@ -560,8 +574,62 @@ test "agent SOH-229: answer_ask title is '<from_name> is looking for <need>.' wh
 
         pl_c = json.loads(str(act_c["payload_json"]));
         assert str(pl_c["from_name"]) == "", pl_c;
-        assert str(pl_c["need_key"]) == "battery climate invest", pl_c;
+        assert str(pl_c["need_key"]) == "at student umich", pl_c;
         assert str(pl_c["goal_text"]) == "", pl_c;
+    } finally {
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "agent SOH-229 (judge pass): two near-duplicate asks (the two Alex needs) fold into one answer_ask card, sibling id added additively" {
+    tmp_dir = tempfile.mkdtemp();
+    try {
+        cl = JacTestClient.from_file(_ag_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data_dup"));
+        a = _ag_reg(cl, "agent_dup_a@example.com");
+        alex = _ag_reg(cl, "agent_dup_alex@example.com");
+
+        _ag_run(cl, a, "DevMakeCard", {"handle": "dup-alice", "name": "Alice"});
+        _ag_run(cl, alex, "PublishCard", {"visibility": "link", "name": "Alex Rivera"});
+
+        # One candidate in A's graph that BOTH differently-worded asks below
+        # independently match (>= 2 tokens each): "the matched people overlap".
+        _ag_run(cl, a, "DevAddPerson", {"name": "Priya Partner"});
+        _ag_run(cl, a, "DevSeedMatch", {
+            "name": "Priya Partner",
+            "fact": "Invests in climate startups and hires university interns every summer",
+            "offer": ""
+        });
+
+        # Two near-duplicate needs (need_key shares >= 2 stems: climate/invest/intern
+        # -- see exchange.test.jac's SOH-229 need_key test for the exact same pair).
+        need1 = "An investor in climate companies who hires summer interns.";
+        need2 = "Someone who invests in climate startups and hires university interns.";
+        posted1 = _ag_run(cl, alex, "PostRequest", {"need": need1, "about_line": "", "audience": "everyone"});
+        req1 = str(posted1[0]["_jac_id"]);
+        posted2 = _ag_run(cl, alex, "PostRequest", {"need": need2, "about_line": "", "audience": "everyone"});
+        req2 = str(posted2[0]["_jac_id"]);
+
+        run1 = dict(_ag_run(cl, a, "RunAgent", {"reason": "dup-run"})[0]);
+        print(f"[agent-dup] run1 {run1}");
+        rows = _ag_actions(cl, a, "open");
+        aa = _ag_by_kind(rows, "answer_ask");
+        assert len(aa) == 1, rows;    # NOT two cards offering the same intro
+
+        act = aa[0]["action"];
+        pl = json.loads(str(act["payload_json"]));
+        # req2 was posted last (newest first in the scan), so it becomes the
+        # surviving card; req1 is folded in as a sibling.
+        assert str(act["request_id"]) == req2, act;
+        assert list(pl["sibling_request_ids"]) == [req1], pl;
+
+        # A second run stays folded -- no duplicate, sibling list not re-added.
+        run2 = dict(_ag_run(cl, a, "RunAgent", {"reason": "dup-run-2"})[0]);
+        print(f"[agent-dup] run2 {run2}");
+        rows2 = _ag_actions(cl, a, "open");
+        aa2 = _ag_by_kind(rows2, "answer_ask");
+        assert len(aa2) == 1, rows2;
+        pl2 = json.loads(str(aa2[0]["action"]["payload_json"]));
+        assert list(pl2["sibling_request_ids"]) == [req1], pl2;
     } finally {
         shutil.rmtree(tmp_dir, ignore_errors=True);
     }
