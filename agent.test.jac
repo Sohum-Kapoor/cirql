@@ -202,6 +202,12 @@ test "agent: RunAgent proposes, dedups, respects dismiss, reopens snooze, approv
         mine = _ag_run(cl, a, "ListMyRequests", {});
         needs = [str(m["request"]["need"]) for m in mine];
         assert "a robotics engineer to run two pilots t1" in needs, needs;
+        # SOH-229: goal_text rides through even though edited_draft replaced
+        # the need - it is the gap goal's own noun phrase, not the edited text.
+        posted_row = [m for m in mine if str(m["request"]["need"]) == "a robotics engineer to run two pilots t1"][0];
+        posted_goal_text = str(posted_row["request"]["goal_text"]);
+        assert posted_goal_text, posted_row;
+        assert posted_goal_text == "a robotics engineer for pilots t1", posted_goal_text;
 
         # ---- approve a draft-only kind stores the edited draft, sends nothing
         rt_ap = dict(_ag_run(cl, a, "ResolveAgentAction", {
