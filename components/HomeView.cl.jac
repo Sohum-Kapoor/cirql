@@ -43,12 +43,13 @@ import from .exchange.Requests { RequestsSection }
 import from .exchange.Inbox { AsksSection }
 import from .agent.AgentInbox { AgentInbox }
 import from .nav.TabBar { TabBar }
+import from .ui.avatar { Avatar }
 import from .search.SearchBox { SearchBox }
 import from .circles.Circles { Circles }
 import from .events.Events { Events }
 import from .notes.Timeline { Timeline }
 import from .people.ImportPeople { ImportPeople }
-import from ..lib.text { join_with }
+import from ..lib.text { join_with, humanize_iso_dates }
 import from ..lib.utils { cn }
 import from .agent.common { since_iso }
 sv import from ..schema { Person }
@@ -108,6 +109,7 @@ def:pub PeopleRow(person: any, onOpen: Callable[[str], None], quiet_label: str =
     pid: str = (person["_jac_id"] or "") as str;
     sub: str = join_with([s for s in [person["title"], person["org"]] if s], ", ");
     unconfirmed: bool = ((person["status"] or "") as str) == "proposed";
+    quiet_label_display: str = humanize_iso_dates(quiet_label);
 
     def handle(e: MouseEvent) {
         if pid {
@@ -120,15 +122,16 @@ def:pub PeopleRow(person: any, onOpen: Callable[[str], None], quiet_label: str =
             <button
                 type="button"
                 onClick={handle}
-                className="flex min-h-11 w-full items-center justify-between gap-2 pt-2.5 pb-2.5 pl-4 pr-3 text-left outline-none transition-colors hover:bg-secondary focus-visible:bg-secondary"
+                className="flex min-h-11 w-full items-center gap-2.5 pt-2.5 pb-2.5 pl-4 pr-3 text-left outline-none transition-colors hover:bg-secondary focus-visible:bg-secondary"
             >
-                <span className="flex min-w-0 flex-col">
+                <Avatar name={(person["name"] or "") as str} />
+                <span className="flex min-w-0 flex-1 flex-col">
                     <span className="flex min-w-0 items-center gap-1.5">
                         <span className="truncate text-body-sm">{person["name"]}</span>
                         {unconfirmed and <Badge variant="outline" className="shrink-0">unconfirmed</Badge>}
                     </span>
                     {sub and <span className="truncate text-caption text-muted-foreground">{sub}</span>}
-                    {quiet_label and <span className="truncate text-caption text-muted-foreground">{quiet_label}</span>}
+                    {quiet_label_display and <span className="truncate text-caption text-muted-foreground">{quiet_label_display}</span>}
                 </span>
                 <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
             </button>

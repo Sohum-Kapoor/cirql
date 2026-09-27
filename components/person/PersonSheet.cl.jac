@@ -28,11 +28,28 @@ import from ..capture.Review { ReviewRow }
 import from ..capture.ReviewEditors { EditorField, EditorFooter }
 import from ..goals.RankList { strength_variant }
 import from ..api { person_detail, brief, complete_promise, draft_follow_up, forget, update_person_contact, archive_person, restore_person }
-import from ...lib.text { join_with, short_date, ics_for_promise, kind_label }
+import from ...lib.text { join_with, short_date, ics_for_promise, kind_label, humanize_iso_dates }
 import from ...lib.utils { cn }
 import from ...lib.toast { toast }
 
 glob _INTENT_LABEL: dict[str, str] = {"need": "wants", "offer": "offers", "open_to": "open to"};
+
+"""Relevance label as user-facing copy — same mapping `components/goals/
+RankList.cl.jac`'s (unexported) `_relevance_label` uses. "known" carries no
+information (the default/no-path-needed case) so it renders nothing (SOH-226
+judge pass 4)."""
+def _relevance_label(label: str) -> str {
+    if label == "known" {
+        return "";
+    }
+    if label == "cold" {
+        return "no path yet";
+    }
+    if label == "route" {
+        return "via a friend";
+    }
+    return label;
+}
 
 """Display only: 0 -> "today", 1 -> "1 day ago", 45 -> "1 month ago", 400 -> "1 year ago"."""
 def:pub age_label(days: any) -> str {
@@ -298,6 +315,7 @@ def:pub PromiseItem(
         ics: str = ics_for_promise(text, due, desc, prid);
         if ics {
             _download_ics(ics, "cirql-promise.ics");
+            toast("Calendar event downloaded", "success");
         }
     }
 
@@ -648,7 +666,7 @@ def:pub PersonSheet(
     # Strings, not the dict, in JSX: `{rel and <X/>}` hands React the empty dict
     # itself when relevance is null (Python `and` returns the falsy operand) and
     # React throws "Objects are not valid as a React child" (judge re-score, SOH-212).
-    rel_label: str = _s(rel, "label");
+    rel_label: str = _relevance_label(_s(rel, "label"));
     rel_strength: str = _s(rel, "strength");
     rel_reason: str = _s(rel, "reason");
     facts: list[dict] = (detail["facts"] or []) as list[dict];
@@ -656,6 +674,7 @@ def:pub PersonSheet(
     promises: list[dict] = (detail["promises"] or []) as list[dict];
     notes: list[dict] = (detail["notes"] or []) as list[dict];
     how_met: str = _s(detail, "how_met");
+    how_met_display: str = humanize_iso_dates(how_met);
     sub: str = join_with([s for s in [_s(person, "org"), _s(person, "title")] if s], " · ");
     done_of: dict = {};
     for row in promises {
@@ -685,7 +704,7 @@ def:pub PersonSheet(
                     <SheetHeader>
                         <SheetTitle>Not found</SheetTitle>
                         <SheetDescription>
-                            {load_error or "This person isn't in your graph any more."}
+                            {load_error or "This person isn't among your people any more."}
                         </SheetDescription>
                         {load_error and
                             <Button size="sm" variant="outline" className="self-start" onClick={retry_load}>Retry</Button>}
@@ -712,7 +731,7 @@ def:pub PersonSheet(
                                 </Button>}
                         </div>
                         <SheetDescription>
-                            {join_with([s for s in [sub, ("met: " + how_met) if how_met else ""] if s], " — ") or "No details yet"}
+                            {join_with([s for s in [sub, ("met: " + how_met_display) if how_met_display else ""] if s], " — ") or "No details yet"}
                         </SheetDescription>
                     </SheetHeader>
                     <SheetBody className="gap-4">
@@ -838,7 +857,7 @@ def:pub PersonSheet(
                             <AlertDialogHeader>
                                 <AlertDialogTitle>{"Forget " + (_s(person, "name") or "this person") + "?"}</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                    Removes them and everything only about them from your graph. Your notes stay.
+                                    Removes them and everything only about them from your people. Your notes stay.
                                 </AlertDialogDescription>
                             </AlertDialogHeader>
                             {forget_error and <p role="alert" className="text-body-sm text-destructive">{forget_error}</p>}
