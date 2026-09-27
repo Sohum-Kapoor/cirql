@@ -3,8 +3,12 @@ people (SOH-180, server half of SOH-181).
 
 OWNER: Person A. See contracts/walkers.md for the exact report shapes.
 Rows are parsed CLIENT-side (B's job); this module only ever sees
-`list[dict]` rows shaped `{ name, org, title, how_met, email }` — unknown
-keys are ignored and `email` is stored nowhere this weekend.
+`list[dict]` rows shaped `{ name, org, title, how_met, email, phone,
+location }` — unknown keys are ignored. SOH-216: `email`/`phone`/`location`
+are now kept, stored on the user's own `Person` node (never crosses
+accounts, same rule as every other contact field) — filled only when the
+row has a value AND the target's existing field is still blank, same
+fill-blank-on-reuse rule `org`/`title` already use.
 
 Rules this file must obey (AGENTS.md):
   - Never guesses: an existing person with the same name (case-insensitive)
@@ -51,10 +55,11 @@ walker:priv ImportPeople {
     """Get-or-create Me; create one `Note(kind="import")`; for every row
     with a non-empty stripped name (deduped within the batch by lowercase
     name, bounded at 500 rows), reuse an existing `[me ->:Knows:->]` person
-    with the same lowercase name (filling blank org/title, never changing
-    status) or create a new `Person(status="proposed")` with a `Knows`
-    edge `status="proposed"`. Every imported person gets one Mentions edge
-    from the note. Reports one dict (contracts/walkers.md)."""
+    with the same lowercase name (filling blank org/title/email/phone/
+    location, never changing status) or create a new
+    `Person(status="proposed")` with a `Knows` edge `status="proposed"`.
+    Every imported person gets one Mentions edge from the note. Reports one
+    dict (contracts/walkers.md)."""
     has rows: list[dict[str, any]];
     has source: str = "csv";
     has reports: list[dict[str, any]] = [];
@@ -117,6 +122,9 @@ walker:priv ImportPeople {
             org = row_str(row, "org");
             title = row_str(row, "title");
             how_met = row_str(row, "how_met");
+            email = row_str(row, "email");
+            phone = row_str(row, "phone");
+            location = row_str(row, "location");
 
             if key in known_by_key {
                 p = known_by_key[key];
@@ -126,10 +134,22 @@ walker:priv ImportPeople {
                 if len(p.title.strip()) == 0 and len(title) > 0 {
                     p.title = title;
                 }
+                if len(p.email.strip()) == 0 and len(email) > 0 {
+                    p.email = email;
+                }
+                if len(p.phone.strip()) == 0 and len(phone) > 0 {
+                    p.phone = phone;
+                }
+                if len(p.location.strip()) == 0 and len(location) > 0 {
+                    p.location = location;
+                }
                 is_new = False;
             } else {
                 effective_how_met = how_met.strip() or f"imported from {self.source}";
-                p = (me +>:Knows(how_met=effective_how_met, status="proposed", source_note=jid(note)):+> Person(name=name, org=org, title=title, status="proposed"))[0];
+                p = (me +>:Knows(how_met=effective_how_met, status="proposed", source_note=jid(note)):+> Person(
+                    name=name, org=org, title=title, status="proposed",
+                    email=email, phone=phone, location=location
+                ))[0];
                 is_new = True;
             }
 
