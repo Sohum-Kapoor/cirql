@@ -22,6 +22,15 @@ def _gid(g: dict) -> str {
     return (g["_jac_id"] or "") as str;
 }
 
+"""First letter capitalised, display only (SOH-232) — never mutates the
+stored goal text."""
+def _cap(s: str) -> str {
+    if not s {
+        return s;
+    }
+    return s[0].upper() + s[1:];
+}
+
 """One goal in the switch list; a named handler, not a lambda inside a JSX for."""
 def:pub GoalOption(goal: dict, is_active: bool, disabled: bool, onPick: Callable[[str], None]) -> JsxElement {
     def handle_pick(e: MouseEvent) {
@@ -42,7 +51,7 @@ def:pub GoalOption(goal: dict, is_active: bool, disabled: bool, onPick: Callable
                 onClick={handle_pick}
             >
                 <CheckIcon className={cn("mt-0.5 size-4 shrink-0 text-link", "" if is_active else "invisible")} />
-                <span className="min-w-0 flex-1 break-words text-body-sm">{goal["text"] as str}</span>
+                <span className="min-w-0 flex-1 break-words text-body-sm">{_cap(goal["text"] as str)}</span>
             </Button>
         </li>;
 }
@@ -105,7 +114,8 @@ def:pub GoalPicker(
     error: str,
     onSwitch: Callable[[str], None],
     onCreate: Callable[[str], None],
-    onClose: Callable[[str], None]
+    onClose: Callable[[str], None],
+    onboarding: bool = False
 ) -> JsxElement {
     has open: bool = False,
         adding: bool = False,
@@ -177,6 +187,10 @@ def:pub GoalPicker(
         onClose(active_id);
     }
 
+    def finish_pick(e: MouseEvent) {
+        open = False;
+    }
+
     if not active_id {
         return
             <section aria-label="Goal" className="flex flex-col gap-4 rounded-lg border bg-card pt-4 pb-4 pl-4 pr-4 shadow-edge">
@@ -212,7 +226,7 @@ def:pub GoalPicker(
             >
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="text-eyebrow text-muted-foreground">Goal</span>
-                    <span className="line-clamp-2 text-body font-medium">{active["text"] as str}</span>
+                    <span className="line-clamp-2 text-body font-medium">{_cap(active["text"] as str)}</span>
                 </div>
                 <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
             </Button>
@@ -221,7 +235,9 @@ def:pub GoalPicker(
                 <SheetContent id="goal-sheet">
                     <SheetHeader>
                         <SheetTitle>Goals</SheetTitle>
-                        <SheetDescription>One active goal. Switching keeps each goal's ranking.</SheetDescription>
+                        <SheetDescription>
+                            {"One active goal at a time. You can switch later." if onboarding else "One active goal. Switching keeps each goal's ranking."}
+                        </SheetDescription>
                     </SheetHeader>
                     <SheetBody>
                         <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card">
@@ -241,6 +257,14 @@ def:pub GoalPicker(
                                 onSave={save_new}
                                 onCancel={cancel_new}
                             />
+                        } elif onboarding {
+                            <div className="flex items-center justify-between gap-2">
+                                <Button variant="secondary" disabled={busy} onClick={start_add}>
+                                    <PlusIcon />
+                                    New goal
+                                </Button>
+                                <Button variant="ghost" className="text-muted-foreground" disabled={busy} onClick={finish_pick}>Done</Button>
+                            </div>
                         } else {
                             <div className="flex items-center justify-between gap-2">
                                 <Button variant="secondary" disabled={busy} onClick={start_add}>

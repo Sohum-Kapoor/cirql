@@ -5,24 +5,24 @@
 impl app.signup -> None {
     signup_result: dict | None = None;
     login_ok: bool = False;
-    auth_pending = True;
+    signup_pending = True;
     status = "";
     try {
         signup_result = await jacSignup(email, password);
     } except Exception as e {
-        auth_pending = False;
-        status = "signup failed: " + str(e);
+        signup_pending = False;
+        status = "Couldn't create the account. That email may already be in use.";
         return;
     }
     if not signup_result["success"] {
-        auth_pending = False;
-        status = "signup failed (email may be in use)";
+        signup_pending = False;
+        status = "Couldn't create the account. That email may already be in use.";
         return;
     }
     login_ok = await jacLogin(email, password);
-    auth_pending = False;
+    signup_pending = False;
     if not login_ok {
-        status = "login after signup failed";
+        status = "Account created, but sign-in failed. Try logging in.";
         return;
     }
     status = "";
@@ -31,16 +31,16 @@ impl app.signup -> None {
 
 impl app.login -> None {
     ok: bool = False;
-    auth_pending = True;
+    login_pending = True;
     status = "";
     try {
         ok = await jacLogin(email, password);
     } except Exception as e {
         ok = False;
     }
-    auth_pending = False;
+    login_pending = False;
     if not ok {
-        status = "invalid credentials";
+        status = "Invalid email or password.";
         return;
     }
     enter();
@@ -58,7 +58,6 @@ impl app.logout -> None {
     onboard = {};
     card = {};
     rows = empty_rows();
-    captured_count = -1;
     capture_error = "";
     rank_rows = [];
     rank_error = "";
@@ -110,11 +109,17 @@ impl app.logout -> None {
     me_name = "";
     me_about = "";
     status = "";
+    clear_onboard_progress();
 }
 
 # ---------------------------------------------------------------- routing after login
 
-"""GetMe reports a Me -> home; no Me yet -> onboarding step 1."""
+"""GetMe reports a Me -> home; no Me yet -> onboarding step 1. Either way,
+first checks for onboarding progress this tab already had in flight (SOH-232):
+`OnboardMe` (step 1) already creates the Me node, so a bare "Me exists" check
+would otherwise drop a mid-onboarding reload/re-login on Home with zero
+people. `finish` clears the saved progress once onboarding actually
+completes, so a returning, fully onboarded user still lands on Home."""
 impl app.enter -> None {
     me_list: list = [];
     view = "loading";
@@ -124,9 +129,21 @@ impl app.enter -> None {
     } except Exception as e {
         me_list = [];
     }
+    progress: dict = load_onboard_progress();
+    saved_step: int = (progress["step"] or 0) as int;
+    resumable: bool = saved_step >= 1 and saved_step <= 4;
     if len(me_list) > 0 {
         me_name = (me_list[0].name or "") as str;
         me_about = (me_list[0].about or "") as str;
+        if resumable {
+            step = saved_step;
+            onboard_name = ((progress["name"] or me_name) as str);
+            about = ((progress["about"] or me_about) as str);
+            card = (progress["card"] or {}) as dict;
+            rows = (progress["rows"] or empty_rows()) as list[dict];
+            view = "onboarding";
+            return;
+        }
         view = "home";
         refresh();
         load_goals();
@@ -134,6 +151,13 @@ impl app.enter -> None {
         load_incoming();
         load_friends();
         agent_on_open();
+    } elif resumable {
+        step = saved_step;
+        onboard_name = ((progress["name"] or "") as str);
+        about = ((progress["about"] or "") as str);
+        card = (progress["card"] or {}) as dict;
+        rows = (progress["rows"] or empty_rows()) as list[dict];
+        view = "onboarding";
     } else {
         step = 1;
         view = "onboarding";
@@ -296,7 +320,10 @@ impl app.set_row(i: int, field: str, value: str) -> None {
     rows = next_rows;
 }
 
-"""Step 3 -> one paste blob ("Name: how.\n...") -> Capture(text, kind="paste")."""
+"""Step 3 -> one paste blob ("Name: how.\n...") -> Capture(text, kind="paste");
+one Continue, no second click (SOH-232): success advances to step 4 and ranks
+the active goal immediately, failure stays on step 3 with the error (the
+button becomes Retry)."""
 impl app.submit_people -> None {
     lines: list[str] = [];
     for r in rows {
@@ -318,19 +345,15 @@ impl app.submit_people -> None {
         out = await capture(blob, "paste", "", "added when you set up Cirql (" + today_month_day() + ")");
     } except Exception as e {
         capture_pending = False;
-        capture_error = "Couldn't capture those. " + str(e);
+        capture_error = "Couldn't add your people. " + str(e);
         return;
     }
-    captured_count = len((out["people"] or []) as list);
     capture_pending = False;
-}
-
-impl app.skip_people -> None {
     step = 4;
     start_recall();
 }
 
-impl app.people_next -> None {
+impl app.skip_people -> None {
     step = 4;
     start_recall();
 }
@@ -382,6 +405,7 @@ impl app.recall_add_goal(text: str) -> None {
 }
 
 impl app.finish -> None {
+    clear_onboard_progress();
     set_tab("home");
     view = "home";
     refresh();

@@ -17,6 +17,16 @@ import from "..ui.field" { Field, FieldLabel, FieldGroup }
 import from ..goals.GoalPicker { GoalPicker }
 import from "...lib.text" { join_lines, split_lines }
 
+"""First letter capitalised, display only (SOH-232) — never mutates the
+stored value; the drafted headline/goal/interests come back lowercase-first
+from the model."""
+def _cap(s: str) -> str {
+    if not s {
+        return s;
+    }
+    return s[0].upper() + s[1:];
+}
+
 def:pub CardStep(
     card: dict,
     goals: list[dict],
@@ -67,11 +77,8 @@ def:pub CardStep(
         <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-1">
                 <h2 className="text-card-title">Your card</h2>
-                <p className="text-body-sm text-muted-foreground">
-                    Preview: you'll publish it later. A card is the only thing that can be granted read-only to someone else.
-                </p>
                 <p className="text-caption text-muted-foreground">
-                    {"Off by default · nobody can read this yet. You grant it one person at a time." if visibility == "handshake_only" else "Once published, anyone with your link can read this card."}
+                    {"Preview: only a card you publish is ever granted read-only to someone else. " + ("Off by default, nobody can read this yet. You grant it one person at a time." if visibility == "handshake_only" else "Once published, anyone with your link can read it.")}
                 </p>
             </div>
 
@@ -82,13 +89,14 @@ def:pub CardStep(
                 onSwitch={onSwitchGoal}
                 onCreate={onCreateGoal}
                 onClose={onCloseGoal}
+                onboarding={True}
             />
 
             <section className="flex flex-col gap-2">
                 <h3 className="text-eyebrow text-muted-foreground">Interests</h3>
                 <div className="flex flex-wrap gap-2">
                     {for it in interests {
-                        <Badge key={it["_jac_id"]} variant="secondary">{it["topic"]}</Badge>
+                        <Badge key={it["_jac_id"]} variant="secondary">{_cap(it["topic"] as str)}</Badge>
                     }}
                 </div>
             </section>
@@ -96,7 +104,16 @@ def:pub CardStep(
             <section className="flex flex-col gap-4 rounded-lg border bg-card pt-4 pb-4 pl-4 pr-4 shadow-edge">
                 <FieldGroup>
                     {text_field("handle", "Handle", "your-handle")}
-                    {text_field("headline", "Headline", "What you do, in one line")}
+                    <Field>
+                        <FieldLabel htmlFor="card-headline">Headline</FieldLabel>
+                        <Textarea
+                            id="card-headline"
+                            rows={2}
+                            value={_cap((card["headline"] or "") as str)}
+                            placeholder="What you do, in one line"
+                            onChange={lambda e: ChangeEvent { onFieldChange("headline", e.target.value); }}
+                        />
+                    </Field>
                     <Field>
                         <FieldLabel htmlFor="card-about">About</FieldLabel>
                         <Textarea
