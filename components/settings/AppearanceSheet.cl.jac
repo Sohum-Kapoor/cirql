@@ -31,12 +31,13 @@ def:pub AppearanceSheet(
 
     return
         <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent aria-label="Appearance">
+            <SheetContent aria-label="Settings">
                 <SheetHeader>
-                    <SheetTitle>Appearance</SheetTitle>
+                    <SheetTitle>Settings</SheetTitle>
                     <SheetDescription>System follows your phone. Your choice is kept on this device.</SheetDescription>
                 </SheetHeader>
                 <SheetBody>
+                    <h3 className="text-eyebrow text-muted-foreground">Appearance</h3>
                     <Tabs value={mode} onValueChange={change}>
                         <TabsList aria-label="Theme" className="w-full">
                             <TabsTrigger value="light">Light</TabsTrigger>
