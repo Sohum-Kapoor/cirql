@@ -46,8 +46,6 @@ def _public_origin() -> str {
 }
 
 def:pub CardQR(handle: str, visibility: str) -> JsxElement {
-    has copied: bool = False;
-
     origin: str = _public_origin();
     url: str = (origin + "/card/" + handle) if (origin and handle) else "";
 
@@ -58,7 +56,6 @@ def:pub CardQR(handle: str, visibility: str) -> JsxElement {
         } except Exception {
             ok = False;
         }
-        copied = ok;
         if ok {
             toast("Link copied", "success");
         }
@@ -102,10 +99,11 @@ def:pub CardQR(handle: str, visibility: str) -> JsxElement {
                 <div className="rounded-md p-3" style={{"backgroundColor": "#ffffff"}}>
                     <QRCodeSVG value={url} size={176} fgColor="#000000" bgColor="#ffffff" level="M" />
                 </div>
-                <span className="w-full truncate text-center text-body-sm text-muted-foreground">{url}</span>
-                <Button size="sm" variant="outline" className="w-full" onClick={do_copy}>
-                    {"Copied" if copied else "Copy link"}
-                </Button>
+                <span className="w-full text-center text-caption text-muted-foreground">Scan or share the link</span>
+                <Button size="sm" variant="outline" className="w-full" onClick={do_copy}>Copy link</Button>
+                <p className="text-caption text-muted-foreground">
+                    Scanning opens your card only while it is shared by link.
+                </p>
             </CardContent>
         </Card>;
 }

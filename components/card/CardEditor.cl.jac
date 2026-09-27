@@ -28,6 +28,10 @@ import from ...lib.text { join_lines, split_lines }
 import from ..api_card { my_card, publish_card_full }
 import from ...lib.toast { toast }
 
+def _visibility_state(v: str) -> str {
+    return "anyone with the link" if v == "link" else "only people you hand it to";
+}
+
 """Non-blank, trimmed lines only — an editor textarea with a trailing blank
 line (or all blank) should never turn into `[""]` on save."""
 def _clean_lines(text: str) -> list[str] {
@@ -57,12 +61,12 @@ def:pub CardEditor() -> JsxElement {
         contact_pref: str = "",
         name: str = "",
         visibility: str = "link",
+        saved_visibility: str = "link",
         handle: str = "",
         updated_at: str = "",
         saving: bool = False,
         save_error: str = "",
-        save_state: str = "",
-        copied: bool = False;
+        save_state: str = "";
 
     def apply_card(card: dict) {
         headline = (card["headline"] or "") as str;
@@ -74,6 +78,7 @@ def:pub CardEditor() -> JsxElement {
         contact_pref = (card["contact_pref"] or "") as str;
         name = (card["name"] or "") as str;
         visibility = (card["visibility"] or "link") as str;
+        saved_visibility = visibility;
         handle = (card["handle"] or "") as str;
         updated_at = (card["updated_at"] or "") as str;
     }
@@ -86,8 +91,8 @@ def:pub CardEditor() -> JsxElement {
             if card is not None {
                 apply_card(card as dict);
             }
-        } except Exception as err {
-            load_error = "Couldn't load your card. " + str(err);
+        } except Exception {
+            load_error = "Couldn't load your card. Check your connection and retry.";
         }
         loaded = True;
     }
@@ -163,7 +168,9 @@ def:pub CardEditor() -> JsxElement {
         } except Exception {
             ok = False;
         }
-        copied = ok;
+        if ok {
+            toast("Handle copied", "success");
+        }
     }
 
     preview_looking_for: list[str] = _clean_lines(looking_for_text);
@@ -173,15 +180,28 @@ def:pub CardEditor() -> JsxElement {
 
     if not loaded {
         return
-            <div className="flex flex-col gap-3 p-4">
-                <Skeleton className="h-5 w-1/2" />
-                <Skeleton className="h-24 w-full" />
-                <Skeleton className="h-24 w-full" />
+            <div role="status" aria-label="Loading your card" className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                    <Skeleton className="h-3.5 w-16" />
+                    <Skeleton className="h-11 w-full" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                    <Skeleton className="h-3.5 w-20" />
+                    <Skeleton className="h-11 w-full" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                    <Skeleton className="h-3.5 w-14" />
+                    <Skeleton className="h-24 w-full" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                    <Skeleton className="h-3.5 w-28" />
+                    <Skeleton className="h-24 w-full" />
+                </div>
             </div>;
     }
 
     return
-        <div className="flex flex-col gap-4 p-4">
+        <div className="flex flex-col gap-4">
             {load_error and
                 <div className="flex items-center gap-2">
                     <p role="alert" className="flex-1 text-body-sm text-destructive">{load_error}</p>
@@ -190,7 +210,6 @@ def:pub CardEditor() -> JsxElement {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>My card</CardTitle>
                     <CardDescription>What you hand people when they ask what you're up to.</CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
@@ -240,8 +259,14 @@ def:pub CardEditor() -> JsxElement {
                         <Label>Who can see this</Label>
                         <Tabs value={visibility} onValueChange={change_visibility}>
                             <TabsList aria-label="Visibility" className="w-full">
-                                <TabsTrigger value="link">Anyone with the link</TabsTrigger>
-                                <TabsTrigger value="handshake_only">Only people I hand it to</TabsTrigger>
+                                <TabsTrigger
+                                    value="link"
+                                    className="data-active:border-primary data-active:bg-primary data-active:text-primary-foreground"
+                                >Anyone with the link</TabsTrigger>
+                                <TabsTrigger
+                                    value="handshake_only"
+                                    className="data-active:border-primary data-active:bg-primary data-active:text-primary-foreground"
+                                >Only people I hand it to</TabsTrigger>
                             </TabsList>
                         </Tabs>
                         {visibility == "link" and
@@ -252,15 +277,16 @@ def:pub CardEditor() -> JsxElement {
                             <p className="text-caption text-muted-foreground">
                                 Isolated by construction until you hand it to someone yourself. Nothing is granted yet.
                             </p>}
+                        <p className="text-caption text-muted-foreground">{"Currently: " + _visibility_state(saved_visibility)}</p>
                     </div>
 
                     {handle and
                         <div className="flex items-center justify-between gap-2 rounded-md border bg-secondary pt-2 pb-2 pl-3 pr-3">
                             <div className="flex min-w-0 flex-col">
-                                <span className="text-caption text-muted-foreground">Your handle · share your handle</span>
+                                <span className="text-caption text-muted-foreground">Your handle</span>
                                 <span className="truncate text-body-sm font-medium">{handle}</span>
                             </div>
-                            <Button size="sm" variant="outline" onClick={do_copy_handle}>{"Copied" if copied else "Copy"}</Button>
+                            <Button size="sm" variant="outline" onClick={do_copy_handle}>Copy</Button>
                         </div>}
 
                     {save_error and
@@ -276,20 +302,23 @@ def:pub CardEditor() -> JsxElement {
                 </CardFooter>
             </Card>
 
-            <CardPreview
-                name={name}
-                handle={handle}
-                headline={headline}
-                about={about}
-                looking_for={preview_looking_for}
-                can_offer={preview_can_offer}
-                links={preview_links}
-                interests={preview_interests}
-                contact_pref={contact_pref}
-                updated_at={updated_at}
-                visibility={visibility}
-            />
+            {not load_error and
+                <div className="flex flex-col gap-4">
+                    <CardPreview
+                        name={name}
+                        handle={handle}
+                        headline={headline}
+                        about={about}
+                        looking_for={preview_looking_for}
+                        can_offer={preview_can_offer}
+                        links={preview_links}
+                        interests={preview_interests}
+                        contact_pref={contact_pref}
+                        updated_at={updated_at}
+                        visibility={visibility}
+                    />
 
-            <CardQR handle={handle} visibility={visibility} />
+                    <CardQR handle={handle} visibility={visibility} />
+                </div>}
         </div>;
 }

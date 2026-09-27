@@ -18,21 +18,7 @@ import from ..ui.collapsible { Collapsible, CollapsibleTrigger, CollapsibleConte
 import from ..ui.button { buttonVariants }
 import from ..ui.icons { ChevronRightIcon }
 import from ...lib.utils { cn }
-
-def _pad2(n: int) -> str {
-    s: str = str(n);
-    return "0" + s if len(s) < 2 else s;
-}
-
-"""Today, "YYYY-MM-DD" — local (not UTC — `toISOString()` rolls over to the
-next day for anyone west of UTC in the evening), display only."""
-def _today_str() -> str {
-    d: any = new(Date);  # jac:ignore[W2001,E1053]
-    y: int = int(d.getFullYear());  # jac:ignore[W2001]
-    m: int = int(d.getMonth()) + 1;  # jac:ignore[W2001]
-    day: int = int(d.getDate());  # jac:ignore[W2001]
-    return str(y) + "-" + _pad2(m) + "-" + _pad2(day);
-}
+import from ...lib.text { today_month_day }
 
 """The page's <title> ("Cirql"), falling back if it's ever empty."""
 def _page_title() -> str {
@@ -41,20 +27,19 @@ def _page_title() -> str {
     return s or "Cirql";
 }
 
-""""Cirql · build 2026-09-27" — the footer's always-visible version line
-(SOH-226), outside any accordion."""
+""""Cirql · build Sep 27" — the footer's always-visible version line
+(SOH-226/SOH-232), outside any accordion. Short local date, never ISO."""
 def:pub today_build_line() -> str {
-    return _page_title() + " · build " + _today_str();
+    return _page_title() + " · build " + today_month_day();
 }
 
 def:pub AboutPanel() -> JsxElement {
     return
         <Collapsible className="overflow-hidden rounded-md">
             <CollapsibleTrigger
-                aria-label="How Cirql works · expand or collapse"
                 className={cn(
                     buttonVariants().call(None, {"variant": "ghost", "size": "row"}),
-                    "flex-row items-center justify-between rounded-md focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 [&[data-state=open]>span>svg]:rotate-90"
+                    "flex-row items-center justify-between rounded-md pt-2 pb-2 pl-1 pr-1 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 [&[data-state=open]>span>svg]:rotate-90"
                 )}
             >
                 <span className="flex items-center gap-1.5 text-body-sm">
@@ -74,7 +59,7 @@ def:pub AboutPanel() -> JsxElement {
                     </section>
 
                     <section className="flex flex-col gap-1">
-                        <h3 className="text-eyebrow text-muted-foreground">What leaves your phone</h3>
+                        <h3 className="text-eyebrow text-muted-foreground">What leaves your device</h3>
                         <p>
                             Your notes go to Gemini to be read, and the audio goes to a
                             transcription service. Nothing is sent to any person. Your graph
@@ -82,18 +67,18 @@ def:pub AboutPanel() -> JsxElement {
                         </p>
                         <p>
                             Across accounts, the only thing that ever crosses is a card you
-                            wrote, granted read-only to one specific person, and, on the
-                            exchange, a need, one line about you, and your handle. Blinded
+                            wrote, granted read-only to one specific person, and, in your
+                            friends' asks, a need, one line about you, and your handle. Blinded
                             identity tokens (hashes, not names) let two friends' replies be
                             recognized as the same person without a name crossing.
                         </p>
                     </section>
 
                     <section className="flex flex-col gap-1">
-                        <h3 className="text-eyebrow text-muted-foreground">The exchange, step by step</h3>
+                        <h3 className="text-eyebrow text-muted-foreground">Asking your network, step by step</h3>
                         <ol className="flex list-decimal flex-col gap-0.5 pl-5">
                             <li>You ask.</li>
-                            <li>A friend's agent searches only its own graph and answers with a count.</li>
+                            <li>Cirql searches only your friend's own graph and answers with a count.</li>
                             <li>The friend approves.</li>
                             <li>The contact opts in.</li>
                             <li>A card is revealed to you.</li>

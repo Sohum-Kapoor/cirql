@@ -10,7 +10,7 @@
 <style>
 :root{
   color-scheme:light dark;
-  --bg:#fafafa;
+  --bg:#ffffff;
   --card:#f5f6f6;
   --ink:#18181b;
   --ink-muted:#3c4047;
@@ -24,11 +24,11 @@
   --radius:12px;
 }
 :root.dark{
-  --bg:#0e1018;
-  --card:#15171f;
+  --bg:#010102;
+  --card:#0f1011;
   --ink:#f4f5fa;
   --ink-muted:#d0d6e0;
-  --muted:#9a9fb5;
+  --muted:#8a8f98;
   --border:#23252a;
   --border-strong:#34343a;
   --primary:#5e6ad2;
@@ -38,11 +38,11 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not(.light){
-    --bg:#0e1018;
-    --card:#15171f;
+    --bg:#010102;
+    --card:#0f1011;
     --ink:#f4f5fa;
     --ink-muted:#d0d6e0;
-    --muted:#9a9fb5;
+    --muted:#8a8f98;
     --border:#23252a;
     --border-strong:#34343a;
     --primary:#5e6ad2;
@@ -62,7 +62,7 @@ body{
 }
 main{max-width:640px;margin:0 auto;padding:0 16px 64px}
 a{color:var(--link)}
-.eyebrow{font-size:12px;letter-spacing:0.4px;text-transform:uppercase;color:var(--muted);font-weight:600;margin:0 0 6px}
+.eyebrow{font-size:13px;letter-spacing:0.4px;color:var(--muted);font-weight:500;margin:0 0 6px}
 .muted{color:var(--muted)}
 .topbar{
   max-width:640px;margin:0 auto;padding:16px;
@@ -70,15 +70,6 @@ a{color:var(--link)}
 }
 .brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px}
 .brand img{width:24px;height:24px;border-radius:6px}
-.theme-btn{
-  border:1px solid var(--border-strong);
-  background:var(--card);
-  color:var(--ink);
-  border-radius:8px;
-  padding:6px 10px;
-  font-size:13px;
-  cursor:pointer;
-}
 
 .hero{padding:20px 0 8px;text-align:center}
 .hero img{width:72px;height:72px;border-radius:18px;margin:8px auto 16px;display:block}
@@ -88,8 +79,9 @@ a{color:var(--link)}
 
 .btn{
   display:inline-flex;align-items:center;justify-content:center;
-  border-radius:var(--radius);
-  padding:12px 20px;
+  height:40px;
+  border-radius:8px;
+  padding:0 20px;
   font-size:15px;
   font-weight:500;
   text-decoration:none;
@@ -154,14 +146,15 @@ section > p.lead{color:var(--muted);margin:0 0 20px;font-size:15px}
   border-radius:var(--radius);padding:18px;
 }
 .stats{display:flex;flex-wrap:wrap;gap:16px;margin:14px 0}
-.stat{min-width:76px}
+.stat{flex:1 1 150px;min-width:150px}
 .stat b{display:block;font-size:20px;letter-spacing:-0.3px}
 .stat span{font-size:12px;color:var(--muted)}
 .builtwith p{color:var(--ink-muted);font-size:14px;margin:0 0 4px}
 
 footer{
+  max-width:640px;margin:0 auto;box-sizing:border-box;
   border-top:1px solid var(--border);
-  padding:24px 0 0;
+  padding:24px 16px 24px;
   display:flex;flex-direction:column;gap:14px;
   font-size:13px;color:var(--muted);
 }
@@ -176,7 +169,6 @@ footer{
     <img src="/static/icon/icon-192.png" alt="" width="24" height="24">
     Cirql
   </div>
-  <button class="theme-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode">Theme</button>
 </div>
 
 <main>
@@ -249,10 +241,10 @@ footer{
     <p class="eyebrow">Built at JacHacks 2026</p>
     <h2>Built end to end in Jac</h2>
     <div class="builtwith">
-      <p>Cirql was built in about a day at JacHacks UMich, almost entirely in Jac: the graph, the walkers that read and write it, the client screens, and the tests that check every claim.</p>
+      <p>Cirql was built in about a day at JacHacks UMich, almost entirely in Jac: the data model, the server logic that reads and writes it, the client screens, and the tests that check every claim.</p>
       <div class="stats">
         <div class="stat"><b>43</b><span>modules</span></div>
-        <div class="stat"><b>108</b><span>walkers</span></div>
+        <div class="stat"><b>108</b><span>server functions</span></div>
         <div class="stat"><b>41</b><span>test suites</span></div>
         <div class="stat"><b>399</b><span>tests</span></div>
         <div class="stat"><b>98.9%</b><span>Jac by line</span></div>
@@ -272,17 +264,10 @@ footer{
 </footer>
 
 <script>
-(function () {
-  var root = document.documentElement;
-  var saved = localStorage.getItem("cirql-site-theme");
-  if (saved === "dark" || saved === "light") { root.classList.add(saved); }
-  document.getElementById("theme-toggle").addEventListener("click", function () {
-    var next = root.classList.contains("dark") ? "light" : "dark";
-    root.classList.remove("dark", "light");
-    root.classList.add(next);
-    localStorage.setItem("cirql-site-theme", next);
-  });
-})();
+try {
+  var t = localStorage.getItem('cirql-theme');
+  if (t === 'dark' || t === 'light') { document.documentElement.classList.add(t); }
+} catch (e) {}
 </script>
 </body>
 </html>
