@@ -132,12 +132,13 @@ def node_tip(n: any) -> str {
 
 def short_label(n: any) -> str {
     label: str = (n["label"] or "") as str;
-    limit: int = 28 if n["kind"] == "goal" else 18;
+    limit: int = 22 if n["kind"] == "goal" else 18;
     return label[:limit - 1] + "…" if len(label) > limit else label;
 }
 
-"""What an edge says when its node is focused: how_met / "reported" / strength."""
-def edge_label(e: any) -> str {
+"""What an edge says, in full: how_met / "reported" / strength. Never truncated -
+this is what the "Ties as a list" disclosure exists to show."""
+def full_edge_label(e: any) -> str {
     text: str = "";
     if e["kind"] == "relevant_to" {
         text = ((e["strength"] or e["label"] or "relevant") as str) + " for the goal";
@@ -149,14 +150,22 @@ def edge_label(e: any) -> str {
             text = text + " · proposed";
         }
     }
-    return text[:31] + "…" if len(text) > 32 else text;
+    return text;
+}
+
+"""Short form for the on-canvas floating label next to a focused edge (capped
+so labels don't pile into unreadable ribbons); the list view uses the full text."""
+def edge_label(e: any) -> str {
+    text: str = full_edge_label(e);
+    return text[:23] + "…" if len(text) > 24 else text;
 }
 
 def end_id(end: any) -> str {
     return (end["id"] if end and end["id"] else end) as str;
 }
 
-"""Text form of every tie touching `nid`: "Maya Okafor · knows · proposed"."""
+"""Text form of every tie touching `nid`: "Maya Okafor · knows · proposed" - full
+text, never truncated."""
 def tie_lines(nid: str, by_id: dict, edges: list[dict]) -> list[str] {
     out: list[str] = [];
     for e in edges {
@@ -168,7 +177,7 @@ def tie_lines(nid: str, by_id: dict, edges: list[dict]) -> list[str] {
         }
         if other {
             on: dict = (by_id[other] or {}) as dict;
-            out = out + [((on["label"] or "someone") as str) + " · " + edge_label(e)];
+            out = out + [((on["label"] or "someone") as str) + " · " + full_edge_label(e)];
         }
     }
     return out;
@@ -189,7 +198,7 @@ def:pub GraphTieRow(item: dict, ties: list[str], onOpen: Callable[[str], None] |
             } else {
                 <span className="text-body-sm font-medium">{label}</span>
             }}
-            {len(ties) > 0 and <span className="text-caption text-muted-foreground">{join_with(ties, "; ")}</span>}
+            {len(ties) > 0 and <span className="whitespace-normal break-words text-caption text-muted-foreground">{join_with(ties, "; ")}</span>}
             {len(ties) == 0 and <span className="text-caption text-muted-foreground">no ties yet</span>}
         </li>;
 }
@@ -199,7 +208,7 @@ def noop() -> None {
 }
 
 """Lay out and draw `graph` into `svg_el`; returns the effect cleanup."""
-def draw(svg_el: any, graph: dict, open_ref: any, on_select: any) -> any {
+def draw(svg_el: any, graph: dict, open_ref: any, on_select: any, on_settled: any) -> any {
     if not svg_el or not graph or not graph["nodes"] {
         return noop;
     }
@@ -238,7 +247,7 @@ def draw(svg_el: any, graph: dict, open_ref: any, on_select: any) -> any {
             }
             adj[e["from"]][e["to"]] = True;
             adj[e["to"]][e["from"]] = True;
-            links = links + [{"source": e["from"], "target": e["to"], "kind": e["kind"], "strength": e["strength"], "label": e["label"]}];
+            links = links + [{"source": e["from"], "target": e["to"], "kind": e["kind"], "strength": e["strength"], "label": e["label"], "idx": len(links)}];
         }
     }
 
@@ -252,6 +261,19 @@ def draw(svg_el: any, graph: dict, open_ref: any, on_select: any) -> any {
         .style("stroke-linecap", "round")
         .style("opacity", edge_opacity);
     link_sel.append("title").text(lambda(d: any) -> str { return (d["label"] or d["kind"]) as str; });
+    # Drawn before the node layer so a focused node's label always paints ON TOP
+    # of edge labels (never the other way around) - SOH-232.
+    elabel_sel: any = layer.append("g").selectAll("text").data(links).join("text")
+        .text(edge_label)
+        .attr("text-anchor", "middle")
+        .style("display", "none")
+        .style("font-size", "10px")
+        .style("font-weight", "500")
+        .style("fill", "var(--muted-foreground)")
+        .style("paint-order", "stroke")
+        .style("stroke", "var(--card)")
+        .style("stroke-width", "3px")
+        .style("pointer-events", "none");
     node_sel: any = layer.append("g").selectAll("g").data(nodes).join("g")
         .style("cursor", lambda(d: any) -> str { return "pointer" if d["kind"] == "person" else "grab"; });
     node_sel.append("circle")
@@ -277,23 +299,27 @@ def draw(svg_el: any, graph: dict, open_ref: any, on_select: any) -> any {
         .style("stroke-width", "3px")
         .style("pointer-events", "none");
     node_sel.append("title").text(node_tip);
-    elabel_sel: any = layer.append("g").selectAll("text").data(links).join("text")
-        .text(edge_label)
-        .attr("text-anchor", "middle")
-        .attr("dy", "-3")
-        .style("display", "none")
-        .style("font-size", "10px")
-        .style("font-weight", "500")
-        .style("fill", "var(--muted-foreground)")
-        .style("paint-order", "stroke")
-        .style("stroke", "var(--card)")
-        .style("stroke-width", "3px")
-        .style("pointer-events", "none");
 
     focus: dict = {"id": "", "node": None};
 
     def touches(d: any, fid: str) -> bool {
         return end_id(d["source"]) == fid or end_id(d["target"]) == fid;
+    }
+
+    """Current on-screen length of an edge from its endpoints' live simulation
+    coordinates - used to hide labels on edges too short to hold text."""
+    def edge_len(d: any) -> float {
+        sx: float = d["source"]["x"] as float;
+        sy: float = d["source"]["y"] as float;
+        tx: float = d["target"]["x"] as float;
+        ty: float = d["target"]["y"] as float;
+        dx: float = tx - sx;
+        dy: float = ty - sy;
+        return Math.sqrt(dx * dx + dy * dy) as float;  # jac:ignore[W2001]
+    }
+
+    def label_visible(d: any, fid: str) -> bool {
+        return fid != "" and touches(d, fid) and edge_len(d) >= 80.0;
     }
 
     def apply_focus(fid: str) -> None {
@@ -306,7 +332,7 @@ def draw(svg_el: any, graph: dict, open_ref: any, on_select: any) -> any {
             return edge_opacity(d) if not fid or touches(d, fid) else 0.08;
         });
         elabel_sel.style("display", lambda(d: any) -> str {
-            return "block" if fid and touches(d, fid) else "none";
+            return "block" if label_visible(d, fid) else "none";
         });
     }
 
@@ -331,10 +357,10 @@ def draw(svg_el: any, graph: dict, open_ref: any, on_select: any) -> any {
                 .strength(0.35)
         )
         .force("charge", forceManyBody().strength(-260.0 * k))
-        .force("center", forceCenter(width / 2, height / 2))
-        .force("collide", forceCollide().radius(lambda(d: any) -> int { return (d["r"] as int) + 16; }))
-        .force("x", forceX(width / 2).strength(0.03))
-        .force("y", forceY(height / 2).strength(0.07));
+        .force("center", forceCenter(width / 2, height / 2).strength(0.3))
+        .force("collide", forceCollide().radius(lambda(d: any) -> int { return (d["r"] as int) + 18; }))
+        .force("x", forceX(width / 2).strength(0.02))
+        .force("y", forceY(height / 2).strength(0.02));
 
     sim.on("tick", lambda {
         link_sel
@@ -343,10 +369,51 @@ def draw(svg_el: any, graph: dict, open_ref: any, on_select: any) -> any {
             .attr("x2", lambda(d: any) -> float { return d["target"]["x"] as float; })
             .attr("y2", lambda(d: any) -> float { return d["target"]["y"] as float; });
         node_sel.attr("transform", lambda(d: any) -> str { return "translate(" + str(d["x"]) + "," + str(d["y"]) + ")"; });
+        # Offset each edge label perpendicular to its edge, alternating side by
+        # edge index, so labels touching the same node don't stack on top of
+        # each other or the node's own label (SOH-232).
         elabel_sel
-            .attr("x", lambda(d: any) -> float { return ((d["source"]["x"] as float) + (d["target"]["x"] as float)) / 2; })
-            .attr("y", lambda(d: any) -> float { return ((d["source"]["y"] as float) + (d["target"]["y"] as float)) / 2; });
+            .attr("x", lambda(d: any) -> float {
+                sx: float = d["source"]["x"] as float;
+                sy: float = d["source"]["y"] as float;
+                tx: float = d["target"]["x"] as float;
+                ty: float = d["target"]["y"] as float;
+                mx: float = (sx + tx) / 2;
+                dx: float = tx - sx;
+                dy: float = ty - sy;
+                len_: float = Math.sqrt(dx * dx + dy * dy) as float;  # jac:ignore[W2001]
+                if len_ < 1.0 {
+                    return mx;
+                }
+                nx: float = 0.0 - (dy / len_);
+                sign: float = 1.0 if (d["idx"] as int) % 2 == 0 else -1.0;
+                return mx + nx * 10.0 * sign;
+            })
+            .attr("y", lambda(d: any) -> float {
+                sx: float = d["source"]["x"] as float;
+                sy: float = d["source"]["y"] as float;
+                tx: float = d["target"]["x"] as float;
+                ty: float = d["target"]["y"] as float;
+                my: float = (sy + ty) / 2;
+                dx: float = tx - sx;
+                dy: float = ty - sy;
+                len_: float = Math.sqrt(dx * dx + dy * dy) as float;  # jac:ignore[W2001]
+                if len_ < 1.0 {
+                    return my;
+                }
+                ny: float = dx / len_;
+                sign: float = 1.0 if (d["idx"] as int) % 2 == 0 else -1.0;
+                return my + ny * 10.0 * sign;
+            })
+            .style("display", lambda(d: any) -> str {
+                return "block" if label_visible(d, (focus["id"] or "") as str) else "none";
+            });
     });
+    # Fires once the layout has actually settled (alpha decayed below the
+    # threshold) - not manually stopped - so the caller can hold its loading
+    # skeleton up until then instead of flashing an empty-looking canvas
+    # while the simulation is still spreading nodes out (SOH-232).
+    sim.on("end", lambda { on_settled(True); });
 
     drag_behavior: any = drag()
         .on("start", lambda(event: any, d: any) {
@@ -411,12 +478,13 @@ def draw(svg_el: any, graph: dict, open_ref: any, on_select: any) -> any {
     };
 }
 
-"""`corner`: floating in the graph's corner (md and up); else an inline row under it (phones)."""
+"""`corner`: floating in the canvas's TOP-left corner (md and up, clear of the
+fixed bottom nav at every viewport height); else an inline row under it (phones)."""
 def:pub GraphLegend(corner: bool = False) -> JsxElement {
     return
         <div
             className={(
-                "pointer-events-none absolute bottom-2 left-2 hidden flex-col gap-1 rounded-md border bg-background/85 pt-2 pb-2 pl-2.5 pr-2.5 backdrop-blur md:flex"
+                "pointer-events-none absolute top-2 left-2 hidden flex-col gap-1 rounded-md border bg-background/85 pt-2 pb-2 pl-2.5 pr-2.5 backdrop-blur md:flex"
                 if corner
                 else "flex flex-wrap gap-x-4 gap-y-1 md:hidden"
             ) + " text-caption text-muted-foreground"}
@@ -453,6 +521,7 @@ def:pub GraphView(
         selected: dict = {},
         openRef: Ref[any] = Ref(None),
         loading: bool = True,
+        settled: bool = False,
         error: str = "",
         svgRef: Ref[any] = Ref(),
         reqRef: Ref[str] = Ref("");
@@ -465,6 +534,7 @@ def:pub GraphView(
         token: str = goal_id + ":" + str(Date.now());  # jac:ignore[W2001]
         reqRef.current = token;
         loading = True;
+        settled = False;
         error = "";
         out: dict = {};
         try {
@@ -488,6 +558,10 @@ def:pub GraphView(
         selected = sel;
     }
 
+    def set_settled(v: bool) -> None {
+        settled = v;
+    }
+
     def open_selected(e: MouseEvent) {
         pid: str = (selected["id"] or "") as str;
         if pid and on_open_person {
@@ -497,11 +571,20 @@ def:pub GraphView(
 
     useEffect(lambda {
         selected = {};
-        return draw(svgRef.current, graph, openRef, set_selected);
+        settled = False;
+        return draw(svgRef.current, graph, openRef, set_selected, set_settled);
     }, [graph]);
 
     all_nodes: list[dict] = (graph["nodes"] or []) as list[dict];
     people: int = len([n for n in all_nodes if n["kind"] == "person"]);
+    # First-ever load: nothing fetched yet, no `<svg>` in the DOM at all.
+    first_load: bool = loading and not graph["nodes"];
+    # Data has arrived (or a stale copy is still showing while a re-fetch runs)
+    # but the force layout hasn't settled: the `<svg>` stays mounted (so its ref
+    # can drive the simulation to completion) with a skeleton overlaid on top,
+    # so the canvas never shows an empty-looking card while nodes are still
+    # spreading out (SOH-232).
+    settling: bool = (not first_load) and (not loading) and people > 0 and not settled and not error;
     has_goal: bool = len([n for n in all_nodes if n["kind"] == "goal"]) > 0;
     all_edges: list[dict] = (graph["edges"] or []) as list[dict];
     by_id: dict = {};
@@ -518,7 +601,7 @@ def:pub GraphView(
     );
 
     return
-        <section aria-label="Your people" className="flex flex-col gap-2 pb-24">
+        <section aria-label="Your people" className="flex flex-col gap-2 pb-32">
             <div className="flex items-center justify-between gap-2">
                 <h2 className="text-eyebrow text-muted-foreground">Your people</h2>
                 <span className="text-caption tabular-nums text-muted-foreground">
@@ -531,10 +614,10 @@ def:pub GraphView(
                     <Button size="sm" variant="outline" onClick={load_graph}>Retry</Button>
                 </div>}
             <div
-                className={"relative " + breakout_cls + " overflow-hidden rounded-lg border bg-card shadow-edge" + ("" if height else " h-[440px] md:h-[560px] lg:h-[70vh]")}
+                className={"relative " + breakout_cls + " overflow-hidden rounded-lg border bg-card shadow-edge" + ("" if height else " aspect-[7/5] min-h-[380px] max-h-[70vh]")}
                 style={{"height": height} if height else {}}
             >
-                {if loading and not graph["nodes"] {
+                {if first_load {
                     <div role="status" aria-label="Loading your people" className="flex h-full flex-col items-center justify-center gap-3">
                         <Skeleton className="size-10 rounded-full" />
                         <Skeleton className="h-3 w-40" />
@@ -551,8 +634,16 @@ def:pub GraphView(
                         aria-label={"Graph of you, " + str(people) + " people" + (" and your goal" if has_goal else "") + ". The same ties are listed as text below."}
                         className={"block h-full w-full touch-none select-none" + (" opacity-60" if loading else "")}
                     />
-                    <GraphLegend corner={True} />
-                    if selected["id"] {
+                    if settling {
+                        <div role="status" aria-label="Loading your people" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-card">
+                            <Skeleton className="size-10 rounded-full" />
+                            <Skeleton className="h-3 w-40" />
+                        </div>
+                    }
+                    if not settling {
+                        <GraphLegend corner={True} />
+                    }
+                    if not settling and selected["id"] {
                         <div className="absolute top-2 right-2 flex max-w-[calc(100%_-_16px)] items-center gap-2 rounded-md border bg-background/90 pt-1.5 pb-1.5 pl-3 pr-1.5 shadow-edge backdrop-blur">
                             <span className="truncate text-caption font-medium">{selected["label"] as str}</span>
                             {selected["kind"] == "person" and
@@ -573,6 +664,6 @@ def:pub GraphView(
                         }}
                     </ul>
                 </details>}
-            {people > 0 and <p className="text-caption text-muted-foreground">Drag to move · scroll or pinch to zoom · tap a node to focus it, tap it again to open · tap empty space to clear.</p>}
+            {people > 0 and <p className="text-caption text-muted-foreground">Drag to move · pinch or scroll to zoom · tap a person to focus, tap again to open.</p>}
         </section>;
 }
