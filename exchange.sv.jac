@@ -34,7 +34,7 @@ import from schema {
     Posted, RepliedTo, ReplyPrivate, ClaimedIntro
 }
 import from cards { listed_cards, list_card, handle_taken, get_card }
-import from scoring { score_against_need }
+import from scoring { score_against_need, collect_candidates, overlap_hits, polish_reason }
 import from onboard { handle_from_name, jid_suffix }
 import from identity { tokens_for, group_same_person }
 import from drafts { first_name }
@@ -780,9 +780,43 @@ walker:priv ListIncomingRequests {
     }
 }
 
+"""SOH-229: the deterministic fallback `reply_to_request` runs when
+`score_against_need` came back with no strong/medium match — whether that is
+because the model itself assessed everything weak/no-fit, or because the
+model call raised and `score_against_need`'s own 1-token `fallback_results`
+ran. Reuses the SAME >=2-content-stem overlap rule `agent.step_answer_ask`
+uses for its "N of your people may fit" proposal (`scoring.overlap_hits`),
+so a reply can never disagree with the proposal that led the requester's
+friend here. Always reports `strength: "weak"` (this rule never claims more
+than a shared keyword — same ceiling as `scoring.fallback_results`); `why`
+names the matched tokens, `polish_reason`d like every other `why` this
+module reports."""
+def overlap_fallback_kept(me: Me, need: str, exclude_handles: list[str]) -> list[dict[str, object]] {
+    now = datetime.now();
+    candidates = collect_candidates(me, exclude_handles, now);
+    out: list[dict[str, object]] = [];
+    for h in overlap_hits(candidates, need) {
+        matched = h["matched"] as list[str];
+        out.append({
+            "person_id": h["person_id"],
+            "strength": "weak",
+            "why": polish_reason(f"Shares {', '.join(matched)} with the need."),
+            "evidence_ids": h["evidence_ids"]
+        });
+    }
+    return out;
+}
+
 """SOH-223: ReplyToRequest's body as a plain def so RunAgent's approve can
 call it on the caller's own root (a nested spawn's reports leak into the
-outer walker's stream). Returns an err dict or the ReplyView."""
+outer walker's stream). Returns an err dict or the ReplyView.
+
+SOH-229: specific error codes replace the old blanket `invalid_state`:
+`own_request` (the caller posted this request themselves), `not_visible`
+(audience/blocked gate), `expired` (declined or past `expires_at`). A
+second reply from the SAME account to the SAME request is no longer an
+error at all — it is idempotent and returns the existing ReplyView (a
+double-submit race no longer needs client-side handling)."""
 def reply_to_request(request_id: str) -> object {
     n = load(request_id);
     if not isinstance(n, IntroRequest) {
@@ -794,7 +828,7 @@ def reply_to_request(request_id: str) -> object {
     req = n as IntroRequest;
     rid = jid(req);
     if owner_root(req) == jid(root) {
-        return err("invalid_state");
+        return err("own_request");
     }
     if not visible_to_me(req) {
         return err("not_visible");
@@ -802,11 +836,11 @@ def reply_to_request(request_id: str) -> object {
     me_root = jid(root);
     for r in shared_replies() {
         if owner_root(r) == me_root and r.request_id == rid {
-            return err("invalid_state");
+            return view(r);   # idempotent: a race/double-submit sees the existing reply
         }
     }
-    if req.status == "declined" or (req.expires_at and req.expires_at < now_iso()) {
-        return err("invalid_state");
+    if request_closed(req) {
+        return err("expired");
     }
     m = my_me();
     if m is None {
@@ -820,6 +854,9 @@ def reply_to_request(request_id: str) -> object {
     card = c as Card;
     matches = score_against_need(me, req.need, [req.from_handle]);
     kept = [x for x in matches if x["strength"] == "strong" or x["strength"] == "medium"];
+    if not kept {
+        kept = overlap_fallback_kept(me, req.need, [req.from_handle]);
+    }
     strength = "weak";
     person_id = "";
     why = "No strong match among your people.";

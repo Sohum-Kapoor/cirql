@@ -302,6 +302,124 @@ def fallback_strength(need: str, evidence: list[dict[str, str]]) -> str {
     return "";
 }
 
+# ---------------------------------------------------------------- content-word overlap (SOH-229)
+#
+# A second, TIGHTER deterministic rule than `fallback_strength` above: at
+# least two DISTINCT need tokens (allowing a simple plural/suffix match, not
+# just an exact string) must each name something in a candidate's own
+# facts/intents/title/org text. Moved here from `agent.sv.jac` (where it was
+# `step_answer_ask`'s private `_answer_ask_hits`) so `exchange.reply_to_request`
+# can call the SAME rule as its own fallback when `score_against_need` (model
+# or its own 1-token `fallback_results`) returns no strong/medium match --
+# otherwise the agent's answer_ask proposal ("N of your people may fit") and
+# the real reply ("match_count: 0") disagreed. Never assigns a strength
+# itself -- callers decide weak vs medium.
+
+"""True when `a` and `b` (each already `fallback_tokens`: lowercased, alnum,
+>= 4 chars, not a stopword) name the same idea allowing for a simple plural/
+suffix (`nurse` <-> `nurses`): equal, or one is a prefix of the other."""
+def tok_match(a: str, b: str) -> bool {
+    if a == b {
+        return True;
+    }
+    return a.startswith(b) or b.startswith(a);
+}
+
+"""Collapse `tokens` onto one representative per `tok_match` family, so a
+plural/singular pair IN THE SAME TEXT (e.g. "nurse nurses") never counts as
+two independent signals. First token seen for a family wins; order
+otherwise preserved."""
+def dedupe_need_tokens(tokens: list[str]) -> list[str] {
+    out: list[str] = [];
+    for t in tokens {
+        dup = False;
+        for o in out {
+            if tok_match(t, o) {
+                dup = True;
+                break;
+            }
+        }
+        if not dup {
+            out.append(t);
+        }
+    }
+    return out;
+}
+
+"""The distinct tokens of `need` (`fallback_tokens`, deduped by `tok_match`
+family) that also name something in THIS ONE candidate's own
+facts/intents/title/org text -- never anywhere else on the root. Order
+follows the need's own token order."""
+def matched_need_tokens(need: str, cand: dict[str, any]) -> list[str] {
+    p = cand["person"] as Person;
+    text = f"{p.title} {p.org}";
+    for e in cand["evidence"] as list[dict[str, str]] {
+        text = text + " " + e["text"];
+    }
+    cand_tokens = fallback_tokens(text);
+    matched: list[str] = [];
+    for nt in dedupe_need_tokens(fallback_tokens(need)) {
+        for ct in cand_tokens {
+            if tok_match(nt, ct) {
+                if nt not in matched {
+                    matched.append(nt);
+                }
+                break;
+            }
+        }
+    }
+    return matched;
+}
+
+"""Evidence items from THIS candidate that name something in `need`,
+allowing the same plural/prefix match `matched_need_tokens` uses."""
+def evidence_hits_for_need(need: str, cand: dict[str, any]) -> list[dict[str, str]] {
+    need_tokens = dedupe_need_tokens(fallback_tokens(need));
+    hits: list[dict[str, str]] = [];
+    for e in cand["evidence"] as list[dict[str, str]] {
+        for ct in fallback_tokens(e["text"]) {
+            found = False;
+            for nt in need_tokens {
+                if tok_match(nt, ct) {
+                    found = True;
+                    break;
+                }
+            }
+            if found {
+                hits.append(e);
+                break;
+            }
+        }
+    }
+    return hits;
+}
+
+"""SOH-229: a candidate is KEPT only when at least 2 DISTINCT (by `tok_match`
+family) need tokens name something in that candidate's OWN
+facts/intents/title/org text -- tighter than `fallback_strength`'s bare
+1-token scan, and prefix/plural-tolerant where `fallback_strength` requires
+an exact string. Each kept item: {"person_id", "evidence_ids", "matched"}
+(`matched` is that candidate's own matched need tokens, for a product-copy
+`why`). Never assigns a strength -- see callers."""
+def overlap_hits(candidates: list[dict[str, any]], need: str) -> list[dict[str, any]] {
+    out: list[dict[str, any]] = [];
+    for cand in candidates {
+        matched = matched_need_tokens(need, cand);
+        if len(matched) < 2 {
+            continue;
+        }
+        hits = evidence_hits_for_need(need, cand);
+        evidence = cand["evidence"] as list[dict[str, str]];
+        source = hits if hits else evidence;
+        evidence_ids: list[str] = [];
+        for e in source {
+            evidence_ids.append(e["jid"]);
+        }
+        out.append({"person_id": jid(cand["person"] as Person), "evidence_ids": evidence_ids, "matched": matched});
+    }
+    return out;
+}
+
 # Stable order: strong, then medium, then weak.
 def order_by_strength(items: list[dict[str, any]]) -> list[dict[str, any]] {
     strong: list[dict[str, any]] = [];

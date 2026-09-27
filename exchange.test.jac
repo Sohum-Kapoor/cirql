@@ -128,6 +128,23 @@ def _stub_model_medium() -> any {
     return orig;
 }
 
+"""SOH-229: force the MODEL path to fail deterministically (independent of
+whether a live `.env`/`GOOGLE_API_KEY` happens to be reachable from this
+process's cwd) so `score_against_need`'s own 1-token `fallback_results` runs
+and `ReplyToRequest`'s `kept` gate (strong/medium only) comes back empty --
+the exact precondition the SOH-229 overlap-agreement fallback needs to
+exercise. Same idiom as `agent.test.jac`'s `_ag_stub_scorer`."""
+def _stub_model_fails() -> any {
+    mod = sys.modules.get("scoring");
+    assert mod is not None, "scoring module not loaded in-process";
+    orig = getattr(mod, "score_need");
+    def fake(need: str, candidates_text: str) -> NeedMatches {
+        raise RuntimeError("model stubbed out in tests");
+    }
+    setattr(mod, "score_need", fake);
+    return orig;
+}
+
 def _restore_model(orig: any) {
     mod = sys.modules.get("scoring");
     if mod is not None and orig is not None {
@@ -230,9 +247,15 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
         assert int(rv["match_count"]) >= 0 and str(rv["status"]) == "pending";
         assert int(rv["match_count"]) >= 1, f"seeded offer should keep Priya as medium+: {rv}";
         reply_id = str(rv["_jac_id"]);
-        # replied -> no longer incoming for B; a second reply is refused
+        # replied -> no longer incoming for B; a second reply is idempotent
+        # (SOH-229): the SAME reply comes back, never an error (a double-submit
+        # race no longer needs client-side handling).
         assert req_id not in [str(r["_jac_id"]) for r in _run(cl, b, "ListIncomingRequests", {})];
-        assert _err(_run(cl, b, "ReplyToRequest", {"request_id": req_id})) == "invalid_state";
+        again_rv = _run(cl, b, "ReplyToRequest", {"request_id": req_id})[0];
+        assert str(again_rv["_jac_id"]) == reply_id, again_rv;
+        assert int(again_rv["match_count"]) == int(rv["match_count"]) and str(again_rv["strength"]) == str(rv["strength"]), (rv, again_rv);
+        # The requester's own request, and one already declined by A -> specific codes.
+        assert _err(_run(cl, a, "ReplyToRequest", {"request_id": req_id})) == "own_request";
 
         # B's own replies, with the friend-private "why" (never in the view).
         b_mine = _run(cl, b, "ListMyReplies", {});
@@ -385,6 +408,56 @@ test "exchange SOH-229 (judge pass): OptIn draft never mid-sentence-capitalizes 
     }
 }
 
+test "exchange SOH-229: ReplyToRequest's fallback agrees with the answer_ask proposal's >=2-stem overlap rule when the model finds no strong/medium match" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_ex_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "ex_overlap_a@example.com");
+        b = _reg(cl, "ex_overlap_b@example.com");
+
+        # The judge's exact repro evidence and need.
+        _run(cl, b, "DevAddPerson", {"name": "Priya Rao", "me_name": "Bob"});
+        seeded = _run(cl, b, "DevSeedMatch", {
+            "name": "Priya Rao",
+            "fact": "Priya is a partner at Northwind Climate Fund.",
+            "offer": "takes two summer interns a year"
+        });
+        assert "person_id" in dict(seeded[0]), seeded;
+
+        _card(cl, a, "I'm Alice, building a battery-recycling startup.", "Alice");
+        _card(cl, b, "I'm Bob, I run a climate meetup.", "Bob");
+
+        need = "Someone who invests in climate startups and hires university interns.";
+        posted = _run(cl, a, "PostRequest", {"audience": "everyone", "need": need, "about_line": ""});
+        req_id = str(posted[0]["_jac_id"]);
+
+        # Force the model path to fail (deterministic regardless of whether a
+        # live .env happens to be reachable): score_against_need's own
+        # 1-token fallback_results runs and is filtered to nothing by
+        # ReplyToRequest's strong/medium `kept` gate -- this IS the bug
+        # repro. The reply must still find Priya via the deterministic
+        # overlap rule (climate, interns), weak, count 1.
+        orig = _stub_model_fails();
+        try {
+            rv = _run(cl, b, "ReplyToRequest", {"request_id": req_id})[0];
+        } finally {
+            _restore_model(orig);
+        }
+        print(f"[ex overlap] ReplyToRequest -> {rv}");
+        assert int(rv["match_count"]) == 1, rv;
+        assert str(rv["strength"]) == "weak", rv;
+
+        why = str(_run(cl, b, "ListMyReplies", {})[0]["why"]);
+        print(f"[ex overlap] why -> {why!r}");
+        assert "climate" in why.lower() and "intern" in why.lower(), why;
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
 test "exchange: state machine refuses skipped or foreign transitions" {
     tmp_dir = tempfile.mkdtemp();
     client: (JacTestClient | None) = None;
@@ -450,7 +523,12 @@ test "exchange: expired and declined requests are not incoming" {
         assert live in incoming, incoming;
         assert expired not in incoming, incoming;
         assert withdrawn not in incoming, incoming;
-        assert _err(_run(cl, b, "ReplyToRequest", {"request_id": expired})) == "invalid_state";
+        assert _err(_run(cl, b, "ReplyToRequest", {"request_id": expired})) == "expired";
+        # SOH-229: a declined request also reports "expired" (both are "closed
+        # to replies" — request_closed folds them together), never a bare
+        # invalid_state; the requester's own (still-open) request is "own_request".
+        assert _err(_run(cl, b, "ReplyToRequest", {"request_id": withdrawn})) == "expired";
+        assert _err(_run(cl, a, "ReplyToRequest", {"request_id": live})) == "own_request";
 
         statuses = {str(x["request"]["_jac_id"]): str(x["request"]["status"]) for x in _run(cl, a, "ListMyRequests", {})};
         assert statuses[expired] == "expired", statuses;
