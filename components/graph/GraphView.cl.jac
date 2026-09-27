@@ -510,8 +510,15 @@ def:pub GraphView(
     }
     listed: list[dict] = [n for n in all_nodes if n["kind"] != "goal"];
 
+    breakout_cls: str = (
+        "ml-[calc(50%_-_min(50vw_-_16px,600px))] w-[min(calc(100vw_-_32px),1200px)]"
+        if height else
+        "ml-[calc(50%_-_min(50vw_-_16px,600px))] w-[min(calc(100vw_-_32px),1200px)]"
+        + " md:ml-[calc(50%_-_min(50vw_-_16px,424px))] md:w-[min(calc(100vw_-_32px),848px)]"
+    );
+
     return
-        <section aria-label="Your graph" className="flex flex-col gap-2">
+        <section aria-label="Your graph" className="flex flex-col gap-2 pb-24">
             <div className="flex items-center justify-between gap-2">
                 <h2 className="text-eyebrow text-muted-foreground">Your graph</h2>
                 <span className="text-caption tabular-nums text-muted-foreground">
@@ -524,7 +531,7 @@ def:pub GraphView(
                     <Button size="sm" variant="outline" onClick={load_graph}>Retry</Button>
                 </div>}
             <div
-                className={"relative ml-[calc(50%_-_min(50vw_-_16px,600px))] w-[min(calc(100vw_-_32px),1200px)] overflow-hidden rounded-lg border bg-card shadow-edge" + ("" if height else " h-[440px] md:h-[560px] lg:h-[70vh]")}
+                className={"relative " + breakout_cls + " overflow-hidden rounded-lg border bg-card shadow-edge" + ("" if height else " h-[440px] md:h-[560px] lg:h-[70vh]")}
                 style={{"height": height} if height else {}}
             >
                 {if loading and not graph["nodes"] {

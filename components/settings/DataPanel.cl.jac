@@ -87,35 +87,40 @@ def _download_text(text: str, filename: str, mime: str) {
     URL.revokeObjectURL(url);  # jac:ignore[W2001,E1032]
 }
 
+"""Pluralise a count: "1 fact", "2 facts" — `one` singular, `many` plural noun."""
+def plural(n: int, one: str, many: str) -> str {
+    return str(n) + " " + (one if n == 1 else many);
+}
+
 """counts: {people, facts, intents, promises, notes} -> "24 people · 58 facts · …"."""
 def _counts_line(counts: dict) -> str {
     parts: list[str] = [];
     if _n(counts, "people") > 0 {
-        parts.append(str(_n(counts, "people")) + " people");
+        parts.append(plural(_n(counts, "people"), "person", "people"));
     }
     if _n(counts, "facts") > 0 {
-        parts.append(str(_n(counts, "facts")) + " facts");
+        parts.append(plural(_n(counts, "facts"), "fact", "facts"));
     }
     if _n(counts, "intents") > 0 {
-        parts.append(str(_n(counts, "intents")) + " intents");
+        parts.append(plural(_n(counts, "intents"), "intent", "intents"));
     }
     if _n(counts, "promises") > 0 {
-        parts.append(str(_n(counts, "promises")) + " promises");
+        parts.append(plural(_n(counts, "promises"), "promise", "promises"));
     }
     if _n(counts, "notes") > 0 {
-        parts.append(str(_n(counts, "notes")) + " notes");
+        parts.append(plural(_n(counts, "notes"), "note", "notes"));
     }
     if _n(counts, "goals") > 0 {
-        parts.append(str(_n(counts, "goals")) + " goals");
+        parts.append(plural(_n(counts, "goals"), "goal", "goals"));
     }
     if _n(counts, "cards") > 0 {
-        parts.append(str(_n(counts, "cards")) + " cards");
+        parts.append(plural(_n(counts, "cards"), "card", "cards"));
     }
     if _n(counts, "circles") > 0 {
-        parts.append(str(_n(counts, "circles")) + " circles");
+        parts.append(plural(_n(counts, "circles"), "circle", "circles"));
     }
     if _n(counts, "events") > 0 {
-        parts.append(str(_n(counts, "events")) + " events");
+        parts.append(plural(_n(counts, "events"), "event", "events"));
     }
     if len(parts) == 0 {
         return "Nothing yet.";
