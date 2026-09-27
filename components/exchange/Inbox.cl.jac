@@ -44,7 +44,7 @@ collapse into one "<N> people are looking for …" row with its own expand.
 import from ..ui.button { Button }
 import from ..ui.skeleton { Skeleton }
 import from ..ui.icons { ChevronLeftIcon, ChevronDownIcon, ChevronRightIcon }
-import from .common { StatusChip, DraftBlock, reply_label, ask_title, asker_label, need_sentence, goal_approved_line, handle_caption, need_group_key }
+import from .common { StatusChip, DraftBlock, reply_label, ask_title, asker_label, need_sentence, goal_approved_line, handle_caption, need_group_key, same_ask_group }
 import from .Requests { match_phrase }
 import from ..agent.common { friend_status, is_zero_match, split_asks }
 import from ...lib.utils { cn }
@@ -154,17 +154,22 @@ def:pub AskRequesterLine(ent: dict, friend: dict, onOffer: Callable[[str], None]
         </li>;
 }
 
-"""SOH-229 item 5: same-`need_group_key` asks collapse into one row titled
-"<N> people are looking for <need>", expanding to one line per requester."""
+"""SOH-229 item 5 (grouping rule per SOH-229 course correction): entries
+sharing a `need_group_key` — exact match OR at least 2 shared stems,
+transitively, via union-find in `_group_asks` — collapse into one row
+titled "<N> people are looking for <shortest need in the group>", expanding
+to one line per requester."""
 def:pub AskGroupRow(
-    group_key: str,
-    entries: list[dict],
+    group: dict,
     friend: dict,
     expanded_key: str,
     onToggle: Callable[[str], None],
     onOffer: Callable[[str], None],
     onDismiss: Callable[[str], None]
 ) -> JsxElement {
+    group_key: str = (group["key"] or "") as str;
+    entries: list[dict] = (group["entries"] or []) as list[dict];
+    title_need: str = (group["title_need"] or "") as str;
     if len(entries) <= 1 {
         only: dict = entries[0] if len(entries) == 1 else {};
         req: dict = (only["request"] or {}) as dict;
@@ -182,7 +187,7 @@ def:pub AskGroupRow(
     }
     group_id: str = "group:" + group_key;
     is_open: bool = expanded_key == group_id;
-    need0: str = ((entries[0]["request"] or {})["need"] or "") as str;
+    need0: str = title_need;
 
     def handle_toggle(e: MouseEvent) {
         onToggle(group_id);
@@ -225,9 +230,47 @@ def:pub OtherAskRow(req: dict) -> JsxElement {
         </li>;
 }
 
+"""SOH-229: same grouping as the primary list applies here too — `split_asks`
+only decides which SECTION a zero-match ask lands in, not whether it groups
+with a sibling ask for the same need. A group of one still renders as a
+plain `OtherAskRow`."""
+def:pub OtherAskGroupRow(group: dict) -> JsxElement {
+    has open: bool = False;
+
+    entries: list[dict] = (group["entries"] or []) as list[dict];
+    title_need: str = (group["title_need"] or "") as str;
+
+    def toggle(e: MouseEvent) {
+        open = not open;
+    }
+
+    if len(entries) <= 1 {
+        only: dict = entries[0] if len(entries) == 1 else {};
+        return <OtherAskRow req={(only["request"] or {}) as dict} />;
+    }
+
+    return
+        <li className="flex flex-col">
+            <Button variant="ghost" size="row" aria-expanded={open} onClick={toggle}>
+                <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 text-body-sm text-muted-foreground">{str(len(entries)) + " people are looking for " + need_sentence(title_need) + "."}</span>
+                    {<ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" /> if open else <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />}
+                </div>
+            </Button>
+            {if open {
+                <ul className="flex flex-col divide-y divide-border border-t bg-secondary/40">
+                    {for e in entries {
+                        <OtherAskRow key={((e["request"] or {})["_jac_id"] or "") as str} req={(e["request"] or {}) as dict} />
+                    }}
+                </ul>
+            }}
+        </li>;
+}
+
 """Collapsed, default-closed section for asks this account's agent checked and
 found zero strong/medium matches for (SOH-222). Still on the exchange, just
-nothing to do here."""
+nothing to do here. SOH-229: grouped the same way the primary list is
+(`_group_asks`), so two zero-match asks for the same need collapse too."""
 def:pub OtherAsksSection(other: list[dict]) -> JsxElement {
     has open: bool = False;
 
@@ -238,6 +281,7 @@ def:pub OtherAsksSection(other: list[dict]) -> JsxElement {
     if len(other) == 0 {
         return <span hidden={True} />;
     }
+    groups: list[dict] = _group_asks(other);
     return
         <section aria-label="Other asks" className="flex flex-col gap-2">
             <Button
@@ -253,31 +297,99 @@ def:pub OtherAsksSection(other: list[dict]) -> JsxElement {
             </Button>
             {if open {
                 <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card">
-                    {for e in other {
-                        <OtherAskRow key={(e["request"] or {})["_jac_id"] as str} req={e["request"] as dict} />
+                    {for g in groups {
+                        <OtherAskGroupRow key={g["key"] as str} group={g} />
                     }}
                 </ul>
             }}
         </section>;
 }
 
-"""Stable-order groups of `needs` entries sharing a `need_group_key`, each
-`{"key": str, "entries": [dict]}`. A group of one renders as a plain row."""
+"""Union-find root lookup with path-halving (plain def, no closures — a
+component-level nested def mutating an outer list is asking for trouble on
+this compiler)."""
+def _uf_find(parent: list[int], x: int) -> int {
+    cur: int = x;
+    while parent[cur] != cur {
+        parent[cur] = parent[parent[cur]];
+        cur = parent[cur];
+    }
+    return cur;
+}
+
+"""The shortest (trimmed) `need` text among a group's entries — SOH-229's
+group-title rule."""
+def _shortest_need(entries: list[dict]) -> str {
+    best: str = "";
+    have_best: bool = False;
+    for e in entries {
+        req: dict = (e["request"] or {}) as dict;
+        need: str = ((req["need"] or "") as str).strip();
+        if not need {
+            continue;
+        }
+        if not have_best or len(need) < len(best) {
+            best = need;
+            have_best = True;
+        }
+    }
+    return best;
+}
+
+"""Stable-order groups of `needs` entries, each
+`{"key": str, "entries": [dict], "title_need": str}`. Two entries land in the
+same group when `same_ask_group` says their `need_group_key`s match (exact,
+or >= 2 shared stems) — transitively, via union-find, so A-B and B-C sharing
+stems groups all three even if A and C alone don't. A group of one renders
+as a plain row; the title uses the shortest `need` in the group."""
 def _group_asks(needs: list[dict]) -> list[dict] {
-    order: list[str] = [];
-    by_key: dict = {};
+    n: int = len(needs);
+    keys: list[str] = [];
     for e in needs {
         req: dict = (e["request"] or {}) as dict;
-        k: str = need_group_key(req);
-        if k not in order {
-            order = order + [k];
-            by_key[k] = [];
+        keys = keys + [need_group_key(req)];
+    }
+    parent: list[int] = [];
+    for i in range(n) {
+        parent = parent + [i];
+    }
+    for i in range(n) {
+        for j in range(i + 1, n) {
+            if same_ask_group(keys[i], keys[j]) {
+                ri: int = _uf_find(parent, i);
+                rj: int = _uf_find(parent, j);
+                if ri != rj {
+                    parent[ri] = rj;
+                }
+            }
         }
-        by_key[k] = (by_key[k] as list[dict]) + [e];
+    }
+    order: list[int] = [];
+    by_root: dict = {};
+    key_by_root: dict = {};
+    for i in range(n) {
+        r: int = _uf_find(parent, i);
+        if r not in order {
+            order = order + [r];
+            by_root[r] = [];
+            # A blank need_group_key never merges (same_ask_group rejects it),
+            # so every such group is a singleton — key it by request id
+            # instead of the shared "" so the outer list's React keys stay
+            # unique.
+            solo_req: dict = (needs[i]["request"] or {}) as dict;
+            solo_rid: str = (solo_req["_jac_id"] or "") as str;
+            key_by_root[r] = keys[i] if keys[i] else ("solo:" + solo_rid);
+        }
+        by_root[r] = (by_root[r] as list[dict]) + [needs[i]];
     }
     out: list[dict] = [];
-    for k in order {
-        out = out + [{"key": k, "entries": by_key[k]}];
+    for r in order {
+        entries: list[dict] = by_root[r] as list[dict];
+        out = out + [{
+            "key": key_by_root[r] as str,
+            "entries": entries,
+            "title_need": _shortest_need(entries)
+        }];
     }
     return out;
 }
@@ -345,8 +457,7 @@ def:pub AsksSection(
                         {for g in groups {
                             <AskGroupRow
                                 key={g["key"] as str}
-                                group_key={g["key"] as str}
-                                entries={g["entries"] as list[dict]}
+                                group={g}
                                 friend={friend}
                                 expanded_key={expanded_key}
                                 onToggle={toggle_expand}

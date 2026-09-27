@@ -221,6 +221,31 @@ def:pub need_group_key(req: dict) -> str {
     return join_with(_need_tokens((req["need"] or "") as str), " ");
 }
 
+"""SOH-229: two asks belong to the same group when their `need_group_key`
+stem sets (space-separated, e.g. "climate compani hir intern invest summer")
+match exactly OR share at least 2 stems. Blank keys never match anything
+(each stays its own group) so an ask with no recoverable need text never
+merges by accident."""
+def:pub same_ask_group(a_key: str, b_key: str) -> bool {
+    a: str = (a_key or "").strip();
+    b: str = (b_key or "").strip();
+    if not a or not b {
+        return False;
+    }
+    if a == b {
+        return True;
+    }
+    a_toks: list[str] = [t for t in a.split(" ") if t];
+    b_toks: list[str] = [t for t in b.split(" ") if t];
+    shared: int = 0;
+    for t in a_toks {
+        if t in b_toks {
+            shared = shared + 1;
+        }
+    }
+    return shared >= 2;
+}
+
 """Calls `onTick` every `ms` while mounted (skips while the tab is hidden).
 Mount it only while polling is wanted; unmounting clears the interval. The
 latest `onTick` is kept in a ref so re-renders never reset the timer."""
