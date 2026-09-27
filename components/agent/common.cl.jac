@@ -6,6 +6,7 @@ Reason-based only: nothing here says "it's been N days" — relationships never 
 """
 
 import from ...lib.utils { cn }
+import from ...lib.text { due_label }
 
 glob:pub KIND_LABEL: dict[str, str] = {
          "new_match": "New match",
@@ -92,6 +93,15 @@ def:pub payload_of(act: dict) -> dict {
         out = {};
     }
     return out or {};
+}
+
+"""For a promise_due action: the due date (weekday-aware, "Due Mon Sep 28")
+when its payload carries a `due` ISO, else "Promise open" — never claims a
+date that isn't there (SOH-222/223)."""
+def:pub promise_due_label(act: dict) -> str {
+    due: str = (payload_of(act)["due"] or "") as str;
+    label: str = due_label(due);
+    return label if label else "Promise open";
 }
 
 """Rough "just now" / "4 min ago" / "3 h ago" / "2 d ago" for `ms` elapsed."""
