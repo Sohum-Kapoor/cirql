@@ -351,6 +351,35 @@ walker:priv ConfirmPeople {
     }
 }
 
+"""Shared per-person skip logic (SOH-236) — `SkipPerson` and `SkipPeople`
+both call this once `p` has been resolved to a `[me ->:Knows:->]` person of
+the caller. Only a proposed person can be skipped: deletes the caller's
+Knows edge to them, their Mentions edges, and the Person node itself.
+Returns `{"ok": True}` on success, `{"ok": False, "reason": "not_found"}`
+when `p` is not one of `me`'s `Knows` neighbors, or
+`{"ok": False, "reason": "not_proposed"}` on an already-confirmed person —
+the same two conditions `SkipPerson` already reported, now centralized so
+behavior can't drift between the single and bulk walkers."""
+def skip_one(me: Me, p: Person) -> dict[str, any] {
+    matched = [edge me ->:Knows:-> p];
+    if not matched {
+        return {"ok": False, "reason": "not_found"};
+    }
+    if p.status != "proposed" {
+        return {"ok": False, "reason": "not_proposed"};
+    }
+
+    for e in [edge me ->:Knows:-> p] {
+        del e;
+    }
+    for e in [edge p <-:Mentions:<-] {
+        del e;
+    }
+    del p;
+
+    return {"ok": True};
+}
+
 walker:priv SkipPerson {
     """Only a proposed person can be skipped: deletes the caller's Knows
     edge to them, their Mentions edges, and the Person node itself.
@@ -381,19 +410,90 @@ walker:priv SkipPerson {
         }
 
         p = target as Person;
-        if p.status != "proposed" {
-            report {"error": "not_proposed"};
+        outcome = skip_one(me, p);
+        if not (outcome["ok"] as bool) {
+            report {"error": outcome["reason"] as str};
             disengage;
         }
 
-        for e in [edge me ->:Knows:-> p] {
-            del e;
-        }
-        for e in [edge p <-:Mentions:<-] {
-            del e;
-        }
-        del p;
-
         report "skipped";
+    }
+}
+
+walker:priv SkipPeople {
+    """Bulk skip for the import "skip all" swipe (SOH-236) — one call
+    instead of `SkipPerson` once per row. Same per-person rule as
+    `SkipPerson` (via the shared `skip_one`): only a proposed person can be
+    skipped, deleting their Knows edge, Mentions edges, and the Person node
+    itself. Reports exactly one dict:
+        { skipped: list[str], not_found: list[str], count: int,
+          skipped_over_limit: int (present only when person_ids > 1000) }
+    `skipped` preserves `person_ids` order. An id that doesn't resolve,
+    isn't readable, isn't owned by this root, isn't a `[me ->:Knows:->]`
+    person of the caller, or is already confirmed (not "proposed") lands in
+    `not_found` — nothing outside the caller's own graph is ever read or
+    written (`jobj` never authorizes; `Jac.check_read_access` plus an exact
+    owner-root match is the actual gate, same idiom as `ConfirmPeople`).
+    Ids past the first 1000 are not processed at all; their count rides on
+    `skipped_over_limit`."""
+    has person_ids: list[str];
+    has reports: list[dict[str, any]] = [];
+
+    can run with Root entry {
+        existing_me = [root --> [?:Me]];
+        if not existing_me {
+            report {"skipped": [], "not_found": self.person_ids, "count": 0};
+            disengage;
+        }
+        me = existing_me[0];
+
+        limit = 1000;
+        ids = self.person_ids;
+        over_limit = 0;
+        if len(ids) > limit {
+            over_limit = len(ids) - limit;
+            ids = ids[:limit];
+        }
+
+        skipped: list[str] = [];
+        not_found: list[str] = [];
+
+        for pid in ids {
+            try {
+                resolved = jobj(pid);
+            } except Exception {
+                resolved = None;
+            }
+            if resolved is None {
+                not_found.append(pid);
+                continue;
+            }
+            if not Jac.check_read_access(getattr(resolved, "__jac__")) {  # jac:ignore[E1053]
+                not_found.append(pid);
+                continue;
+            }
+            owner = str(getattr(resolved, "__jac__").root).replace("-", "");
+            if owner != jid(root) {
+                not_found.append(pid);
+                continue;
+            }
+            if not isinstance(resolved, Person) {
+                not_found.append(pid);
+                continue;
+            }
+            p = resolved as Person;
+            outcome = skip_one(me, p);
+            if not (outcome["ok"] as bool) {
+                not_found.append(pid);
+                continue;
+            }
+            skipped.append(pid);
+        }
+
+        rep: dict[str, any] = {"skipped": skipped, "not_found": not_found, "count": len(skipped)};
+        if over_limit > 0 {
+            rep["skipped_over_limit"] = over_limit;
+        }
+        report rep;
     }
 }

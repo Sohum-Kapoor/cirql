@@ -69,6 +69,8 @@ node Goal {
     has created_at: str;
     has active: bool = True;
     has ranked_at: str = "";         # ISO; set by GoalRank on every rebuild (SOH-212 staleness)
+    has gaps_json: str = "";         # SOH-236: last GapFinder result, JSON-serialized list[dict]
+    has gaps_at: str = "";           # ISO UTC; set whenever gaps_json is (re)computed
 }
 
 node Intent {

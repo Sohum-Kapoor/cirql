@@ -16,6 +16,7 @@ import from datetime { datetime }
 import from freshness { default_expiry }
 import from names { name_key, match_names }
 import from identity { refresh_person_tokens }
+import from imports { confirm_one }
 import re;
 
 
@@ -941,6 +942,25 @@ def attach_metat_for_new_people(note: Note, event: Event, result: dict[str, any]
     }
 }
 
+"""SOH-236: when `do_confirm` is set and `hinted_person` resolved (the
+caller's own, via `find_hinted_person`), mark that person confirmed using
+the EXACT per-person rule `imports.sv.jac`'s `ConfirmPeople`/`ConfirmPerson`
+share (`confirm_one`) — `Person.status` and the matching `Knows` edge
+`status` both become "confirmed"; `how_met` is overwritten only when
+non-empty. Returns the outcome flag (`False` when `do_confirm` is unset,
+no person was hinted, or `confirm_one` itself reports not-found — the
+hinted person is always a `[me ->:Knows:->]` neighbor already, so that
+last case shouldn't happen in practice, but the flag is passed through
+either way rather than assumed)."""
+def maybe_confirm_hinted(me: Me, hinted_person: Person | None, do_confirm: bool, how_met: str) -> bool {
+    if not do_confirm or hinted_person is None {
+        return False;
+    }
+    p = hinted_person as Person;
+    outcome = confirm_one(me, p, how_met);
+    return outcome["ok"] as bool;
+}
+
 # ---------------------------------------------------------------- walker
 
 walker:priv Capture {
@@ -950,6 +970,7 @@ walker:priv Capture {
     has how_met: str = "";          # SOH-166: when set, every NEW Knows edge this capture creates uses it
     has event_id: str = "";         # SOH-217: when set (and the event is the caller's), every NEW person from this capture gets a MetAt tie to it
     has person_id: str = "";        # SOH-231: when set (and the person is the caller's own), hints the extraction and maps a matching extracted person onto them
+    has confirm: bool = False;      # SOH-236: when set, and person_id resolves to this root's own person, that person is confirmed in this same call (via maybe_confirm_hinted)
     has reports: list[dict[str, any]] = [];
 
     can go with Root entry {
@@ -978,6 +999,10 @@ walker:priv Capture {
         # a foreign/unknown person_id is silently ignored (behaves as today).
         hinted_person = find_hinted_person(me, self.person_id);
 
+        # SOH-236: independent of extraction success/failure below — a
+        # confirm is a plain graph write on an already-resolved person.
+        confirmed_flag = maybe_confirm_hinted(me, hinted_person, self.confirm, self.how_met);
+
         empty_shape = {
             "note_id": jid(note),
             "people": [],
@@ -985,7 +1010,8 @@ walker:priv Capture {
             "intents": [],
             "promises": [],
             "ties": [],
-            "skipped_people": 0
+            "skipped_people": 0,
+            "confirmed": confirmed_flag
         };
 
         capture_text = self.text;
@@ -1013,6 +1039,7 @@ walker:priv Capture {
             attach_metat_for_new_people(note, target_event as Event, result);
         }
 
+        result["confirmed"] = confirmed_flag;
         report result;
     }
 }
