@@ -1,4 +1,4 @@
-"""Friend side of the Exchange — "Asks from friends" on home and the approval
+"""Answering side of the Exchange — "Asks on the exchange" (Inbox) and the approval
 card. OWNER: Person B.
 
 `incoming` is ListIncomingRequests ([IntroRequest], others' asks this user has
@@ -16,6 +16,13 @@ import from .common { StatusChip, DraftBlock, reply_label }
 import from .Requests { match_phrase }
 import from ...lib.utils { cn }
 
+"""The ask in one line. Only a friends-audience ask (SOH-218) is from a friend;
+an "everyone" ask can come from anyone on Cirql, so it doesn't claim friendship."""
+def:pub ask_line(req: dict) -> str {
+    who: str = "A friend's agent" if req["audience"] == "friends" else "An agent on the exchange";
+    return who + " is looking for " + ((req["need"] or "") as str) + ".";
+}
+
 def:pub friend_status(ent: dict) -> str {
     reply: dict = (ent["reply"] or {}) as dict;
     if reply["status"] {
@@ -27,7 +34,7 @@ def:pub friend_status(ent: dict) -> str {
     return "new";
 }
 
-"""How many friends' asks are waiting on this user (the Asks tab badge, SOH-213):
+"""How many friends' asks are waiting on this user (part of the Inbox tab badge, SOH-213/224):
 every unanswered incoming ask, plus this session's replies still mid-way
 (needs your OK / approved / contact said yes). Revealed and declined don't count."""
 def:pub asks_needing_you(incoming: list[dict], friend: dict) -> int {
@@ -66,7 +73,7 @@ def:pub AskRow(req: dict, status: str, onOpen: Callable[[str], None]) -> JsxElem
                 onClick={handle_open}
             >
                 <div className="flex items-start justify-between gap-2">
-                    <span className="min-w-0 text-body-sm">{"A friend's agent is looking for " + (req["need"] as str) + "."}</span>
+                    <span className="min-w-0 text-body-sm">{ask_line(req)}</span>
                     <StatusChip status={status} label={reply_label(status)} />
                 </div>
                 {req["about_line"] and <span className="text-caption text-muted-foreground">{req["about_line"] as str}</span>}
@@ -79,7 +86,7 @@ def:pub AsksSection(
     incoming: list[dict],
     friend: dict,
     onOpen: Callable[[str], None],
-    title: str = "Asks from friends"
+    title: str = "Asks on the exchange"
 ) -> JsxElement {
     ids: list[str] = [];
     for r in incoming {
@@ -168,7 +175,7 @@ def:pub ApprovalView(
             <header className="-ml-2 flex items-center gap-2">
                 <Button size="sm" variant="ghost" onClick={handle_back}>
                     <ChevronLeftIcon />
-                    Asks
+                    Inbox
                 </Button>
             </header>
             {if not rid {
@@ -179,7 +186,7 @@ def:pub ApprovalView(
                         <span className="text-eyebrow text-muted-foreground">{"Ask from " + asker}</span>
                         <StatusChip status={status} label={reply_label(status)} />
                     </div>
-                    <h2 className="text-subhead font-medium">{"A friend's agent is looking for " + (req["need"] as str) + "."}</h2>
+                    <h2 className="text-subhead font-medium">{ask_line(req)}</h2>
                     {req["about_line"] and <p className="text-body-sm text-muted-foreground">{"About them: " + (req["about_line"] as str)}</p>}
                     {if status == "new" or status == "checking" {
                         if busy {

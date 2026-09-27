@@ -16,6 +16,7 @@ import from .mocks.capture { mock_capture, mock_list_people }
 import from .mocks.edits { mock_transcribe, mock_apply_correction }
 import from ..lib.local_edits { local_put, local_view, local_drop }
 import from .mocks.goalrank { mock_goalrank }
+import from .mocks.agent { mock_run_agent, mock_list_agent_actions, mock_resolve_agent_action, mock_list_friends }
 import from .mocks.goals { mock_list_goals, mock_set_goal, mock_close_goal }
 import from .mocks.exchange {
     mock_gap_finder, mock_publish_card, mock_post_request, mock_list_my_requests,
@@ -32,7 +33,7 @@ sv import from ..gaps { GapFinder }
 sv import from ..cards { PublishCard }
 sv import from ..exchange {
     PostRequest, ListMyRequests, DeclineRequest, ClaimReveal, ListIncomingRequests,
-    ReplyToRequest, ApproveReply, OptIn, Reveal, DeclineReply
+    ReplyToRequest, ApproveReply, OptIn, Reveal, DeclineReply, ListFriends
 }
 sv import from ..voice { Transcribe }
 sv import from ..noted { ApplyCorrection }
@@ -280,17 +281,37 @@ async def:pub publish_card(name: str, headline: str, about: str) -> dict {
     return card;
 }
 
-"""PostRequest(need, about_line) -> IntroRequest | { error: "no_card" }."""
-async def:pub post_request(need: str, about_line: str) -> dict {
+"""PostRequest(need, about_line, audience) -> IntroRequest | { error: "no_card" }.
+audience (SOH-218): "everyone" | "friends" (friends = handles of Cards you hold).
+Always sent explicitly — the walker's default has changed once already."""
+async def:pub post_request(need: str, about_line: str, audience: str = "everyone") -> dict {
     out: dict = {};
+    aud: str = "friends" if audience == "friends" else "everyone";
     if mocks_on() {
         await fake_delay(MOCK_FAST_MS);
         out = mock_post_request(need, about_line);
+        if not out["error"] {
+            out["audience"] = aud;
+        }
         return out;
     }
-    result = root spawn PostRequest(need=need, about_line=about_line);
+    result = root spawn PostRequest(need=need, about_line=about_line, audience=aud);
     out = _first(result, "PostRequest") as dict;
     return out;
+}
+
+"""ListFriends() -> [{ handle, person: Person, since }] (SOH-218; own root only).
+Under ?mock=1: one friend (the mock friend sam-ruiz-9c1d); `friends=0` in the URL -> none."""
+async def:pub list_friends() -> list[dict] {
+    rows: list[dict] = [];
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        rows = mock_list_friends();
+        return rows;
+    }
+    result = root spawn ListFriends();
+    rows = result.reports as list[dict];
+    return rows;
 }
 
 """ListMyRequests() -> [{ request: IntroRequest, replies: [ReplyView] }]."""
@@ -940,6 +961,75 @@ async def:pub recall(question: str, max_items: int = 40) -> dict {
         return out;
     }
     result = root spawn Recall(question=question, max_items=max_items);
+    out = _first_or_error(result.reports);
+    return out;
+}
+
+# ---------------------------------------------------------------- Agent inbox (SOH-224; server half SOH-223)
+# Live on main: agent.sv.jac (RunAgent / ListAgentActions / ResolveAgentAction; all
+# :priv, own root only, no model call). Under ?mock=1 they come from mocks/agent.
+# AGENT_LIVE is the kill switch: False -> an empty inbox (never mock people in a
+# real account). DevSeedAgent is dev/test only and is never called from here.
+sv import from ..agent { RunAgent, ListAgentActions, ResolveAgentAction }
+
+glob:pub AGENT_LIVE: bool = True;
+
+"""The agent walkers answer here: mocks under ?mock=1, else live when AGENT_LIVE."""
+def:pub agent_available() -> bool {
+    return mocks_on() or AGENT_LIVE;
+}
+
+"""RunAgent(reason) -> { run_id, ran_at, new, total_open, skipped } | { error: "not_found" }
+(before onboarding). reason: "manual" | "capture" | "open"."""
+async def:pub run_agent(reason: str = "manual") -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_DELAY_MS * 2);
+        out = _first_or_error(mock_run_agent(reason));
+        return out;
+    }
+    if not AGENT_LIVE {
+        return {"run_id": "", "ran_at": "", "new": 0, "total_open": 0, "skipped": ["agent_not_live"]};
+    }
+    result = root spawn RunAgent(reason=reason);
+    out = _first_or_error(result.reports);
+    return out;
+}
+
+"""ListAgentActions(status, limit) -> [{ action: AgentAction, person: Person | null,
+evidence: [{ id, kind, observed_at, span }] }], newest first. status "all" = every status."""
+async def:pub list_agent_actions(status: str = "open", limit: int = 30) -> list[dict] {
+    rows: list[dict] = [];
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        rows = mock_list_agent_actions(status, limit);
+        return rows;
+    }
+    if not AGENT_LIVE {
+        return rows;
+    }
+    result = root spawn ListAgentActions(status=status, limit=limit);
+    rows = (result.reports or []) as list[dict];
+    return rows;
+}
+
+"""ResolveAgentAction(action_id, decision, edited_draft, complete) -> { action, result } |
+{ error: "not_found" | "invalid_state" }. decision: approve | dismiss | snooze.
+approve result by kind: ask_network { step: "posted", request } (audience "everyone";
+no audience arg) · answer_ask { step: "replied", reply } · promise_due with
+complete { step: "CompletePromise", promise } · others { step: "draft_saved", draft }.
+A failed step comes back as result { error } with the action unchanged."""
+async def:pub resolve_agent_action(action_id: str, decision: str, edited_draft: str = "", complete: bool = False) -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_resolve_agent_action(action_id, decision, edited_draft));
+        return out;
+    }
+    if not AGENT_LIVE {
+        return {"error": "not_live"};
+    }
+    result = root spawn ResolveAgentAction(action_id=action_id, decision=decision, edited_draft=edited_draft, complete=complete);
     out = _first_or_error(result.reports);
     return out;
 }

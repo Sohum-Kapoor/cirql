@@ -16,14 +16,19 @@ session (lib/session):
   Home   = goal picker (ListGoals / SetGoal / CloseGoal) + GoalRank for the active
            goal, cached per goal_id for the session (SOH-170), + GapFinder alerts
            (cached per goal_id, run after GoalRank: it reads the RelevantTo edges).
-  Asks   = "Needs your OK" (ListIncomingRequests) + "Your asks" (ListMyRequests);
-           the tab badge counts friends' asks waiting on you + unseen reveals.
+  Inbox  = (SOH-224, was "Asks") "Your agent found" (ListAgentActions; approve /
+           dismiss / snooze via ResolveAgentAction, optimistic with rollback) +
+           "Needs your OK" (ListIncomingRequests, minus asks an open `answer_ask`
+           card covers) + "Your asks" (ListMyRequests); the tab badge counts open
+           agent actions + friends' asks waiting on you + unseen reveals.
   People = people list / graph / Today.
+RunAgent triggers: Capture -> Done ("capture"); entering home ("open") when the
+last run this session is > 10 min old (lib/session); *Run agent now* ("manual").
 Capture opens on Voice by default; the last-used capture mode is remembered.
-Deep links: Capture -> Done lands on Home; back from a request / ask lands on Asks.
+Deep links: Capture -> Done lands on Home; back from a request / ask lands on Inbox.
 home -> request (requester's detail + reveal card) | ask (friend's approval card).
 Polling only while home / a request detail is on screen (see Poller): every 5 s
-on the Asks tab, every 15 s on the other tabs (only the Asks badge needs it).
+on the Inbox tab, every 15 s on the other tabs (only the Inbox badge needs it).
 TODO(SOH-172): Matchmaker fallback second act skipped — the 9 PM gate passed.
 """
 
@@ -46,6 +51,8 @@ import from .components.capture.guided { empty_guided, guided_text, how_met_line
 import from .lib.local_edits { local_view, local_rows }
 import from react { useEffect }
 import from .lib.session { session_tab, save_tab, session_cap_kind, save_cap_kind, clear_session_ui }
+import from .lib.session { session_agent_run, save_agent_run, agent_run_age_ms, now_ms }
+import from .components.api { run_agent, list_agent_actions, resolve_agent_action, agent_available, list_friends }
 import from .components.api { onboard_me, capture, goal_rank, list_people, list_goals, set_goal, close_goal, mocks_on }
 import from .components.api {
     gap_finder, publish_card, post_request, list_my_requests, decline_request, claim_reveal,
@@ -86,10 +93,116 @@ glob GAP_ROWS: dict = {},
 #   friend[request_id]: this session's reply in progress (the request leaves
 #     ListIncomingRequests once answered) — { request, reply, draft, revealed_handle, error, busy }
 #   claims[reply_id]: ClaimReveal result or { error }; claiming[reply_id]: in flight
-glob EX: dict = {"mine": [], "incoming": [], "friend": {}, "claims": {}, "claiming": {}, "mine_busy": False, "inc_busy": False};
+#   friends: ListFriends rows (SOH-218) — the ask sheet's Friends audience needs >= 1
+glob EX: dict = {"mine": [], "incoming": [], "friend": {}, "claims": {}, "claiming": {}, "mine_busy": False, "inc_busy": False, "friends": []};
 
 def empty_ex() -> dict {
-    return {"mine": [], "incoming": [], "friend": {}, "claims": {}, "claiming": {}, "mine_busy": False, "inc_busy": False};
+    return {"mine": [], "incoming": [], "friend": {}, "claims": {}, "claiming": {}, "mine_busy": False, "inc_busy": False, "friends": []};
+}
+
+# Agent inbox state (SOH-224). Module-level for the same stale-snapshot reason;
+# `publish_agent()` copies it into the reactive `agent_view` mirror.
+#   rows: ListAgentActions reports ({ action, person, evidence }); a resolved row
+#     stays in place with its new status until the next list load
+#   pending[action_id] / errors[action_id]: a resolve in flight / its rollback message
+#   last_run: { ran_at, new, total_open, ms } (also in sessionStorage)
+#   queued: a RunAgent reason that arrived while a run was in flight (run once more)
+glob AGENT: dict = {"rows": [], "loaded": False, "running": False, "error": "", "pending": {}, "errors": {}, "last_run": {}, "queued": ""};
+
+# RunAgent on open only when the last run this session is older than this.
+glob AGENT_STALE_MS: int = 600000;
+
+def empty_agent() -> dict {
+    return {"rows": [], "loaded": False, "running": False, "error": "", "pending": {}, "errors": {}, "last_run": session_agent_run()};
+}
+
+"""What status an approve / dismiss / snooze puts an action in (the optimistic guess)."""
+def agent_status_for(kind: str, decision: str) -> str {
+    if decision == "dismiss" {
+        return "dismissed";
+    }
+    if decision == "snooze" {
+        return "snoozed";
+    }
+    return "approved";
+}
+
+"""Replace one row's action fields (status, and the draft when given) in AGENT.rows."""
+def agent_patch(aid: str, status: str, draft: str) -> None {
+    out: list[dict] = [];
+    for r in AGENT["rows"] as list[dict] {
+        act: dict = (r["action"] or {}) as dict;
+        if act["_jac_id"] == aid {
+            na: dict = {**act};
+            na["status"] = status;
+            if draft {
+                na["draft"] = draft;
+            }
+            nr: dict = {**r};
+            nr["action"] = na;
+            out = out + [nr];
+        } else {
+            out = out + [r];
+        }
+    }
+    AGENT["rows"] = out;
+}
+
+def agent_row(aid: str) -> dict {
+    for r in AGENT["rows"] as list[dict] {
+        if (r["action"] or {})["_jac_id"] == aid {
+            return r;
+        }
+    }
+    return {};
+}
+
+def agent_map_put(key: str, aid: str, value: any) -> None {
+    m: dict = {**(AGENT[key] as dict)};
+    m[aid] = value;
+    AGENT[key] = m;
+}
+
+def agent_err_text(code: str) -> str {
+    if code == "not_found" {
+        return "That suggestion is gone — run the agent again.";
+    }
+    if code == "invalid_state" {
+        return "That was already handled — nothing changed.";
+    }
+    if code == "not_live" {
+        return "Your agent isn't switched on yet.";
+    }
+    if code == "not_visible" {
+        return "That ask isn't visible to you anymore.";
+    }
+    return "Couldn't save that — try again.";
+}
+
+"""A ResolveAgentAction failure code: a top-level { error } (not_found /
+invalid_state), or the mapped step's own { error } inside `result` (the action
+is left unchanged server-side then). "" = success."""
+def resolve_error(out: dict) -> str {
+    if out["error"] {
+        return out["error"] as str;
+    }
+    res: dict = (out["result"] or {}) as dict;
+    if res["error"] {
+        return res["error"] as str;
+    }
+    return "";
+}
+
+"""Friends' asks an open `answer_ask` card already covers (shown once, as the card)."""
+def covered_requests(rows: list[dict]) -> list[str] {
+    out: list[str] = [];
+    for r in rows {
+        act: dict = (r["action"] or {}) as dict;
+        if act["kind"] == "answer_ask" and act["status"] == "open" and act["request_id"] {
+            out = out + [act["request_id"] as str];
+        }
+    }
+    return out;
 }
 
 def _by_created(item: dict) -> str {
@@ -226,7 +339,8 @@ def:pub app -> JsxElement {
         me_about: str = "",
         as_friend: bool = False,
         tab: str = session_tab(),
-        seen_reveals: list[str] = [];
+        seen_reveals: list[str] = [],
+        agent_view: dict = empty_agent();
 
     can with entry {
         if jacIsLoggedIn() {
@@ -274,7 +388,8 @@ def:pub app -> JsxElement {
     async def load_incoming -> None;
     def poll_home -> None;
     def poll_request -> None;
-    async def post_ask(need: str, about_line: str) -> None;
+    async def post_ask(need: str, about_line: str, audience: str = "everyone") -> None;
+    async def load_friends -> None;
     def open_request(rid: str) -> None;
     async def cancel_request(rid: str) -> None;
     async def claim(reply_id: str) -> None;
@@ -289,6 +404,14 @@ def:pub app -> JsxElement {
     def set_tab(next_tab: str) -> None;
     def set_cap_kind(kind: str) -> None;
     def mark_seen(ids: list[str]) -> None;
+    def publish_agent -> None;
+    async def load_actions -> None;
+    async def run_agent_now(reason: str) -> None;
+    def agent_on_open -> None;
+    def run_agent_manual -> None;
+    async def resolve_action(aid: str, decision: str, edited: str) -> None;
+    async def post_ask_action(aid: str, need: str, about_line: str) -> None;
+    async def answer_ask_action(aid: str, rid: str) -> None;
 
     goals: list[dict] = (onboard["goals"] or []) as list[dict];
     interests: list[dict] = (onboard["interests"] or []) as list[dict];
@@ -325,15 +448,19 @@ def:pub app -> JsxElement {
             unseen_reveals = unseen_reveals + [rid];
         }
     }
-    asks_badge: int = asks_needing_you((ex["incoming"] or []) as list[dict], (ex["friend"] or {}) as dict) + len(unseen_reveals);
-    # A reveal is "seen" once the Asks tab is on screen.
+    agent_rows: list[dict] = (agent_view["rows"] or []) as list[dict];
+    covered: list[str] = covered_requests(agent_rows);
+    incoming_shown: list[dict] = [r for r in ((ex["incoming"] or []) as list[dict]) if r["_jac_id"] not in covered];
+    agent_open: int = len([r for r in agent_rows if (r["action"] or {})["status"] == "open"]);
+    inbox_badge: int = agent_open + asks_needing_you(incoming_shown, (ex["friend"] or {}) as dict) + len(unseen_reveals);
+    # A reveal is "seen" once the Inbox tab is on screen.
     useEffect(lambda {
-        if view == "home" and tab == "asks" and len(unseen_reveals) > 0 {
+        if view == "home" and tab == "inbox" and len(unseen_reveals) > 0 {
             mark_seen(unseen_reveals);
         }
     }, [view, tab, len(unseen_reveals)]);
     poll_home_on: bool = view == "home";
-    poll_home_ms: int = 5000 if tab == "asks" else 15000;
+    poll_home_ms: int = 5000 if tab == "inbox" else 15000;
     poll_req_on: bool = view == "request" and mine_wants_poll(ex_mine, ex_claims);
 
     return
@@ -376,7 +503,7 @@ def:pub app -> JsxElement {
                     onRerank={rerank}
                     tab={tab}
                     onTab={set_tab}
-                    asks_badge={asks_badge}
+                    inbox_badge={inbox_badge}
                     gaps={home_gaps}
                     gaps_pending={True if home_goal_id and gap_pending_map[home_goal_id] else False}
                     gaps_error={((gap_error_map[home_goal_id] or "") as str) if home_goal_id else ""}
@@ -386,7 +513,7 @@ def:pub app -> JsxElement {
                     ask_error={ask_error}
                     mine={ex_mine}
                     claims={ex_claims}
-                    incoming={(ex["incoming"] or []) as list[dict]}
+                    incoming={incoming_shown}
                     friend={(ex["friend"] or {}) as dict}
                     mock_mode={mocks_on()}
                     as_friend={as_friend}
@@ -395,6 +522,13 @@ def:pub app -> JsxElement {
                     onOpenRequest={open_request}
                     onOpenAsk={open_ask}
                     onToggleFriend={toggle_as_friend}
+                    friends_count={len((ex["friends"] or []) as list)}
+                    agent={agent_view}
+                    agent_available={agent_available()}
+                    onRunAgent={run_agent_manual}
+                    onResolveAction={resolve_action}
+                    onPostAskAction={post_ask_action}
+                    onAnswerAsk={answer_ask_action}
                 />
             } elif view == "request" {
                 <RequestDetail

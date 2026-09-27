@@ -3,14 +3,17 @@
   Home   — goal picker, who can help with the active goal (GoalRank; the first
            RANK_PREVIEW rows, "See all (N)" expands in place), gaps for this goal
            (GapFinder) with *Ask my network*. Nothing else.
-  Asks   — "Needs your OK" (friends' asks, ListIncomingRequests) first, then
-           "Your asks" (ListMyRequests). Dev "Act as friend" toggle under ?mock=1.
+  Inbox  — (SOH-224, was "Asks") "Your agent found": AgentActions from RunAgent /
+           ListAgentActions (components/agent), then "Needs your OK" (friends'
+           asks, ListIncomingRequests; an ask an `answer_ask` card already
+           covers is left out here) and "Your asks" (ListMyRequests). Dev "Act
+           as friend" toggle under ?mock=1.
   People — the people you know, SK's graph toggle (GraphView) and Today's
            promises, exactly as they rendered on the old single page.
 The header (Cirql + overflow menu), the person sheet and the tab bar with its
 Capture action are shared by all three. The shell owns `tab` (remembered for
 the session, and set by deep links: Capture -> Done lands on Home, back from an
-ask / request lands on Asks).
+ask / request lands on Inbox).
 
 Switching goals only swaps the ranked list: the shell keeps GoalRank results per
 goal_id for the session, and a goal that isn't cached yet shows a loading state
@@ -35,6 +38,7 @@ import from .goals.RankList { RankList, RankSkeleton, is_partial }
 import from .exchange.GapAlert { GapAlerts }
 import from .exchange.Requests { RequestsSection }
 import from .exchange.Inbox { AsksSection }
+import from .agent.AgentInbox { AgentInbox }
 import from .nav.TabBar { TabBar }
 import from .search.SearchBox { SearchBox }
 import from .circles.Circles { Circles }
@@ -101,7 +105,7 @@ def:pub HomeView(
     onRerank: Callable[[], None],
     tab: str = "home",
     onTab: Callable[[str], None] | None = None,
-    asks_badge: int = 0,
+    inbox_badge: int = 0,
     gaps: list[dict] = [],
     gaps_pending: bool = False,
     gaps_error: str = "",
@@ -115,13 +119,20 @@ def:pub HomeView(
     friend: dict = {},
     mock_mode: bool = False,
     as_friend: bool = False,
-    onAsk: Callable[[str, str], None] | None = None,
+    onAsk: Callable[[str, str, str], None] | None = None,
+    friends_count: int = 0,
     onRetryGaps: Callable[[], None] | None = None,
     onOpenRequest: Callable[[str], None] | None = None,
     onOpenAsk: Callable[[str], None] | None = None,
     onToggleFriend: Callable[[], None] | None = None,
     open_person_id: str = "",
-    onPersonOpened: Callable[[], None] | None = None
+    onPersonOpened: Callable[[], None] | None = None,
+    agent: dict = {},
+    agent_available: bool = False,
+    onRunAgent: Callable[[], None] | None = None,
+    onResolveAction: Callable[[str, str, str], None] | None = None,
+    onPostAskAction: Callable[[str, str, str], None] | None = None,
+    onAnswerAsk: Callable[[str, str], None] | None = None
 ) -> JsxElement {
     def handle_capture(e: MouseEvent) {
         onCapture();
@@ -211,9 +222,9 @@ def:pub HomeView(
         }
     }
 
-    def do_ask(need: str, about_line: str) -> None {
+    def do_ask(need: str, about_line: str, audience: str) -> None {
         if onAsk {
-            onAsk(need, about_line);
+            onAsk(need, about_line, audience);
         }
     }
 
@@ -232,6 +243,30 @@ def:pub HomeView(
     def do_open_ask(rid: str) -> None {
         if onOpenAsk {
             onOpenAsk(rid);
+        }
+    }
+
+    def do_run_agent() -> None {
+        if onRunAgent {
+            onRunAgent();
+        }
+    }
+
+    def do_resolve(aid: str, decision: str, draft: str) -> None {
+        if onResolveAction {
+            onResolveAction(aid, decision, draft);
+        }
+    }
+
+    def do_post_ask_action(aid: str, need: str, about_line: str) -> None {
+        if onPostAskAction {
+            onPostAskAction(aid, need, about_line);
+        }
+    }
+
+    def do_answer_ask(aid: str, rid: str) -> None {
+        if onAnswerAsk {
+            onAnswerAsk(aid, rid);
         }
     }
 
@@ -281,8 +316,26 @@ def:pub HomeView(
             </header>
             <AppearanceSheet open={appearance_open} onOpenChange={set_appearance} onDeleted={onLogout} />
             <PersonSheet person_id={sheet_person_id} open={sheet_open} on_close={close_person} on_forgotten={person_forgotten} />
-            {if tab == "asks" {
-                <div key="tab-asks" className="flex flex-col gap-6">
+            {if tab == "inbox" {
+                <div key="tab-inbox" className="flex flex-col gap-6">
+                    <AgentInbox
+                        rows={(agent["rows"] or []) as list[dict]}
+                        loaded={True if agent["loaded"] else False}
+                        running={True if agent["running"] else False}
+                        last_run={(agent["last_run"] or {}) as dict}
+                        available={agent_available}
+                        run_error={(agent["error"] or "") as str}
+                        pending={(agent["pending"] or {}) as dict}
+                        errors={(agent["errors"] or {}) as dict}
+                        default_about={default_about}
+                        ask_busy={ask_busy}
+                        ask_error={ask_error}
+                        onRun={do_run_agent}
+                        onResolve={do_resolve}
+                        onPostAsk={do_post_ask_action}
+                        onAnswerAsk={do_answer_ask}
+                        onOpenPerson={open_person}
+                    />
                     {mock_mode and
                         <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-border-strong pt-2 pb-2 pl-3 pr-2 text-caption text-muted-foreground">
                             <span>{"Dev mock · your own asks " + ("also show as a friend's" if as_friend else "stay yours only")}</span>
@@ -296,7 +349,7 @@ def:pub HomeView(
                         <section aria-label="Needs your OK" className="flex flex-col gap-3">
                             <h2 className="text-eyebrow text-muted-foreground">Needs your OK</h2>
                             <EmptyNote>
-                                Nothing waiting. When a friend's agent asks your network for help, it lands here — only a count and a strength leave your graph until you approve.
+                                Nothing waiting. When another agent on Cirql asks your network for help, it lands here — only a count and a strength leave your graph until you approve.
                             </EmptyNote>
                         </section>
                     }}
@@ -441,10 +494,11 @@ def:pub HomeView(
                             ask_error={ask_error}
                             onAsk={do_ask}
                             onRetry={do_retry_gaps}
+                            friends_count={friends_count}
                         />}
                 </div>
             }}
             {status and <p className="text-caption text-muted-foreground">{status}</p>}
-            <TabBar tab={tab} onTab={pick_tab} onCapture={onCapture} asks_badge={asks_badge} />
+            <TabBar tab={tab} onTab={pick_tab} onCapture={onCapture} inbox_badge={inbox_badge} />
         </div>;
 }

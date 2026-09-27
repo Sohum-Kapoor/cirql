@@ -92,7 +92,17 @@ impl app.logout -> None {
     EX["friend"] = {};
     EX["claims"] = {};
     EX["claiming"] = {};
+    EX["friends"] = [];
     publish_ex();
+    AGENT["rows"] = [];
+    AGENT["loaded"] = False;
+    AGENT["running"] = False;
+    AGENT["error"] = "";
+    AGENT["pending"] = {};
+    AGENT["errors"] = {};
+    AGENT["last_run"] = {};
+    AGENT["queued"] = "";
+    publish_agent();
     open_req_id = "";
     open_ask_id = "";
     ask_error = "";
@@ -122,6 +132,8 @@ impl app.enter -> None {
         load_goals();
         load_mine();
         load_incoming();
+        load_friends();
+        agent_on_open();
     } else {
         step = 1;
         view = "onboarding";
@@ -367,6 +379,8 @@ impl app.finish -> None {
     load_goals();
     load_mine();
     load_incoming();
+    load_friends();
+    agent_on_open();
 }
 
 # ---------------------------------------------------------------- capture (SOH-167)
@@ -466,6 +480,8 @@ impl app.capture_done -> None {
         RANK_STALE[gid] = True;
         ensure_rank(gid, True);
     }
+    # A new note is exactly what the agent looks at: routes, gaps, follow-ups.
+    run_agent_now("capture");
 }
 
 """Empty extraction -> back to the form with the text kept."""
@@ -672,6 +688,7 @@ impl app.publish_ex -> None {
     ex = {
         "mine": EX["mine"],
         "incoming": EX["incoming"],
+        "friends": EX["friends"],
         "friend": {**(EX["friend"] as dict)},
         "claims": {**(EX["claims"] as dict)},
         "claiming": {**(EX["claiming"] as dict)}
@@ -705,6 +722,19 @@ impl app.load_mine -> None {
     }
 }
 
+"""ListFriends -> EX.friends (SOH-218). Only the count is used: Friends as an ask
+audience needs at least one. A failure leaves the list empty (Friends disabled)."""
+impl app.load_friends -> None {
+    found: list[dict] = [];
+    try {
+        found = await list_friends();
+    } except Exception as e {
+        found = [];
+    }
+    EX["friends"] = found;
+    publish_ex();
+}
+
 impl app.load_incoming -> None {
     if EX["inc_busy"] {
         return;
@@ -735,8 +765,10 @@ impl app.poll_request -> None {
 }
 
 """Ask my network -> PostRequest(need, about_line). A user with no Card yet
-(PostRequest reports no_card) gets one via PublishCard, then it retries once."""
-impl app.post_ask(need: str, about_line: str) -> None {
+(PostRequest reports no_card) gets one via PublishCard, then it retries once.
+(Gap-alert path only; an agent's ask_network card posts via ResolveAgentAction.)
+`audience` (SOH-218): "everyone" (default) | "friends"."""
+impl app.post_ask(need: str, about_line: str, audience: str = "everyone") -> None {
     if not need {
         return;
     }
@@ -745,7 +777,7 @@ impl app.post_ask(need: str, about_line: str) -> None {
     ask_busy = True;
     ask_error = "";
     try {
-        out = await post_request(need, about_line);
+        out = await post_request(need, about_line, audience);
         if (out["error"] or "") == "no_card" {
             made = await publish_card(me_name or "me", about_line, me_about);
             if made["error"] {
@@ -753,7 +785,7 @@ impl app.post_ask(need: str, about_line: str) -> None {
                 ask_error = err_text(made["error"] as str);
                 return;
             }
-            out = await post_request(need, about_line);
+            out = await post_request(need, about_line, audience);
         }
     } except Exception as e {
         ask_busy = False;
@@ -1002,9 +1034,9 @@ impl app.friend_decline(rid: str) -> None {
     publish_ex();
 }
 
-"""Back from a request / an ask -> the Asks tab they were opened from."""
+"""Back from a request / an ask -> the Inbox tab they were opened from."""
 impl app.back_home -> None {
-    set_tab("asks");
+    set_tab("inbox");
     view = "home";
     open_req_id = "";
     open_ask_id = "";
@@ -1024,7 +1056,7 @@ impl app.toggle_as_friend -> None {
 
 # ---------------------------------------------------------------- tabs (SOH-213)
 
-"""Home · Asks · People, remembered for the session (sessionStorage)."""
+"""Home · Inbox · People, remembered for the session (sessionStorage)."""
 impl app.set_tab(next_tab: str) -> None {
     tab = next_tab;
     save_tab(next_tab);
@@ -1037,7 +1069,247 @@ impl app.set_cap_kind(kind: str) -> None {
     save_cap_kind(kind);
 }
 
-"""Reveals shown on the Asks tab stop counting toward its badge."""
+"""Reveals shown on the Inbox tab stop counting toward its badge."""
 impl app.mark_seen(ids: list[str]) -> None {
     seen_reveals = seen_reveals + [i for i in ids if i not in seen_reveals];
+}
+
+# ---------------------------------------------------------------- agent inbox (SOH-224)
+
+impl app.publish_agent -> None {
+    agent_view = {
+        "rows": AGENT["rows"],
+        "loaded": AGENT["loaded"],
+        "running": AGENT["running"],
+        "error": AGENT["error"],
+        "pending": {**(AGENT["pending"] as dict)},
+        "errors": {**(AGENT["errors"] as dict)},
+        "last_run": AGENT["last_run"]
+    };
+}
+
+"""ListAgentActions("open") -> AGENT.rows. A row whose resolve is still in flight
+keeps its optimistic local state (the server hasn't answered yet)."""
+impl app.load_actions -> None {
+    found: list[dict] = [];
+    try {
+        found = await list_agent_actions("open", 30);
+    } except Exception as e {
+        AGENT["loaded"] = True;
+        AGENT["error"] = "Couldn't load your agent's suggestions.";
+        publish_agent();
+        return;
+    }
+    merged: list[dict] = [];
+    for r in found {
+        aid: str = ((r["action"] or {})["_jac_id"] or "") as str;
+        local: dict = agent_row(aid);
+        merged = merged + [local if (AGENT["pending"] as dict)[aid] and local["action"] else r];
+    }
+    AGENT["rows"] = merged;
+    AGENT["loaded"] = True;
+    publish_agent();
+}
+
+"""RunAgent(reason) then ListAgentActions. One run at a time; a trigger that
+arrives mid-run (e.g. Capture -> Done while the open-run is going) runs once more
+after it. The skeleton cards show for the whole run + reload."""
+impl app.run_agent_now(reason: str) -> None {
+    if not agent_available() {
+        AGENT["loaded"] = True;
+        publish_agent();
+        return;
+    }
+    if AGENT["running"] {
+        AGENT["queued"] = reason;
+        return;
+    }
+    AGENT["running"] = True;
+    AGENT["error"] = "";
+    publish_agent();
+    out: dict = {};
+    try {
+        out = await run_agent(reason);
+    } except Exception as e {
+        out = {"error": "failed"};
+    }
+    if out["error"] {
+        AGENT["error"] = "Your agent couldn't finish that run — try again.";
+    } else {
+        last: dict = {
+            "ran_at": (out["ran_at"] or "") as str,
+            "new": (out["new"] or 0) as int,
+            "total_open": (out["total_open"] or 0) as int,
+            "ms": now_ms()
+        };
+        save_agent_run(last);
+        AGENT["last_run"] = last;
+    }
+    await load_actions();
+    AGENT["running"] = False;
+    publish_agent();
+    again: str = (AGENT["queued"] or "") as str;
+    if again {
+        AGENT["queued"] = "";
+        run_agent_now(again);
+    }
+}
+
+"""Entering home: run the agent if it hasn't run in the last 10 minutes this
+session, else just list what it already found."""
+impl app.agent_on_open -> None {
+    AGENT["last_run"] = session_agent_run();
+    publish_agent();
+    age: int = agent_run_age_ms();
+    if age < 0 or age > AGENT_STALE_MS {
+        run_agent_now("open");
+    } else {
+        load_actions();
+    }
+}
+
+impl app.run_agent_manual -> None {
+    run_agent_now("manual");
+}
+
+"""ResolveAgentAction, optimistic: the card turns into its receipt at once; on an
+error it comes back as it was with an inline message."""
+impl app.resolve_action(aid: str, decision: str, edited: str) -> None {
+    row: dict = agent_row(aid);
+    act: dict = (row["action"] or {}) as dict;
+    if not act["_jac_id"] or (AGENT["pending"] as dict)[aid] {
+        return;
+    }
+    prev_status: str = (act["status"] or "open") as str;
+    prev_draft: str = (act["draft"] or "") as str;
+    sent_draft: str = edited if decision == "approve" else "";
+    agent_patch(aid, agent_status_for((act["kind"] or "") as str, decision), sent_draft);
+    agent_map_put("pending", aid, True);
+    agent_map_put("errors", aid, "");
+    publish_agent();
+    out: dict = {};
+    # promise_due: approving means "Mark promise done" -> CompletePromise server-side.
+    complete: bool = decision == "approve" and act["kind"] == "promise_due";
+    try {
+        out = await resolve_agent_action(aid, decision, sent_draft, complete);
+    } except Exception as e {
+        out = {"error": "failed"};
+    }
+    agent_map_put("pending", aid, False);
+    code: str = resolve_error(out);
+    if code {
+        agent_patch(aid, prev_status, prev_draft);
+        agent_map_put("errors", aid, agent_err_text(code));
+        publish_agent();
+        return;
+    }
+    srv: dict = (out["action"] or {}) as dict;
+    if srv["status"] {
+        agent_patch(aid, srv["status"] as str, (srv["draft"] or "") as str);
+    }
+    publish_agent();
+}
+
+"""ask_network Approve (SOH-223): the prefilled ask sheet's *Post request* ->
+ResolveAgentAction(approve, edited_draft=<confirmed need>). SK's walker calls
+PostRequest server-side (audience "everyone"), so the client does NOT post it
+again. Not optimistic: the sheet shows busy / the error, and only a success
+turns the card into "Ask posted"; then ListMyRequests shows it under Your asks.
+The about line is the action payload's (the walker takes no edited one), so
+the sheet shows it read-only."""
+impl app.post_ask_action(aid: str, need: str, about_line: str) -> None {
+    row: dict = agent_row(aid);
+    act: dict = (row["action"] or {}) as dict;
+    if not act["_jac_id"] or not need or (AGENT["pending"] as dict)[aid] {
+        return;
+    }
+    out: dict = {};
+    ask_busy = True;
+    ask_error = "";
+    agent_map_put("pending", aid, True);
+    agent_map_put("errors", aid, "");
+    publish_agent();
+    made: dict = {};
+    try {
+        out = await resolve_agent_action(aid, "approve", need);
+        # No Card yet (the walker's PostRequest step reports no_card; the action is
+        # left open): make one the same way the gap path does, then retry once.
+        if resolve_error(out) == "no_card" {
+            made = await publish_card(me_name or "me", about_line, me_about);
+            if not made["error"] {
+                out = await resolve_agent_action(aid, "approve", need);
+            }
+        }
+    } except Exception as e {
+        out = {"error": "failed"};
+    }
+    agent_map_put("pending", aid, False);
+    code: str = resolve_error(out);
+    if code {
+        ask_busy = False;
+        ask_error = err_text(code) if code in ["no_card", "forbidden"] else agent_err_text(code);
+        publish_agent();
+        return;
+    }
+    srv: dict = (out["action"] or {}) as dict;
+    agent_patch(aid, ((srv["status"] or "approved") as str), need);
+    publish_agent();
+    # result = { step: "posted", request }: show it under Your asks at once; the
+    # ListMyRequests below replaces the row.
+    posted: dict = ((out["result"] or {})["request"] or {}) as dict;
+    if posted["_jac_id"] {
+        EX["mine"] = [{"request": posted, "replies": []}] + [m for m in (EX["mine"] as list[dict]) if (m["request"] or {})["_jac_id"] != posted["_jac_id"]];
+        publish_ex();
+    }
+    ask_busy = False;
+    load_mine();
+}
+
+"""answer_ask Approve (SOH-223 amendment): resolve FIRST — the walker runs
+ReplyToRequest and returns { step: "replied", reply } — then open the existing
+friend reply flow on that reply (so the client never calls ReplyToRequest twice).
+On an error the card stays with an inline message and nothing opens."""
+impl app.answer_ask_action(aid: str, rid: str) -> None {
+    row: dict = agent_row(aid);
+    act: dict = (row["action"] or {}) as dict;
+    if not act["_jac_id"] or (AGENT["pending"] as dict)[aid] {
+        return;
+    }
+    agent_map_put("pending", aid, True);
+    agent_map_put("errors", aid, "");
+    publish_agent();
+    out: dict = {};
+    try {
+        out = await resolve_agent_action(aid, "approve", "");
+    } except Exception as e {
+        out = {"error": "failed"};
+    }
+    agent_map_put("pending", aid, False);
+    code: str = resolve_error(out);
+    if code {
+        agent_map_put("errors", aid, agent_err_text(code));
+        publish_agent();
+        return;
+    }
+    srv: dict = (out["action"] or {}) as dict;
+    agent_patch(aid, ((srv["status"] or "approved") as str), "");
+    publish_agent();
+    reply: dict = ((out["result"] or {})["reply"] or {}) as dict;
+    ent: dict = friend_get(rid);
+    if not ent["request"] {
+        for r in EX["incoming"] as list[dict] {
+            if r["_jac_id"] == rid {
+                ent["request"] = r;
+            }
+        }
+    }
+    if not ent["request"] {
+        ent["request"] = {"_jac_id": rid, "need": act["title"], "from_handle": "", "about_line": ""};
+    }
+    if reply["_jac_id"] {
+        ent["reply"] = reply;
+    }
+    friend_put(rid, ent);
+    publish_ex();
+    open_ask(rid);
 }
