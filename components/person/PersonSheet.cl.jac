@@ -16,15 +16,18 @@ import from ..ui.badge { Badge }
 import from ..ui.button { Button, buttonVariants }
 import from ..ui.skeleton { Skeleton }
 import from ..ui.textarea { Textarea }
-import from ..ui.icons { ChevronRightIcon }
+import from ..ui.input { Input }
+import from ..ui.icons { ChevronRightIcon, PencilIcon, MoreIcon }
 import from ..ui.collapsible { Collapsible, CollapsibleTrigger, CollapsibleContent }
+import from ..ui.dropdown_menu { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem }
 import from ..ui.alert_dialog {
     AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle,
     AlertDialogDescription, AlertDialogAction, AlertDialogCancel
 }
 import from ..capture.Review { ReviewRow }
+import from ..capture.ReviewEditors { EditorField, EditorFooter }
 import from ..goals.RankList { strength_variant }
-import from ..api { person_detail, brief, complete_promise, draft_follow_up, forget }
+import from ..api { person_detail, brief, complete_promise, draft_follow_up, forget, update_person_contact, archive_person }
 import from ...lib.text { join_with, short_date }
 import from ...lib.utils { cn }
 
@@ -79,6 +82,143 @@ def:pub PersonSection(title: str, count: int, default_open: bool = False, childr
                 <ul className="flex flex-col divide-y divide-border border-t">{children}</ul>
             </CollapsibleContent>
         </Collapsible>;
+}
+
+"""Read-only contact block: email/phone (tappable), location, links (each opens
+in a new tab, `rel=noopener`). "No contact details yet" when every field is
+empty — the header pencil is still the way in."""
+def:pub ContactSection(person: dict) -> JsxElement {
+    email: str = _s(person, "email");
+    phone: str = _s(person, "phone");
+    location: str = _s(person, "location");
+    links: list[str] = (person["links"] or []) as list[str];
+    has_any: bool = bool(email or phone or location or len(links) > 0);
+    return
+        <div className="flex flex-col gap-1.5 rounded-lg border bg-card p-3 shadow-edge">
+            <span className="text-eyebrow text-muted-foreground">Contact</span>
+            {not has_any and <p className="text-body-sm text-muted-foreground">No contact details yet</p>}
+            {email and
+                <a href={"mailto:" + email} className="truncate text-body-sm text-link underline-offset-4 hover:underline">
+                    {email}
+                </a>}
+            {phone and
+                <a href={"tel:" + phone} className="truncate text-body-sm text-link underline-offset-4 hover:underline">
+                    {phone}
+                </a>}
+            {location and <span className="text-body-sm text-foreground">{location}</span>}
+            {for link in links {
+                <a
+                    key={link}
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="truncate text-body-sm text-link underline-offset-4 hover:underline"
+                >
+                    {link}
+                </a>
+            }}
+        </div>;
+}
+
+"""Inline form for the sheet's pencil button: name/org/title/how_met (same
+fields Review's PersonEditor edits) plus email/phone/location/links (one per
+line). Save always sends the full set; the caller (PersonSheet) trims each
+field to only the ones that actually changed before calling the walker."""
+def:pub PersonContactEditor(
+    person: dict,
+    how_met: str,
+    busy: bool,
+    error: str,
+    onSave: Callable[[str, str, str, str, str, str, str, list], None],
+    onCancel: Callable[[], None]
+) -> JsxElement {
+    pid: str = (person["_jac_id"] or "") as str;
+    orig_links: list[str] = (person["links"] or []) as list[str];
+    has name: str = _s(person, "name"),
+        org: str = _s(person, "org"),
+        title: str = _s(person, "title"),
+        met: str = how_met,
+        email: str = _s(person, "email"),
+        phone: str = _s(person, "phone"),
+        location: str = _s(person, "location"),
+        links_text: str = join_with(orig_links, "\n");
+
+    def ch_name(e: ChangeEvent) {
+        name = e.target.value;
+    }
+
+    def ch_org(e: ChangeEvent) {
+        org = e.target.value;
+    }
+
+    def ch_title(e: ChangeEvent) {
+        title = e.target.value;
+    }
+
+    def ch_met(e: ChangeEvent) {
+        met = e.target.value;
+    }
+
+    def ch_email(e: ChangeEvent) {
+        email = e.target.value;
+    }
+
+    def ch_phone(e: ChangeEvent) {
+        phone = e.target.value;
+    }
+
+    def ch_location(e: ChangeEvent) {
+        location = e.target.value;
+    }
+
+    def ch_links(e: ChangeEvent) {
+        links_text = e.target.value;
+    }
+
+    def save() -> None {
+        links: list[str] = [s.strip() for s in links_text.split("\n") if s.strip()];
+        onSave(name.strip(), org.strip(), title.strip(), met.strip(), email.strip(), phone.strip(), location.strip(), links);
+    }
+
+    return
+        <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 shadow-edge">
+            <EditorField label="Name" htmlFor={"ps-name-" + pid}>
+                <Input id={"ps-name-" + pid} value={name} disabled={busy} autoComplete="off" onChange={ch_name} />
+            </EditorField>
+            <div className="grid grid-cols-2 gap-2">
+                <EditorField label="Title" htmlFor={"ps-title-" + pid}>
+                    <Input id={"ps-title-" + pid} value={title} disabled={busy} placeholder="e.g. PM" onChange={ch_title} />
+                </EditorField>
+                <EditorField label="Org" htmlFor={"ps-org-" + pid}>
+                    <Input id={"ps-org-" + pid} value={org} disabled={busy} placeholder="e.g. UMich" onChange={ch_org} />
+                </EditorField>
+            </div>
+            <EditorField label="How you met" htmlFor={"ps-met-" + pid}>
+                <Input id={"ps-met-" + pid} value={met} disabled={busy} placeholder="e.g. coffee chat — Ross café" onChange={ch_met} />
+            </EditorField>
+            <div className="grid grid-cols-2 gap-2">
+                <EditorField label="Email" htmlFor={"ps-email-" + pid}>
+                    <Input id={"ps-email-" + pid} type="email" value={email} disabled={busy} onChange={ch_email} />
+                </EditorField>
+                <EditorField label="Phone" htmlFor={"ps-phone-" + pid}>
+                    <Input id={"ps-phone-" + pid} type="tel" value={phone} disabled={busy} onChange={ch_phone} />
+                </EditorField>
+            </div>
+            <EditorField label="Location" htmlFor={"ps-loc-" + pid}>
+                <Input id={"ps-loc-" + pid} value={location} disabled={busy} placeholder="e.g. Ann Arbor, MI" onChange={ch_location} />
+            </EditorField>
+            <EditorField label="Links (one per line)" htmlFor={"ps-links-" + pid}>
+                <Textarea id={"ps-links-" + pid} rows={3} value={links_text} disabled={busy} onChange={ch_links} />
+            </EditorField>
+            <EditorFooter
+                busy={busy}
+                error={error}
+                can_save={bool(name.strip())}
+                note=""
+                onSave={save}
+                onCancel={onCancel}
+            />
+        </div>;
 }
 
 def:pub FactItem(row: dict, open_key: str, onToggle: Callable[[str], None]) -> JsxElement {
@@ -184,7 +324,13 @@ def:pub PersonSheet(
         brief_busy: bool = False,
         confirm_open: bool = False,
         forget_busy: bool = False,
-        forget_error: str = "";
+        forget_error: str = "",
+        editing: bool = False,
+        edit_busy: bool = False,
+        edit_error: str = "",
+        archive_confirm_open: bool = False,
+        archive_busy: bool = False,
+        archive_error: str = "";
 
     async can with [person_id, open] entry {
         if not open or not person_id {
@@ -202,6 +348,9 @@ def:pub PersonSheet(
         brief_audio = "";
         brief_note = "";
         forget_error = "";
+        editing = False;
+        edit_error = "";
+        archive_error = "";
         got: dict = {};
         try {
             got = await person_detail(person_id);
@@ -328,6 +477,108 @@ def:pub PersonSheet(
         forget_busy = False;
     }
 
+    def start_edit(e: any) -> None {
+        edit_error = "";
+        editing = True;
+    }
+
+    def cancel_edit() -> None {
+        editing = False;
+        edit_error = "";
+    }
+
+    """UpdatePerson(person_id, name, org, title, how_met, email, phone, location,
+    links) — only the fields that actually changed are sent non-empty (an
+    unchanged field must not overwrite whatever the server already has).
+    Optimistic: the sheet updates immediately and rolls back on error."""
+    async def save_contact(
+        name: str, org: str, title: str, how_met_v: str,
+        email: str, phone: str, location: str, links: list[str]
+    ) -> None {
+        edit_busy = True;
+        edit_error = "";
+        cur_person: dict = (detail["person"] or {}) as dict;
+        cur_how_met: str = _s(detail, "how_met");
+        orig_links: list[str] = (cur_person["links"] or []) as list[str];
+        send_name: str = name if name != _s(cur_person, "name") else "";
+        send_org: str = org if org != _s(cur_person, "org") else "";
+        send_title: str = title if title != _s(cur_person, "title") else "";
+        send_met: str = how_met_v if how_met_v != cur_how_met else "";
+        send_email: str = email if email != _s(cur_person, "email") else "";
+        send_phone: str = phone if phone != _s(cur_person, "phone") else "";
+        send_location: str = location if location != _s(cur_person, "location") else "";
+        send_links: list[str] = links if join_with(links, "\n") != join_with(orig_links, "\n") else [];
+
+        before: dict = {**detail};
+        updated_person: dict = {**cur_person};
+        updated_person["name"] = name;
+        updated_person["org"] = org;
+        updated_person["title"] = title;
+        updated_person["email"] = email;
+        updated_person["phone"] = phone;
+        updated_person["location"] = location;
+        updated_person["links"] = links;
+        new_detail: dict = {**detail};
+        new_detail["person"] = updated_person;
+        new_detail["how_met"] = how_met_v;
+        detail = new_detail;
+        editing = False;
+
+        out: dict = {};
+        try {
+            out = await update_person_contact(
+                person_id, send_name, send_org, send_title, send_met,
+                send_email, send_phone, send_location, send_links
+            );
+            if out["error"] {
+                detail = before;
+                edit_error = "Couldn't save — try again.";
+                editing = True;
+            }
+        } except Exception as err {
+            detail = before;
+            edit_error = "Couldn't save right now. " + str(err);
+            editing = True;
+        }
+        edit_busy = False;
+    }
+
+    def ask_archive(e: any) -> None {
+        archive_error = "";
+        archive_confirm_open = True;
+    }
+
+    def set_archive_confirm(v: bool) -> None {
+        archive_confirm_open = v;
+    }
+
+    """ArchivePerson: hides them from lists/rankings (restorable), never touches
+    facts/intents/promises/edges — unlike Forget. Same close-and-refresh
+    callback (`on_forgotten`) as Forget uses, so the caller's list drops the row
+    either way."""
+    async def do_archive(e: any) -> None {
+        e.preventDefault();
+        archive_busy = True;
+        archive_error = "";
+        reply: dict = {};
+        gone_id: str = person_id;
+        try {
+            reply = await archive_person(gone_id);
+            if reply["error"] {
+                archive_error = "Couldn't archive this person.";
+            } else {
+                archive_confirm_open = False;
+                on_close();
+                if on_forgotten {
+                    on_forgotten(gone_id);
+                }
+            }
+        } except Exception as err {
+            archive_error = "Couldn't archive right now. " + str(err);
+        }
+        archive_busy = False;
+    }
+
     ready: bool = loaded_for == person_id and loaded_for != "";
     missing: bool = ready and bool(detail["error"]);
     person: dict = (detail["person"] or {}) as dict;
@@ -371,11 +622,23 @@ def:pub PersonSheet(
                     </SheetHeader>
                 } else {
                     <SheetHeader>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <SheetTitle>{_s(person, "name")}</SheetTitle>
-                            {rel and _s(rel, "label") and <Badge variant="outline">{_s(rel, "label")}</Badge>}
-                            {rel and _s(rel, "strength") and
-                                <Badge variant={strength_variant(_s(rel, "strength"))}>{_s(rel, "strength")}</Badge>}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <SheetTitle>{_s(person, "name")}</SheetTitle>
+                                {rel and _s(rel, "label") and <Badge variant="outline">{_s(rel, "label")}</Badge>}
+                                {rel and _s(rel, "strength") and
+                                    <Badge variant={strength_variant(_s(rel, "strength"))}>{_s(rel, "strength")}</Badge>}
+                            </div>
+                            {not editing and
+                                <Button
+                                    size="icon-lg"
+                                    variant="ghost"
+                                    aria-label="Edit this person"
+                                    className="shrink-0 text-muted-foreground"
+                                    onClick={start_edit}
+                                >
+                                    <PencilIcon />
+                                </Button>}
                         </div>
                         <SheetDescription>
                             {join_with([s for s in [sub, ("met: " + how_met) if how_met else ""] if s], " — ") or "No details yet"}
@@ -384,6 +647,16 @@ def:pub PersonSheet(
                     <SheetBody className="gap-4">
                         {rel and _s(rel, "reason") and
                             <p className="text-body-sm text-muted-foreground">{_s(rel, "reason")}</p>}
+                        {(
+                            <PersonContactEditor
+                                person={person}
+                                how_met={how_met}
+                                busy={edit_busy}
+                                error={edit_error}
+                                onSave={save_contact}
+                                onCancel={cancel_edit}
+                            /> if editing else <ContactSection person={person} />
+                        )}
                         <div className="grid grid-cols-2 gap-2">
                             <Button variant="secondary" disabled={draft_busy} onClick={run_draft}>
                                 {"Drafting…" if draft_busy else "Draft follow-up"}
@@ -435,8 +708,39 @@ def:pub PersonSheet(
                                 <NoteItem key={_s(row["note"], "_jac_id")} row={row} open_key={open_key} onToggle={toggle} />
                             }}
                         </PersonSection>
-                        <Button variant="destructive" className="w-full" onClick={ask_forget}>Forget this person</Button>
+                        <div className="flex items-center gap-2">
+                            <Button variant="secondary" className="flex-1" onClick={ask_archive}>Archive</Button>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild={True}>
+                                    <Button size="icon-lg" variant="outline" aria-label="More actions for this person">
+                                        <MoreIcon />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem variant="destructive" onSelect={ask_forget}>
+                                        Forget permanently
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
                     </SheetBody>
+                    <AlertDialog open={archive_confirm_open} onOpenChange={set_archive_confirm}>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>{"Archive " + (_s(person, "name") or "this person") + "?"}</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Hides them from lists and rankings. Restore any time from Settings.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            {archive_error and <p role="alert" className="text-body-sm text-destructive">{archive_error}</p>}
+                            <AlertDialogFooter>
+                                <AlertDialogCancel disabled={archive_busy}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction disabled={archive_busy} onClick={do_archive}>
+                                    {"Archiving…" if archive_busy else "Archive"}
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
                     <AlertDialog open={confirm_open} onOpenChange={set_confirm}>
                         <AlertDialogContent>
                             <AlertDialogHeader>

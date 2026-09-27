@@ -1,41 +1,55 @@
-"""Mocks for the person sheet + Today list — SOH-207 / SOH-187. OWNER: Person B.
+"""Mocks for the person sheet + Today list — SOH-207 / SOH-187 / SOH-222. OWNER: Person B.
 
 Exact contract shapes (contracts/walkers.md): `PersonDetail(person_id)`,
 `Brief(person_id, voice)`, `ListPromises()`, `CompletePromise(promise_id, done)`,
-`DraftFollowUp(person_id, intent)`, `Forget(id)`. Each returns the walker's
-report LIST. Same pseudonymous people as the GoalRank mock (mock-person-maya,
--dev, -lena, -sam). State (promise done flags, forgotten people) lives in the
-MOCK_PERSON glob so a tick or a Forget survives across calls under `?mock=1`.
+`DraftFollowUp(person_id, intent)`, `Forget(id)`,
+`UpdatePerson(person_id, name, org, title, how_met, email, phone, location, links)`,
+`ArchivePerson(person_id)`. Each returns the walker's report LIST. Same
+pseudonymous people as the GoalRank mock (mock-person-maya, -dev, -lena, -sam).
+State (promise done flags, forgotten/archived people, edited fields) lives in
+the MOCK_PERSON glob so a tick, an edit, an Archive or a Forget survives across
+calls under `?mock=1`.
 """
 
-glob MOCK_PERSON: dict[str, any] = {"done": {}, "gone": []};
+glob MOCK_PERSON: dict[str, any] = {"done": {}, "gone": [], "archived": [], "overrides": {}};
 
 glob _PEOPLE: dict[str, any] = {
          "mock-person-maya": {
              "name": "Maya Chen", "org": "Stripe Climate", "title": "Carbon removal lead",
              "how_met": "worked together at Stripe", "label": "known", "strength": "strong",
              "reason": "Runs Stripe's climate purchasing and said she knows pre-seed hardware funds.",
-             "opener": "Maya — which climate hardware funds would you ask first?"
+             "opener": "Maya — which climate hardware funds would you ask first?",
+             "email": "maya.chen@stripeclimate.example", "phone": "+1 415 555 0148",
+             "location": "San Francisco, CA",
+             "links": ["https://stripe.com/climate", "https://maya-chen.example"]
          },
          "mock-person-dev": {
              "name": "Dev Okafor", "org": "Great Lakes Angels", "title": "Associate",
              "how_met": "spring pitch night", "label": "known", "strength": "medium",
              "reason": "Screens energy deals for an angel group that writes pre-seed checks.",
-             "opener": ""
+             "opener": "",
+             "email": "", "phone": "", "location": "Ann Arbor, MI", "links": []
          },
          "mock-person-lena": {
              "name": "Lena Park", "org": "Campus Energy Club", "title": "President",
              "how_met": "Ross climate panel", "label": "route", "strength": "medium",
              "reason": "Knows two climate VCs from the club's speaker series.",
-             "opener": ""
+             "opener": "",
+             "email": "lena.park@umich.example", "phone": "", "location": "", "links": []
          },
          "mock-person-sam": {
              "name": "Sam Ruiz", "org": "Ruiz Castings", "title": "Plant manager",
              "how_met": "", "label": "cold", "strength": "weak",
              "reason": "Operates the kind of plant Kiln Labs targets.",
-             "opener": ""
+             "opener": "",
+             "email": "", "phone": "+1 313 555 0199", "location": "Detroit, MI", "links": []
          }
      };
+
+"""The stored edit overlay for a person, or {}."""
+def _overrides(pid: str) -> dict {
+    return ((MOCK_PERSON["overrides"] as dict)[pid] or {}) as dict;
+}
 
 glob _PROMISES: list[dict[str, any]] = [
          {"id": "mock-promise-maya", "to": "mock-person-maya", "text": "Send Maya the Kiln Labs one-pager", "due": "2026-09-28", "span": "I said I'd send Maya the one-pager this weekend."},
@@ -51,7 +65,19 @@ def _person(pid: str) -> dict[str, any] | None {
     if not p {
         return None;
     }
-    return {"_jac_id": pid, "name": p["name"], "org": p["org"], "title": p["title"], "status": "confirmed"};
+    over: dict = _overrides(pid);
+    name: str = (over["name"] or p["name"]) as str;
+    org: str = (over["org"] or p["org"]) as str;
+    title: str = (over["title"] or p["title"]) as str;
+    email: str = (over["email"] or p["email"] or "") as str;
+    phone: str = (over["phone"] or p["phone"] or "") as str;
+    location: str = (over["location"] or p["location"] or "") as str;
+    links: list[str] = (over["links"] or p["links"] or []) as list[str];
+    archived: bool = pid in (MOCK_PERSON["archived"] as list[str]);
+    return {
+        "_jac_id": pid, "name": name, "org": org, "title": title, "status": "confirmed",
+        "email": email, "phone": phone, "location": location, "links": links, "archived": archived
+    };
 }
 
 def _is_done(prid: str) -> bool {
@@ -100,13 +126,15 @@ def:pub mock_person_detail(person_id: str) -> list[dict[str, any]] {
         return [{"error": "not_found"}];
     }
     p: any = _PEOPLE[person_id];
+    over: dict = _overrides(person_id);
+    how_met: str = (over["how_met"] or p["how_met"]) as str;
     rel: any = None;
     if p["label"] != "cold" {
         rel = {"goal_id": "mock-goal-raise", "goal_text": "Raise a $750k pre-seed for Kiln Labs by December", "label": p["label"], "strength": p["strength"], "reason": p["reason"], "opener": p["opener"]};
     }
     return [{
         "person": person,
-        "how_met": p["how_met"],
+        "how_met": how_met,
         "knows_status": "confirmed",
         "last_contact": "2026-09-23T18:40:00Z",
         "relevance": rel,
@@ -187,4 +215,70 @@ def:pub mock_forget(id: str) -> list[dict[str, any]] {
         "deleted": "person", "id": id,
         "retracted": {"facts": 1, "intents": 0, "promises": 0, "edges": 2, "introductions_canceled": 0, "relevant_to": 1}
     }];
+}
+
+"""UpdatePerson(person_id, name, org, title, how_met, email, phone, location, links)
+mock (SOH-222): only NON-EMPTY (stripped) args overwrite a field, `links`
+overwrites only when the caller sent a non-empty list — same "leave the rest
+alone" rule `edits.sv.jac`'s `UpdatePerson` uses today for name/org/title/how_met.
+Persists in MOCK_PERSON["overrides"] so the edit survives a re-render or a
+Today-list refresh under `?mock=1`."""
+def:pub mock_update_person(
+    person_id: str, name: str, org: str, title: str, how_met: str,
+    email: str, phone: str, location: str, links: list[str]
+) -> list[dict[str, any]] {
+    if _person(person_id) is None {
+        return [{"error": "not_found"}];
+    }
+    over: dict = {**_overrides(person_id)};
+    if name.strip() {
+        over["name"] = name.strip();
+    }
+    if org.strip() {
+        over["org"] = org.strip();
+    }
+    if title.strip() {
+        over["title"] = title.strip();
+    }
+    if how_met.strip() {
+        over["how_met"] = how_met.strip();
+    }
+    if email.strip() {
+        over["email"] = email.strip();
+    }
+    if phone.strip() {
+        over["phone"] = phone.strip();
+    }
+    if location.strip() {
+        over["location"] = location.strip();
+    }
+    if len(links) > 0 {
+        over["links"] = links;
+    }
+    all_over: dict = {**(MOCK_PERSON["overrides"] as dict)};
+    all_over[person_id] = over;
+    MOCK_PERSON["overrides"] = all_over;
+    updated: dict[str, any] | None = _person(person_id);
+    if updated is None {
+        return [{"error": "not_found"}];
+    }
+    return [updated];
+}
+
+"""ArchivePerson(person_id) mock (SOH-222): soft delete — `Person.archived = true`,
+hidden from lists/rankings, restorable; never touches facts/intents/promises/
+edges (unlike Forget)."""
+def:pub mock_archive_person(person_id: str) -> list[dict[str, any]] {
+    if _person(person_id) is None {
+        return [{"error": "not_found"}];
+    }
+    already: list[str] = MOCK_PERSON["archived"] as list[str];
+    if person_id not in already {
+        MOCK_PERSON["archived"] = already + [person_id];
+    }
+    updated: dict[str, any] | None = _person(person_id);
+    if updated is None {
+        return [{"error": "not_found"}];
+    }
+    return [updated];
 }
