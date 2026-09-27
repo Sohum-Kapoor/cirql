@@ -111,8 +111,13 @@ def:pub CaptureForm(
     blocker: str = capture_blocker(mode, text, guided, voice);
     can_submit: bool = not blocker and not locked;
 
+    # Fixed-height footer (SOH-226): pinned to the viewport bottom so the
+    # Capture button's on-screen position never moves — not while the
+    # textarea above grows, not between the idle / pending states. The wait /
+    # blocker narrative sits ABOVE the button, in its own reserved-height
+    # slot, so its own appearing/disappearing can't shift the button either.
     return
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-5 pb-[calc(9rem+env(safe-area-inset-bottom))]">
             <header className="-ml-2 flex items-center gap-1">
                 <Button size="icon" variant="ghost" disabled={locked} onClick={handle_back} aria-label="Back to home">
                     <ChevronLeftIcon className="size-5" />
@@ -141,6 +146,7 @@ def:pub CaptureForm(
                             onChange={handle_change}
                             disabled={pending}
                             placeholder="What happened? Who did you meet, what did they say, what did you promise?"
+                            className="max-h-[40vh] overflow-y-auto"
                         />
                         <FieldDescription>
                             Write it the way you'd tell a friend, or paste notes or an email. Cirql keeps the original text.
@@ -159,22 +165,24 @@ def:pub CaptureForm(
                         <Button variant="secondary" size="sm" onClick={handle_submit}>Retry</Button>}
                 </div>
             }}
-            <div className="flex flex-col gap-2">
-                <Button className="w-full" size="lg" disabled={not can_submit} onClick={handle_submit}>Capture</Button>
-                <div className="flex min-h-[4.5rem] flex-col gap-2">
-                    {if pending {
-                        <div className="flex flex-col items-center gap-2">
-                            <p role="status" aria-live="polite" className="text-center text-caption text-muted-foreground">
-                                {wait_copy(wait_stage)}
-                            </p>
-                            <div className="flex w-full flex-col gap-1.5">
-                                <Skeleton className="h-3.5 w-full" />
-                                <Skeleton className="h-3.5 w-2/3" />
+            <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-background/95 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pl-4 pr-4 backdrop-blur">
+                <div className="mx-auto flex w-full max-w-md flex-col gap-2">
+                    <div className="flex min-h-[4.5rem] flex-col justify-end gap-2">
+                        {if pending {
+                            <div className="flex flex-col items-center gap-2">
+                                <p role="status" aria-live="polite" className="text-center text-caption text-muted-foreground">
+                                    {wait_copy(wait_stage)}
+                                </p>
+                                <div className="flex w-full flex-col gap-1.5">
+                                    <Skeleton className="h-3.5 w-full" />
+                                    <Skeleton className="h-3.5 w-2/3" />
+                                </div>
                             </div>
-                        </div>
-                    } elif blocker and not voice_busy {
-                        <p className="text-center text-caption text-muted-foreground">{blocker}</p>
-                    }}
+                        } elif blocker and not voice_busy {
+                            <p className="text-center text-caption text-muted-foreground">{blocker}</p>
+                        }}
+                    </div>
+                    <Button className="w-full" size="lg" disabled={not can_submit} onClick={handle_submit}>Capture</Button>
                 </div>
             </div>
         </div>;

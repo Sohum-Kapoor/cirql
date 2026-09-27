@@ -62,7 +62,8 @@ import from .components.api {
 import from .components.mocks.exchange { mock_as_friend, mock_set_as_friend }
 import from .components.exchange.common { Poller, req_active }
 import from .components.exchange.Requests { RequestDetail }
-import from .components.exchange.Inbox { ApprovalView, asks_needing_you }
+import from .components.exchange.Inbox { ApprovalView }
+import from .components.agent.common { asks_needing_count, pick_unchecked }
 import from .components.ui.toaster { Toaster }
 import from .components.card.PublicCard { PublicCard }
 import from .lib.text { join_lines, today_month_day, join_with }
@@ -408,7 +409,6 @@ def:pub app -> JsxElement {
         me_about: str = "",
         as_friend: bool = False,
         tab: str = session_tab(),
-        seen_reveals: list[str] = [],
         agent_view: dict = empty_agent();
 
     # Public, no-login `/card/<handle>` (SOH-228): a QR or shared link lands
@@ -484,7 +484,8 @@ def:pub app -> JsxElement {
     def toggle_as_friend -> None;
     def set_tab(next_tab: str) -> None;
     def set_cap_kind(kind: str) -> None;
-    def mark_seen(ids: list[str]) -> None;
+    def start_auto_checks -> None;
+    async def run_auto_checks(ids: list[str]) -> None;
     def publish_agent -> None;
     async def load_actions -> None;
     async def run_agent_now(reason: str) -> None;
@@ -523,23 +524,40 @@ def:pub app -> JsxElement {
         }
     }
     open_ask_entry: dict = ((ex["friend"] or {})[open_ask_id] or {}) as dict if open_ask_id else {};
-    unseen_reveals: list[str] = [];
-    for rid in Object.keys(ex_claims) {  # jac:ignore[W2001]
-        if (ex_claims[rid] or {})["card"] and rid not in seen_reveals {
-            unseen_reveals = unseen_reveals + [rid];
-        }
-    }
     agent_rows: list[dict] = (agent_view["rows"] or []) as list[dict];
     covered: list[str] = covered_requests(agent_rows);
     incoming_shown: list[dict] = [r for r in ((ex["incoming"] or []) as list[dict]) if r["_jac_id"] not in covered];
-    agent_open: int = len([r for r in agent_rows if (r["action"] or {})["status"] == "open"]);
-    inbox_badge: int = agent_open + asks_needing_you(incoming_shown, (ex["friend"] or {}) as dict) + len(unseen_reveals);
-    # A reveal is "seen" once the Inbox tab is on screen.
-    useEffect(lambda {
-        if view == "home" and tab == "inbox" and len(unseen_reveals) > 0 {
-            mark_seen(unseen_reveals);
+    # `friend`, minus any request an open `answer_ask` AgentAction already
+    # represents (`covered`) — the exact same dict both the "Needs your OK"
+    # list and the badge count read, so a covered ask is never counted twice
+    # (once as the agent card, once here) (SOH-226).
+    friend_all: dict = (ex["friend"] or {}) as dict;
+    friend_shown: dict = {};
+    for rid in Object.keys(friend_all) {  # jac:ignore[W2001]
+        if rid not in covered {
+            friend_shown[rid] = friend_all[rid];
         }
-    }, [view, tab, len(unseen_reveals)]);
+    }
+    agent_open: int = len([r for r in agent_rows if (r["action"] or {})["status"] == "open"]);
+    # Inbox badge (SOH-226): OPEN agent proposals + asks needing your OK —
+    # nothing else (never a reveal notification, never count-0, never a
+    # duplicate of an agent card `covered` already represents).
+    inbox_badge: int = agent_open + asks_needing_count(incoming_shown, friend_shown, covered);
+    incoming_ids: list[str] = [];
+    for r in incoming_shown {
+        incoming_ids = incoming_ids + [(r["_jac_id"] or "") as str];
+    }
+    incoming_key: str = join_with(incoming_ids, ",");
+    # Drives the SOH-222 auto-check from the shell (SOH-226: the one place,
+    # not a second copy inside the Inbox screen) — up to 5 unchecked asks at
+    # a time, through `friend_check`, whenever the Inbox is open and the
+    # incoming list changes (a poll tick that adds a new ask included).
+    useEffect(lambda {
+        if view == "home" and tab == "inbox" {
+            start_auto_checks();
+        }
+        return lambda { };
+    }, [view, tab, incoming_key]);
     # Capture -> Done confirmation strip (SOH-226): auto-dismiss after 4 s.
     post_capture_summary: str = (post_capture["summary"] or "") as str;
     useEffect(lambda {
@@ -618,7 +636,7 @@ def:pub app -> JsxElement {
                     mine={ex_mine}
                     claims={ex_claims}
                     incoming={incoming_shown}
-                    friend={(ex["friend"] or {}) as dict}
+                    friend={friend_shown}
                     mock_mode={mocks_on()}
                     as_friend={as_friend}
                     onAsk={post_ask}
