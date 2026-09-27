@@ -414,6 +414,11 @@ def draw(svg_el: any, graph: dict, open_ref: any, on_select: any, on_settled: an
     # skeleton up until then instead of flashing an empty-looking canvas
     # while the simulation is still spreading nodes out (SOH-232).
     sim.on("end", lambda { on_settled(True); });
+    # SOH-241: d3 fires "end" only after 300 requestAnimationFrame ticks (5 s at
+    # 60 fps, never while the window is occluded or the CPU is starved), which
+    # left the settle overlay covering an already drawn graph for the whole demo.
+    # A wall-clock fallback lifts it after 1.2 s no matter what the frames do.
+    settle_timer: float = setTimeout(lambda { on_settled(True); }, 1200);  # jac:ignore[E1053]
 
     drag_behavior: any = drag()
         .on("start", lambda(event: any, d: any) {
@@ -471,6 +476,7 @@ def draw(svg_el: any, graph: dict, open_ref: any, on_select: any, on_settled: an
     svg.call(zoom_behavior).on("dblclick.zoom", None);
 
     return lambda {
+        clearTimeout(settle_timer);
         sim.stop();
         svg.on(".zoom", None);
         svg.on("click", None);
@@ -635,7 +641,7 @@ def:pub GraphView(
                         className={"block h-full w-full touch-none select-none" + (" opacity-60" if loading else "")}
                     />
                     if settling {
-                        <div role="status" aria-label="Loading your people" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-card">
+                        <div role="status" aria-label="Loading your people" className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 bg-card/60">
                             <Skeleton className="size-10 rounded-full" />
                             <Skeleton className="h-3 w-40" />
                         </div>
