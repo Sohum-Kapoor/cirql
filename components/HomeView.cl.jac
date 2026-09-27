@@ -27,7 +27,7 @@ import from .ui.dropdown_menu {
     DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
     DropdownMenuSeparator
 }
-import from .ui.icons { MoreIcon, ChevronRightIcon, ChevronDownIcon }
+import from .ui.icons { MoreIcon, ChevronRightIcon, ChevronDownIcon, PlusIcon }
 import from .settings.AppearanceSheet { AppearanceSheet }
 import from .ui.tabs { Tabs, TabsList, TabsTrigger, TabsContent }
 import from react { useEffect }
@@ -48,13 +48,61 @@ import from .notes.Timeline { Timeline }
 import from .people.ImportPeople { ImportPeople }
 import from ..lib.text { join_with }
 import from ..lib.utils { cn }
+import from .agent.common { since_iso }
 sv import from ..schema { Person }
 
 glob RANK_PREVIEW: int = 5;
+glob MONTH_ABBR: list[str] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+];
+glob NINETY_DAYS_MS: int = 90 * 24 * 60 * 60 * 1000;
+
+"""SOH-226: "Quiet for 90 days" is a display-only filter (relationships never
+decay — AGENTS.md). A person counts as quiet when `Knows.last_contact` is
+empty or unparseable (nothing captured yet) or older than 90 days. Reads
+`person["last_contact"]` defensively: `ListPeople` doesn't carry it yet
+(contract note appended below asking A to add it), so today every row is
+quiet until that lands — never a crash, never a score."""
+def:pub is_quiet_person(person: any) -> bool {
+    lc: str = (person["last_contact"] or "") as str;
+    ms: int = since_iso(lc);
+    if ms < 0 {
+        return True;
+    }
+    return ms > NINETY_DAYS_MS;
+}
+
+"""`Knows.last_contact` (ISO-8601) -> "Mon D", or "" when empty/unparseable."""
+def:pub format_last_contact(last_contact: str) -> str {
+    lc: str = (last_contact or "").strip();
+    if not lc {
+        return "";
+    }
+    try {
+        d: any = new(Date, lc);  # jac:ignore[W2001]
+        t: any = d.getTime();  # jac:ignore[W2001]
+        if isNaN(t) {  # jac:ignore[W2001]
+            return "";
+        }
+        month_idx: int = d.getMonth() as int;  # jac:ignore[W2001]
+        day: int = d.getDate() as int;  # jac:ignore[W2001]
+        return MONTH_ABBR[month_idx] + " " + str(day);
+    } except Exception as e {
+        return "";
+    }
+}
+
+"""Quiet-90+ row caption: "last note <Mon D>" when there's a (stale) date, else "no notes yet"."""
+def:pub quiet_row_label(person: any) -> str {
+    label: str = format_last_contact((person["last_contact"] or "") as str);
+    return ("last note " + label) if label else "no notes yet";
+}
 
 """One tappable row of the People list -> the person sheet. (A small component:
-lambda handlers inside a JSX `for` miscompile.)"""
-def:pub PeopleRow(person: any, onOpen: Callable[[str], None]) -> JsxElement {
+lambda handlers inside a JSX `for` miscompile.) `quiet_label`, when set (the
+Quiet 90+ filter), replaces the org/title line with "last note <Mon D>" /
+"no notes yet" — SOH-226, display only."""
+def:pub PeopleRow(person: any, onOpen: Callable[[str], None], quiet_label: str = "") -> JsxElement {
     pid: str = (person["_jac_id"] or "") as str;
     sub: str = join_with([s for s in [person["title"], person["org"]] if s], ", ");
     unconfirmed: bool = ((person["status"] or "") as str) == "proposed";
@@ -78,6 +126,7 @@ def:pub PeopleRow(person: any, onOpen: Callable[[str], None]) -> JsxElement {
                         {unconfirmed and <Badge variant="outline" className="shrink-0">unconfirmed</Badge>}
                     </span>
                     {sub and <span className="truncate text-caption text-muted-foreground">{sub}</span>}
+                    {quiet_label and <span className="truncate text-caption text-muted-foreground">{quiet_label}</span>}
                 </span>
                 <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
             </button>
@@ -150,6 +199,9 @@ def:pub HomeView(
         today_key: int = 0,
         forgotten_ids: list[str] = [],
         view_tab: str = "list",
+        more_choice: str = "circles",
+        show_import: bool = False,
+        quiet_only: bool = False,
         expanded_goal: str = "";
 
     # Person sheet (SOH-207): opened from a ranked row, a person row, the graph
@@ -202,11 +254,28 @@ def:pub HomeView(
         view_tab = v;
     }
 
-    # Import (SOH-181): Done switches the People sub-tab back to the list and
-    # refreshes it — same refresh path as the header's "Refresh" menu item —
-    # so a just-imported/confirmed person shows up without a manual refresh.
+    # SOH-226: People sub-tabs 7 -> 4 (List · Graph · Today · More). "More" is
+    # a small segmented row (Circles · Events · Notes); `more_choice` is
+    # remembered in component state for the session, same idiom as `view_tab`.
+    def set_more_choice(v: str) -> None {
+        more_choice = v;
+    }
+
+    def open_import(e: MouseEvent) {
+        show_import = True;
+    }
+
+    def toggle_quiet(e: MouseEvent) {
+        quiet_only = not quiet_only;
+    }
+
+    # Import (SOH-181, moved to a "+" on List for SOH-226): Done switches the
+    # People sub-tab back to the list and refreshes it — same refresh path as
+    # the header's "Refresh" menu item — so a just-imported/confirmed person
+    # shows up without a manual refresh.
     def import_done() -> None {
         view_tab = "list";
+        show_import = False;
         onRefresh();
     }
 
@@ -302,6 +371,10 @@ def:pub HomeView(
     }
 
     known: list[Person] = [p for p in people if ((p["_jac_id"] or "") as str) not in forgotten_ids];
+    quiet_known: list[Person] = [p for p in known if is_quiet_person(p)];
+    quiet_count: int = len(quiet_known);
+    shown_known: list[Person] = quiet_known if quiet_only else known;
+    quiet_chip_label: str = ("Quiet 90+ days (" + str(quiet_count) + ")") if quiet_count > 0 else "Quiet 90+ days";
     friend_ids: list[str] = [rid for rid in Object.keys(friend) if (friend[rid] or {})["request"]];  # jac:ignore[W2001]
     has_friend_asks: bool = len(incoming) > 0 or len(friend_ids) > 0;
 
@@ -388,31 +461,53 @@ def:pub HomeView(
                         <TabsTrigger value="list">List</TabsTrigger>
                         <TabsTrigger value="graph">Graph</TabsTrigger>
                         <TabsTrigger value="today">Today</TabsTrigger>
-                        <TabsTrigger value="circles">Circles</TabsTrigger>
-                        <TabsTrigger value="events">Events</TabsTrigger>
-                        <TabsTrigger value="notes">Notes</TabsTrigger>
-                        <TabsTrigger value="import">Import</TabsTrigger>
+                        <TabsTrigger value="more">More</TabsTrigger>
                     </TabsList>
                     <TabsContent value="list" className="flex flex-col gap-3">
-                        <section aria-label="People you know" className="flex flex-col gap-3">
-                            <div className="flex items-center justify-between gap-2">
-                                <h2 className="text-eyebrow text-muted-foreground">People you know</h2>
-                                <span className="text-caption tabular-nums text-muted-foreground">{str(len(known))}</span>
-                            </div>
-                            {if len(known) == 0 {
-                                <EmptyNote>
-                                    {"No one yet — "}
-                                    <Button variant="link" size="inline" onClick={handle_capture}>capture a conversation</Button>
-                                    {" to start."}
-                                </EmptyNote>
-                            } else {
-                                <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">
-                                    {for (idx, p) in enumerate(known) {
-                                        <PeopleRow key={((p["_jac_id"] or "") as str) or str(idx)} person={p} onOpen={open_person} />
-                                    }}
-                                </ul>
-                            }}
-                        </section>
+                        {if show_import {
+                            <ImportPeople on_open_person={open_person} onDone={import_done} onChanged={onRefresh} />
+                        } else {
+                            <section aria-label="People you know" className="flex flex-col gap-3">
+                                <div className="flex items-center justify-between gap-2">
+                                    <h2 className="text-eyebrow text-muted-foreground">People you know</h2>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-caption tabular-nums text-muted-foreground">{str(len(known))}</span>
+                                        <Button size="icon-sm" variant="ghost" aria-label="Add people" onClick={open_import}>
+                                            <PlusIcon />
+                                        </Button>
+                                    </div>
+                                </div>
+                                <Button
+                                    variant={"default" if quiet_only else "outline"}
+                                    size="xs"
+                                    aria-pressed={quiet_only}
+                                    className="self-start"
+                                    onClick={toggle_quiet}
+                                >
+                                    {quiet_chip_label}
+                                </Button>
+                                {if len(known) == 0 {
+                                    <EmptyNote>
+                                        {"No one yet — "}
+                                        <Button variant="link" size="inline" onClick={handle_capture}>capture a conversation</Button>
+                                        {" to start."}
+                                    </EmptyNote>
+                                } elif quiet_only and len(shown_known) == 0 {
+                                    <EmptyNote>Nobody's overdue — everyone you know has a note from the last 90 days.</EmptyNote>
+                                } else {
+                                    <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">
+                                        {for (idx, p) in enumerate(shown_known) {
+                                            <PeopleRow
+                                                key={((p["_jac_id"] or "") as str) or str(idx)}
+                                                person={p}
+                                                onOpen={open_person}
+                                                quiet_label={quiet_row_label(p) if quiet_only else ""}
+                                            />
+                                        }}
+                                    </ul>
+                                }}
+                            </section>
+                        }}
                     </TabsContent>
                     <TabsContent value="graph">
                         <GraphView goal_id={active_id} on_open_person={open_person} />
@@ -420,17 +515,23 @@ def:pub HomeView(
                     <TabsContent value="today">
                         <Today on_open_person={open_person} refresh_key={today_key} />
                     </TabsContent>
-                    <TabsContent value="circles">
-                        <Circles on_open_person={open_person} />
-                    </TabsContent>
-                    <TabsContent value="events">
-                        <Events on_open_person={open_person} />
-                    </TabsContent>
-                    <TabsContent value="notes">
-                        <Timeline on_open_person={open_person} />
-                    </TabsContent>
-                    <TabsContent value="import">
-                        <ImportPeople on_open_person={open_person} onDone={import_done} onChanged={onRefresh} />
+                    <TabsContent value="more" className="flex flex-col gap-4">
+                        <Tabs value={more_choice} onValueChange={set_more_choice} className="gap-4">
+                            <TabsList aria-label="More people views" className="w-full justify-start gap-0 overflow-x-auto [scrollbar-width:none] [&>button]:pl-1 [&>button]:pr-1">
+                                <TabsTrigger value="circles">Circles</TabsTrigger>
+                                <TabsTrigger value="events">Events</TabsTrigger>
+                                <TabsTrigger value="notes">Notes</TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="circles">
+                                <Circles on_open_person={open_person} />
+                            </TabsContent>
+                            <TabsContent value="events">
+                                <Events on_open_person={open_person} />
+                            </TabsContent>
+                            <TabsContent value="notes">
+                                <Timeline on_open_person={open_person} />
+                            </TabsContent>
+                        </Tabs>
                     </TabsContent>
                 </Tabs>
                 </div>
