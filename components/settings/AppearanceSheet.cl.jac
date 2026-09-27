@@ -8,13 +8,24 @@ OS. Owns only the selected mode; the caller owns `open`.
 import from ..ui.sheet { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetBody }
 import from ..ui.tabs { Tabs, TabsList, TabsTrigger }
 import from ...lib.theme { stored_theme, set_theme }
+import from .DataPanel { DataPanel }
 
-def:pub AppearanceSheet(open: bool, onOpenChange: Callable[[bool], None]) -> JsxElement {
+def:pub AppearanceSheet(
+    open: bool,
+    onOpenChange: Callable[[bool], None],
+    onDeleted: Callable[[], None] | None = None
+) -> JsxElement {
     has mode: str = stored_theme();
 
     def change(value: str) -> None {
         mode = value;
         set_theme(value);
+    }
+
+    def deleted() {
+        if onDeleted {
+            onDeleted();
+        }
     }
 
     return
@@ -32,6 +43,7 @@ def:pub AppearanceSheet(open: bool, onOpenChange: Callable[[bool], None]) -> Jsx
                             <TabsTrigger value="system">System</TabsTrigger>
                         </TabsList>
                     </Tabs>
+                    <DataPanel onDeleted={deleted} />
                 </SheetBody>
             </SheetContent>
         </Sheet>;

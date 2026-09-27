@@ -36,6 +36,9 @@ import from .exchange.GapAlert { GapAlerts }
 import from .exchange.Requests { RequestsSection }
 import from .exchange.Inbox { AsksSection }
 import from .nav.TabBar { TabBar }
+import from .search.SearchBox { SearchBox }
+import from .circles.Circles { Circles }
+import from .events.Events { Events }
 import from ..lib.text { join_with }
 import from ..lib.utils { cn }
 sv import from ..schema { Person }
@@ -275,7 +278,7 @@ def:pub HomeView(
                     </DropdownMenuContent>
                 </DropdownMenu>
             </header>
-            <AppearanceSheet open={appearance_open} onOpenChange={set_appearance} />
+            <AppearanceSheet open={appearance_open} onOpenChange={set_appearance} onDeleted={onLogout} />
             <PersonSheet person_id={sheet_person_id} open={sheet_open} on_close={close_person} on_forgotten={person_forgotten} />
             {if tab == "asks" {
                 <div key="tab-asks" className="flex flex-col gap-6">
@@ -310,11 +313,15 @@ def:pub HomeView(
                     }}
                 </div>
             } elif tab == "people" {
-                <Tabs key="tab-people" value={view_tab} onValueChange={set_view_tab} className="gap-6">
+                <div key="tab-people" className="flex flex-col gap-6">
+                <SearchBox on_open_person={open_person} />
+                <Tabs value={view_tab} onValueChange={set_view_tab} className="gap-6">
                     <TabsList aria-label="People view" className="w-full">
                         <TabsTrigger value="list">List</TabsTrigger>
                         <TabsTrigger value="graph">Graph</TabsTrigger>
                         <TabsTrigger value="today">Today</TabsTrigger>
+                        <TabsTrigger value="circles">Circles</TabsTrigger>
+                        <TabsTrigger value="events">Events</TabsTrigger>
                     </TabsList>
                     <TabsContent value="list" className="flex flex-col gap-3">
                         <section aria-label="People you know" className="flex flex-col gap-3">
@@ -343,7 +350,14 @@ def:pub HomeView(
                     <TabsContent value="today">
                         <Today on_open_person={open_person} refresh_key={today_key} />
                     </TabsContent>
+                    <TabsContent value="circles">
+                        <Circles on_open_person={open_person} />
+                    </TabsContent>
+                    <TabsContent value="events">
+                        <Events on_open_person={open_person} />
+                    </TabsContent>
                 </Tabs>
+                </div>
             } else {
                 <div key="tab-home" className="flex flex-col gap-6">
                     {if not goals_loaded {
