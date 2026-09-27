@@ -549,3 +549,70 @@ async def:pub capture_image(image_b64: str, mime: str) -> dict {
     out = _first(result, "CaptureImage") as dict;
     return out;
 }
+
+# ---------------------------------------------------------------- Settings data (SOH-222)
+# `ExportGraph` is live (export.sv.jac, SOH-210) — `root spawn` below. `ListArchived` /
+# `RestorePerson` / `DeleteMyData` land from a parallel server branch; until merged,
+# go through `jacSpawn` (same POST /walker/<Name> call as PersonDetail/Brief above) —
+# flip to `sv import` + `root spawn` once that branch is on main.
+import from .mocks.data { mock_export_graph, mock_list_archived, mock_restore_person, mock_delete_my_data }
+sv import from ..export { ExportGraph }
+
+"""ExportGraph() -> the caller's whole graph as one JSON dict (contracts/walkers.md):
+{ exported_at, me, goals, card, people, knows, reported, facts, intents, promises,
+notes, counts: {people, facts, intents, promises, notes}, truncated }."""
+async def:pub export_graph() -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = mock_export_graph();
+        return out;
+    }
+    result = root spawn ExportGraph();
+    out = _first(result, "ExportGraph") as dict;
+    return out;
+}
+
+"""ListArchived() -> [Person] (archived == True), restorable."""
+async def:pub list_archived() -> list[dict] {
+    rows: list[dict] = [];
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        rows = mock_list_archived();
+        return rows;
+    }
+    data = await jacSpawn("ListArchived", "", {});
+    rows = (data["reports"] if data else []) as list[dict];
+    return rows;
+}
+
+"""RestorePerson(person_id) -> [Person] (remaining archived people, after restoring this one)."""
+async def:pub restore_person(person_id: str) -> list[dict] {
+    rows: list[dict] = [];
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        rows = mock_restore_person(person_id);
+        return rows;
+    }
+    data = await jacSpawn("RestorePerson", "", {"person_id": person_id});
+    rows = (data["reports"] if data else []) as list[dict];
+    return rows;
+}
+
+"""DeleteMyData(confirm) -> { deleted: {people, facts, intents, promises, notes,
+goals, cards, circles, events}, ok } | { error }. Nothing recoverable after this —
+the export is the only copy."""
+async def:pub delete_my_data(confirm: str) -> dict {
+    out: dict = {};
+    data: any = None;
+    if mocks_on() {
+        await fake_delay(MOCK_DELAY_MS);
+        out = mock_delete_my_data(confirm);
+        return out;
+    }
+    data = await jacSpawn("DeleteMyData", "", {"confirm": confirm});
+    out = _first_or_error(data["reports"] if data else []);
+    return out;
+}
