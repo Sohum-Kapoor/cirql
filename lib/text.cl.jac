@@ -39,7 +39,7 @@ def:pub short_date(iso: str) -> str {
 
 """Today as "Sep 26" (local time), for human how-met lines."""
 def:pub today_month_day() -> str {
-    d: any = Date();
+    d: any = new(Date);
     return _MONTHS[d.getMonth() as int] + " " + str(d.getDate());
 }
 
