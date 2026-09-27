@@ -1,33 +1,39 @@
-# Fly.io app definition (SOH-173). One machine, one SQLite volume. See docs/HOSTING.md.
-app = "cirql"
-primary_region = "ord"
+# fly.toml app configuration file generated for cirql on 2026-09-27T10:11:30-04:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'cirql'
+primary_region = 'ord'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  PORT = "8080"
-  DATA_DIR = "/data"
+  DATA_DIR = '/data'
+  PORT = '8080'
 
 [[mounts]]
-  source = "data"
-  destination = "/data"
-  initial_size = "1gb"
+  source = 'data'
+  destination = '/data'
+  initial_size = '1gb'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "off"
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
 
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "10s"
-    grace_period = "180s"
-    method = "GET"
-    path = "/"
+    interval = '30s'
+    timeout = '10s'
+    grace_period = '3m0s'
+    method = 'GET'
+    path = '/'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "1gb"
+  size = 'shared-cpu-1x'
+  memory = '2gb'
+  cpus = 1
+  memory_mb = 2048
