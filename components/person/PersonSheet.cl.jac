@@ -225,11 +225,14 @@ def:pub FactItem(row: dict, open_key: str, onToggle: Callable[[str], None]) -> J
     key: str = "f-" + _s(fact, "_jac_id");
     url: str = _s(fact, "source_url");
     age: str = age_label(row["age_days"]);
+    observed: str = _s(fact, "observed_at");
+    when: str = short_date(observed);
+    is_open: bool = open_key == key;
     return
-        <ReviewRow row_key={key} is_open={open_key == key} span={_s(row, "span")} note_text="" onToggle={onToggle}>
+        <ReviewRow row_key={key} is_open={is_open} span={_s(row, "span")} note_text="" onToggle={onToggle}>
             <span className="text-body-sm">{_s(fact, "text")}</span>
             <span className="flex flex-wrap items-center gap-1.5 text-caption text-muted-foreground">
-                {age and <span>{age}</span>}
+                {age and <span title={observed[:10] if observed else ""}>{age + (" · " + when if is_open and when else "")}</span>}
                 {_s(fact, "status") == "stale" and <Badge variant="outline">stale</Badge>}
                 {url and
                     <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex">

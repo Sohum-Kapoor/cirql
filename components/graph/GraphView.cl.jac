@@ -21,6 +21,7 @@ import from "d3" {
 import from ..api { graph_view }
 import from ..ui.skeleton { Skeleton }
 import from ..ui.button { Button }
+import from ...lib.text { join_with }
 
 glob STRENGTH_COLOR: dict[str, str] = {
          "strong": "var(--primary)",
@@ -153,6 +154,44 @@ def edge_label(e: any) -> str {
 
 def end_id(end: any) -> str {
     return (end["id"] if end and end["id"] else end) as str;
+}
+
+"""Text form of every tie touching `nid`: "Maya Okafor — knows · proposed"."""
+def tie_lines(nid: str, by_id: dict, edges: list[dict]) -> list[str] {
+    out: list[str] = [];
+    for e in edges {
+        other: str = "";
+        if e["from"] == nid {
+            other = e["to"] as str;
+        } elif e["to"] == nid {
+            other = e["from"] as str;
+        }
+        if other {
+            on: dict = (by_id[other] or {}) as dict;
+            out = out + [((on["label"] or "someone") as str) + " — " + edge_label(e)];
+        }
+    }
+    return out;
+}
+
+"""One row of the text alternative to the canvas: the person as a button, their ties under it."""
+def:pub GraphTieRow(item: dict, ties: list[str], onOpen: Callable[[str], None] | None = None) -> JsxElement {
+    label: str = (item["label"] or "") as str;
+    def open_row(e: MouseEvent) {
+        if onOpen and item["kind"] == "person" {
+            onOpen(item["id"] as str);
+        }
+    }
+    return
+        <li className="flex flex-col gap-0.5">
+            {if item["kind"] == "person" {
+                <button type="button" onClick={open_row} aria-label={"Open " + label} className="self-start rounded-sm text-left text-body-sm font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{label}</button>
+            } else {
+                <span className="text-body-sm font-medium">{label}</span>
+            }}
+            {len(ties) > 0 and <span className="text-caption text-muted-foreground">{join_with(ties, "; ")}</span>}
+            {len(ties) == 0 and <span className="text-caption text-muted-foreground">no ties yet</span>}
+        </li>;
 }
 
 def noop() -> None {
@@ -464,6 +503,12 @@ def:pub GraphView(
     all_nodes: list[dict] = (graph["nodes"] or []) as list[dict];
     people: int = len([n for n in all_nodes if n["kind"] == "person"]);
     has_goal: bool = len([n for n in all_nodes if n["kind"] == "goal"]) > 0;
+    all_edges: list[dict] = (graph["edges"] or []) as list[dict];
+    by_id: dict = {};
+    for n in all_nodes {
+        by_id[n["id"] as str] = n;
+    }
+    listed: list[dict] = [n for n in all_nodes if n["kind"] != "goal"];
 
     return
         <section aria-label="Your graph" className="flex flex-col gap-2">
@@ -496,7 +541,7 @@ def:pub GraphView(
                     <svg
                         ref={svgRef}
                         role="img"
-                        aria-label={"Graph of you, " + str(people) + " people" + (" and your goal" if has_goal else "")}
+                        aria-label={"Graph of you, " + str(people) + " people" + (" and your goal" if has_goal else "") + ". The same ties are listed as text below."}
                         className={"block h-full w-full touch-none select-none" + (" opacity-60" if loading else "")}
                     />
                     <GraphLegend corner={True} />
@@ -510,6 +555,17 @@ def:pub GraphView(
                 }}
             </div>
             {people > 0 and <GraphLegend />}
+            {people > 0 and
+                <details className="rounded-md border bg-card pt-1.5 pb-1.5 pl-3 pr-3 shadow-edge">
+                    <summary className="cursor-pointer select-none rounded-sm text-caption font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        {"Ties as a list · " + str(len(all_edges)) + (" tie" if len(all_edges) == 1 else " ties")}
+                    </summary>
+                    <ul aria-label="People and their ties" className="mt-2 flex flex-col gap-2">
+                        {for n in listed {
+                            <GraphTieRow key={n["id"] as str} item={n} ties={tie_lines(n["id"] as str, by_id, all_edges)} onOpen={on_open_person} />
+                        }}
+                    </ul>
+                </details>}
             {people > 0 and <p className="text-caption text-muted-foreground">Drag to move · scroll or pinch to zoom · tap a node to focus it, tap it again to open · tap empty space to clear.</p>}
         </section>;
 }
