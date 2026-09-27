@@ -579,7 +579,7 @@ def:pub app -> JsxElement {
     }
 
     return
-        <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 pt-6 pb-10 pl-4 pr-4">
+        <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 pt-6 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pl-4 pr-4">
             {if view == "auth" {
                 <AuthCard
                     key="auth"
