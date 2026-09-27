@@ -7,6 +7,7 @@ Reason-based only: nothing here says "it's been N days" — relationships never 
 
 import from ...lib.utils { cn }
 import from ...lib.text { due_label }
+import from ..exchange.common { need_group_key, same_ask_group }
 
 glob:pub KIND_LABEL: dict[str, str] = {
          "new_match": "New match",
@@ -24,7 +25,10 @@ glob:pub KIND_LABEL: dict[str, str] = {
          "promise_due": "Mark promise done",
          "follow_up": "Save draft",
          "reconnect": "Save draft",
-         "answer_ask": "Offer an intro"
+         # Judge pass item 2: this button only opens the approval view (which
+         # runs the check and shows the real "Offer an intro" button) — it
+         # never itself offers anything, so it can't share that label.
+         "answer_ask": "Review intro"
      },
      DONE_LABEL: dict[str, str] = {
          "new_match": "Noted",
@@ -71,6 +75,16 @@ def:pub resolved_label(kind: str, status: str) -> str {
         return "Snoozed. Back on the next run";
     }
     return (DONE_LABEL[kind] or "Done") as str;
+}
+
+"""Judge pass item 2: the card's secondary button reads "Not now" for a
+friend's ask (it's their ask sitting on the exchange, not this account's own
+draft) and "Dismiss" for everything else."""
+def:pub dismiss_label(kind: str) -> str {
+    if kind == "answer_ask" {
+        return "Not now";
+    }
+    return "Dismiss";
 }
 
 def:pub in_filter(kind: str, filt: str) -> bool {
@@ -363,6 +377,115 @@ def:pub KindIcon(kind: str, className: str = "") -> JsxElement {
     }
     # follow_up (and anything new): a reply arrow
     return _svg(className, [<path key="a" d="M9 14 4 9l5-5" />, <path key="b" d="M4 9h10a6 6 0 0 1 6 6v4" />]);
+}
+
+"""SOH-229 item 1: the grouping key for an `answer_ask` AgentAction — the
+same `need_group_key` rule the Exchange Inbox uses, read off the action's
+own payload (its `need_key` when the walker set it, else derived from
+`need`)."""
+def:pub answer_ask_group_key(act: dict) -> str {
+    return need_group_key(payload_of(act));
+}
+
+def _uf_find_answer(parent: list[int], x: int) -> int {
+    cur: int = x;
+    while parent[cur] != cur {
+        parent[cur] = parent[parent[cur]];
+        cur = parent[cur];
+    }
+    return cur;
+}
+
+def _shortest_answer_need(rows: list[dict]) -> str {
+    best: str = "";
+    have: bool = False;
+    for r in rows {
+        act: dict = (r["action"] or {}) as dict;
+        need: str = ((payload_of(act)["need"] or "") as str).strip();
+        if not need {
+            continue;
+        }
+        if not have or len(need) < len(best) {
+            best = need;
+            have = True;
+        }
+    }
+    return best;
+}
+
+"""Groups of `answer_ask` rows (already kind-filtered by the caller) that
+share a `need_group_key` (`same_ask_group` rule) OR whose payload names each
+other via `sibling_request_ids` (a walker-side hint, read defensively — most
+runs won't have it yet) — transitively, via union-find, same idiom
+`exchange/Inbox.cl.jac`'s `_group_asks` uses for the Exchange side of the
+same feature. Preserves first-seen order. Each group is
+`{"key": str, "rows": [dict], "title_need": str}`."""
+def:pub group_answer_ask_rows(rows: list[dict]) -> list[dict] {
+    n: int = len(rows);
+    keys: list[str] = [];
+    rids: list[str] = [];
+    sibs: list[list[str]] = [];
+    for r in rows {
+        act: dict = (r["action"] or {}) as dict;
+        keys = keys + [answer_ask_group_key(act)];
+        rids = rids + [(act["request_id"] or "") as str];
+        sibs = sibs + [(payload_of(act)["sibling_request_ids"] or []) as list[str]];
+    }
+    parent: list[int] = [];
+    for i in range(n) {
+        parent = parent + [i];
+    }
+    for i in range(n) {
+        for j in range(i + 1, n) {
+            linked: bool = same_ask_group(keys[i], keys[j]);
+            if not linked and rids[j] and rids[j] in sibs[i] {
+                linked = True;
+            }
+            if not linked and rids[i] and rids[i] in sibs[j] {
+                linked = True;
+            }
+            if linked {
+                ri: int = _uf_find_answer(parent, i);
+                rj: int = _uf_find_answer(parent, j);
+                if ri != rj {
+                    parent[ri] = rj;
+                }
+            }
+        }
+    }
+    order: list[int] = [];
+    by_root: dict = {};
+    key_by_root: dict = {};
+    for i in range(n) {
+        r: int = _uf_find_answer(parent, i);
+        if r not in order {
+            order = order + [r];
+            by_root[r] = [];
+            aid_i: str = ((rows[i]["action"] or {})["_jac_id"] or "") as str;
+            key_by_root[r] = keys[i] if keys[i] else ("solo:" + aid_i);
+        }
+        by_root[r] = (by_root[r] as list[dict]) + [rows[i]];
+    }
+    out: list[dict] = [];
+    for r in order {
+        grouped: list[dict] = by_root[r] as list[dict];
+        out = out + [{
+            "key": key_by_root[r] as str,
+            "rows": grouped,
+            "title_need": _shortest_answer_need(grouped)
+        }];
+    }
+    return out;
+}
+
+"""The one group (from `group_answer_ask_rows`) whose `key` matches, or `{}`."""
+def:pub find_answer_ask_group(groups: list[dict], key: str) -> dict {
+    for g in groups {
+        if g["key"] == key {
+            return g;
+        }
+    }
+    return {};
 }
 
 """The agent mark for the inbox header: a small spark."""

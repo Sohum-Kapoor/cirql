@@ -17,9 +17,10 @@ import from ..ui.button { Button }
 import from ..ui.skeleton { Skeleton }
 import from ..ui.tabs { Tabs, TabsList, TabsTrigger }
 import from ..exchange.GapAlert { AskSheet }
-import from .ActionCard { ActionCard }
+import from .ActionCard { ActionCard, AnswerAskGroupCard }
 import from .common { FILTERS, in_filter, payload_of, ago_words, AgentIcon }
 import from .common { load_inbox_seen_ms, mark_inbox_seen_now, new_since_seen }
+import from .common { group_answer_ask_rows, find_answer_ask_group }
 import from ...lib.utils { cn }
 
 def:pub AgentSkeleton() -> JsxElement {
@@ -192,6 +193,61 @@ def:pub AgentInbox(
     sheet_open: bool = ask_aid != "" and not (posted and not ask_busy and not ask_error);
     new_count: int = new_since_seen(open_rows, seen_ms);
 
+    # SOH-229 item 1: `shown`'s answer_ask rows, grouped by shared need
+    # (`group_answer_ask_rows`) — a group of > 1 renders once as
+    # `AnswerAskGroupCard`; everything else (including a group of exactly 1)
+    # renders as a plain `ActionCard`, unchanged.
+    answer_rows: list[dict] = [r for r in shown if ((r["action"] or {})["kind"] or "") == "answer_ask"];
+    answer_groups: list[dict] = group_answer_ask_rows(answer_rows);
+    group_for_aid: dict = {};
+    for g in answer_groups {
+        for r in (g["rows"] as list[dict]) {
+            aid_g: str = ((r["action"] or {})["_jac_id"] or "") as str;
+            group_for_aid[aid_g] = g["key"];
+        }
+    }
+    rendered_group_keys: list[str] = [];
+    render_units: list[JsxElement] = [];
+    for r in shown {
+        act_r: dict = (r["action"] or {}) as dict;
+        aid_r: str = (act_r["_jac_id"] or "") as str;
+        kind_r: str = (act_r["kind"] or "") as str;
+        pend_r: bool = True if pending[aid_r] else False;
+        err_r: str = (errors[aid_r] or "") as str;
+        gkey_r: str = (group_for_aid[aid_r] or "") as str;
+        grp_r: dict = find_answer_ask_group(answer_groups, gkey_r) if kind_r == "answer_ask" and gkey_r else {};
+        grows_r: list[dict] = (grp_r["rows"] or []) as list[dict];
+        if kind_r == "answer_ask" and len(grows_r) > 1 {
+            if gkey_r not in rendered_group_keys {
+                rendered_group_keys = rendered_group_keys + [gkey_r];
+                render_units = render_units + [
+                    <AnswerAskGroupCard
+                        key={"grp:" + gkey_r}
+                        rows={grows_r}
+                        title_need={(grp_r["title_need"] or "") as str}
+                        pending={pending}
+                        errors={errors}
+                        onApprove={approve}
+                        onDismiss={dismiss}
+                    />
+                ];
+            }
+        } else {
+            render_units = render_units + [
+                <ActionCard
+                    key={aid_r}
+                    row={r}
+                    pending={pend_r}
+                    error={err_r}
+                    onApprove={approve}
+                    onDismiss={dismiss}
+                    onSnooze={snooze}
+                    onOpenPerson={onOpenPerson}
+                />
+            ];
+        }
+    }
+
     return
         <section aria-label="What Cirql found" className="flex flex-col gap-3">
             <AgentHeader
@@ -231,18 +287,7 @@ def:pub AgentInbox(
                 <ul className="flex flex-col gap-3" aria-busy={running}>
                     {running and <AgentSkeleton key="sk-1" />}
                     {running and <AgentSkeleton key="sk-2" />}
-                    {for r in shown {
-                        <ActionCard
-                            key={((r["action"] or {})["_jac_id"] or "") as str}
-                            row={r}
-                            pending={True if pending[(r["action"] or {})["_jac_id"]] else False}
-                            error={(errors[(r["action"] or {})["_jac_id"]] or "") as str}
-                            onApprove={approve}
-                            onDismiss={dismiss}
-                            onSnooze={snooze}
-                            onOpenPerson={onOpenPerson}
-                        />
-                    }}
+                    {render_units}
                     {if len(shown) == 0 and not running {
                         <li className="rounded-lg border border-dashed border-border-strong pt-3 pb-3 pl-4 pr-4 text-body-sm text-muted-foreground">
                             Nothing of this kind right now.
