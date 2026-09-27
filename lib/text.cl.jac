@@ -18,6 +18,42 @@ def:pub join_lines(items: list[str]) -> str {
     return join_with(items, NL);
 }
 
+"""A note/activity `kind` value (raw, whatever the server stored) -> a short
+product-copy label. Known kinds map to a fixed phrase; anything else gets its
+first letter upper-cased with hyphens/underscores turned to spaces (SOH-226)."""
+def:pub kind_label(kind: str) -> str {
+    if not kind {
+        return "";
+    }
+    lk: str = kind.lower();
+    if lk == "debrief" {
+        return "Debrief";
+    }
+    if lk == "voice" {
+        return "Voice memo";
+    }
+    if lk == "paste" or lk == "pasted" {
+        return "Pasted note";
+    }
+    if lk == "about-me" or lk == "about_me" {
+        return "About you";
+    }
+    if lk == "import" {
+        return "Import";
+    }
+    if lk == "photo" {
+        return "Badge photo";
+    }
+    if lk == "onboarding" {
+        return "Set-up";
+    }
+    out: str = "";
+    for ch in kind {
+        out = out + (" " if (ch == "-" or ch == "_") else ch);
+    }
+    return out[0:1].upper() + out[1:];
+}
+
 def:pub split_lines(text: str) -> list[str] {
     return text.split(NL);
 }
