@@ -53,7 +53,7 @@ def:pub req_summary(status: str, replies: list[dict], claimed: bool) -> str {
         return "Expired with no card shared.";
     }
     if status == "revealed" {
-        return "The card arrived." if claimed else "Card shared — opening it…";
+        return "The card arrived." if claimed else "Card shared. Opening it…";
     }
     if not best["_jac_id"] {
         return "Waiting for friends to check their own people…";
@@ -64,13 +64,13 @@ def:pub req_summary(status: str, replies: list[dict], claimed: bool) -> str {
     }
     head: str = via + " has " + match_phrase(best);
     if status == "replied" {
-        return head + " — waiting for them to approve.";
+        return head + ". Waiting for them to approve.";
     }
     if status == "approved" {
-        return head + " — waiting for the contact to opt in.";
+        return head + ". Waiting for the contact to opt in.";
     }
     if status == "opted_in" {
-        return head + " — the contact said yes; waiting for the card.";
+        return head + ". The contact said yes; waiting for the card.";
     }
     return head + ".";
 }
@@ -173,7 +173,7 @@ def:pub RevealCard(claim: dict, friend_handle: str) -> JsxElement {
                 note="Nothing sends. Copy it into your own email."
             />
             <p className="rounded-md bg-success/10 pt-2 pb-2 pl-3 pr-3 text-caption text-success-text">
-                {"Added to your people — how you met: intro via @" + friend_handle}
+                {"Added to your people. How you met: intro via @" + friend_handle}
             </p>
         </article>;
 }

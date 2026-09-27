@@ -131,7 +131,7 @@ def:pub AskRow(
 }
 
 """One requester line inside an expanded group: their name/handle, status,
-and their own "Offer an intro" — no per-requester detail, just the action."""
+and their own "Offer an intro". No per-requester detail, just the action."""
 def:pub AskRequesterLine(ent: dict, friend: dict, onOffer: Callable[[str], None]) -> JsxElement {
     req: dict = (ent["request"] or {}) as dict;
     rid: str = (req["_jac_id"] or "") as str;
@@ -262,7 +262,7 @@ def:pub OtherAsksSection(other: list[dict]) -> JsxElement {
 }
 
 """Stable-order groups of `needs` entries sharing a `need_group_key`, each
-`{"key": str, "entries": [dict]}` — a group of one renders as a plain row."""
+`{"key": str, "entries": [dict]}`. A group of one renders as a plain row."""
 def _group_asks(needs: list[dict]) -> list[dict] {
     order: list[str] = [];
     by_key: dict = {};
@@ -442,7 +442,7 @@ def:pub ApprovalView(
                         }
                     } elif reply_id and n == 0 {
                         <p className="rounded-md bg-secondary pt-3 pb-3 pl-3 pr-3 text-body-sm">
-                            {"No strong or medium match in your network. " + asker + " sees a count of 0 — no names."}
+                            {"No strong or medium match in your network. " + asker + " sees a count of 0. No names."}
                         </p>
                     } elif reply_id {
                         <div className="flex flex-col gap-2 rounded-md border border-border-strong bg-secondary pt-3 pb-3 pl-3 pr-3">
@@ -479,7 +479,7 @@ def:pub ApprovalView(
                         </div>
                     } elif status == "opted_in" {
                         <p className="text-caption text-muted-foreground">
-                            {"Your contact said yes. Reveal grants their card read-only to " + asker + " — that card only."}
+                            {"Your contact said yes. Reveal grants their card read-only to " + asker + ". That card only."}
                         </p>
                         <div className="flex gap-2">
                             <Button className="flex-1" disabled={busy} onClick={handle_reveal}>Reveal card</Button>
