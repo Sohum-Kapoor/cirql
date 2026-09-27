@@ -35,7 +35,7 @@ shape: `{"person_id", "strength", "why", "evidence_ids"}`).
 """
 
 import from schema { Me, IntroRequest, IntroReply }
-import from exchange { all_requests, shared_replies, owner_root, my_me, now_iso }
+import from exchange { visible_to_me, all_requests, shared_replies, owner_root, my_me, now_iso }
 import from scoring { score_against_need }
 
 
@@ -170,7 +170,7 @@ walker:priv WhoNeedsWhatIHave {
         me_root = jid(root);
         now = now_iso();
 
-        requests = all_requests();
+        requests = [r for r in all_requests() if visible_to_me(r)];  # SOH-218 friend/block gate
         my_request_ids = [jid(r) for r in requests if owner_root(r) == me_root];
         # SOH-211: one model call per candidate -> bounded budget.
         lim = bounded(self.limit, REVERSE_MAX_LIMIT);

@@ -309,12 +309,14 @@ def friend_entries(me: Me) -> list[dict[str, object]] {
     return out;
 }
 
-"""Anything but "everyone" is "friends" (the safe default)."""
+"""Default is "everyone" until the client offers a friends toggle (SOH-222):
+the two demo phones never handshake, and a silent friends-only default would
+hide every request. "friends" must be asked for explicitly."""
 def norm_audience(a: str) -> str {
-    if a.strip().lower() == "everyone" {
-        return "everyone";
+    if a.strip().lower() == "friends" {
+        return "friends";
     }
-    return "friends";
+    return "everyone";
 }
 
 def my_blocked() -> list[str] {
@@ -357,7 +359,7 @@ walker:priv PostRequest {
     has need: str;
     has about_line: str = "";
     has ttl_days: int = 7;
-    has audience: str = "friends";
+    has audience: str = "everyone";
     has reports: list[object] = [];
 
     can go with Root entry {
