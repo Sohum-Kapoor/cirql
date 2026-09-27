@@ -215,7 +215,7 @@ def:pub EventPickerRow(person: any, already_member: bool, busy: bool, onAdd: Cal
         </li>;
 }
 
-def:pub Events(on_open_person: Callable[[str], None]) -> JsxElement {
+def:pub Events(on_open_person: Callable[[str], None], people: list[Person] = []) -> JsxElement {
     has events: list[dict] = [],
         loaded: bool = False,
         load_error: str = "",
@@ -385,11 +385,20 @@ def:pub Events(on_open_person: Callable[[str], None]) -> JsxElement {
         await refresh();
     }
 
+    """SOH-236: reuses the people list the caller (HomeView) already fetched
+    when it has one, so opening the picker doesn't refire `list_people()`;
+    falls back to its own fetch when the prop is empty (e.g. this screen used
+    on its own)."""
     async def open_picker -> None {
         picker_open = True;
         picker_error = "";
         picker_query = "";
         picker_loaded = False;
+        if len(people) > 0 {
+            picker_people = people;
+            picker_loaded = True;
+            return;
+        }
         got: list[Person] = [];
         try {
             got = await list_people();
@@ -425,7 +434,10 @@ def:pub Events(on_open_person: Callable[[str], None]) -> JsxElement {
     }
 
     sorted_events: list[dict] = sorted(events, key=_event_sort_key, reverse=True);
-    member_ids: list[str] = [_s(p, "_jac_id") for p in detail_people];
+    member_id_set: dict[str, bool] = {};
+    for p in detail_people {
+        member_id_set[_s(p, "_jac_id")] = True;
+    }
     query: str = picker_query.strip().lower();
     filtered_picker: list[Person] = [p for p in picker_people if not query or query in _s(p, "name").lower()];
 
@@ -557,7 +569,7 @@ def:pub Events(on_open_person: Callable[[str], None]) -> JsxElement {
                                     <EventPickerRow
                                         key={_s(p, "_jac_id")}
                                         person={p}
-                                        already_member={_s(p, "_jac_id") in member_ids}
+                                        already_member={_s(p, "_jac_id") in member_id_set}
                                         busy={member_busy_id == _s(p, "_jac_id")}
                                         onAdd={add_member}
                                     />

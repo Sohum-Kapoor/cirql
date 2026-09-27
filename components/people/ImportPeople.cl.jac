@@ -24,10 +24,11 @@ import from ..ui.input { Input }
 import from ..ui.label { Label }
 import from ..ui.badge { Badge }
 import from ..ui.icons { CheckIcon, XIcon, ChevronLeftIcon }
-import from ..api_import { import_people, confirm_person, confirm_people, skip_person }
+import from ..api_import { import_people, confirm_person, confirm_people, skip_person, skip_people }
 import from .Deck { Deck }
 import from ...lib.text { join_with, linkedin_how_met }
 import from ...lib.toast { toast }
+sv import from ...schema { Person }
 
 glob _NL: str = chr(10),
      _QUOTE: str = chr(34),
@@ -580,6 +581,7 @@ def:pub ImportPeople(
         row_error: dict = {},
         confirm_all_busy: bool = False,
         confirm_all_total: int = 0,
+        skip_all_busy: bool = False,
         # SOH-232: Confirm/Skip never resolved on screen (row stuck
         # "Confirming…", "N left" never decrementing) even though the server
         # had already confirmed — `has` fields compile to `useState`, and a
@@ -798,9 +800,6 @@ def:pub ImportPeople(
         _set_decision(person_id, "confirmed");
         confirmed_name: str = _name_for((result["imported"] or []) as list[dict], person_id);
         toast((confirmed_name if confirmed_name else "Person") + " confirmed", "success");
-        if onChanged {
-            onChanged();
-        }
     }
 
     async def skip_row(person_id: str) -> None {
@@ -823,9 +822,6 @@ def:pub ImportPeople(
         _set_decision(person_id, "skipped");
         skipped_name: str = _name_for((result["imported"] or []) as list[dict], person_id);
         toast((skipped_name if skipped_name else "Person") + " skipped");
-        if onChanged {
-            onChanged();
-        }
     }
 
     """SOH-235: one `ConfirmPeople` round trip for the whole pending batch
@@ -873,9 +869,6 @@ def:pub ImportPeople(
             confirm_all_busy = False;
             count: int = len(confirmed_ids);
             toast("1 person confirmed" if count == 1 else str(count) + " people confirmed", "success");
-            if onChanged {
-                onChanged();
-            }
             return;
         }
         for pid in ids {
@@ -885,6 +878,59 @@ def:pub ImportPeople(
             await confirm_row(pid);
         }
         confirm_all_busy = False;
+    }
+
+    """SOH-236: "Skip the rest (N)" — one `SkipPeople` round trip for every
+    still-pending row instead of one `SkipPerson` per row, same shape as
+    `confirm_all`. Falls back to the sequential `skip_row` loop if the bulk
+    call errors (network error, or the walker isn't live yet)."""
+    async def skip_the_rest(e: MouseEvent) -> None {
+        imported2: list[dict] = (result["imported"] or []) as list[dict];
+        ids2: list[str] = [];
+        for entry in imported2 {
+            pid: str = _pid_of(entry);
+            if pid and pid not in decisions_ref.current {
+                ids2.append(pid);
+            }
+        }
+        if len(ids2) == 0 {
+            return;
+        }
+        skip_all_busy = True;
+        out2: dict = {};
+        bulk_ok2: bool = True;
+        try {
+            out2 = await skip_people(ids2);
+        } except Exception as err {
+            bulk_ok2 = False;
+        }
+        if bulk_ok2 and not out2["error"] {
+            skipped_ids: list[str] = (out2["skipped"] or []) as list[str];
+            not_found_ids2: list[str] = (out2["not_found"] or []) as list[str];
+            next_dec2: dict = {**decisions_ref.current};
+            next_err2: dict = {**row_error_ref.current};
+            for pid in skipped_ids {
+                next_dec2[pid] = "skipped";
+            }
+            for pid in not_found_ids2 {
+                next_err2[pid] = "Couldn't skip that person.";
+            }
+            decisions_ref.current = next_dec2;
+            decisions = next_dec2;
+            row_error_ref.current = next_err2;
+            row_error = next_err2;
+            skip_all_busy = False;
+            count2: int = len(skipped_ids);
+            toast("1 person skipped" if count2 == 1 else str(count2) + " people skipped");
+            return;
+        }
+        for pid in ids2 {
+            if pid in decisions_ref.current {
+                continue;
+            }
+            await skip_row(pid);
+        }
+        skip_all_busy = False;
     }
 
     def reset_import() {
@@ -911,8 +957,15 @@ def:pub ImportPeople(
     }
 
     """The old "Done" behavior — back to the list (or wherever the caller
-    sends "Done" to), skipping the deck entirely."""
+    sends "Done" to), skipping the deck entirely. SOH-236: also the one
+    `onChanged` (full `ListPeople` reload) for this whole screen — every
+    Confirm/Skip/Confirm all/Skip the rest along the way only updates local
+    `decisions`; this is the single point that actually leaves the sort step
+    (Skip to list, or the deck closing after Done/Cancel)."""
     def go_to_list() {
+        if onChanged {
+            onChanged();
+        }
         if onDone {
             onDone();
         } else {
@@ -942,6 +995,16 @@ def:pub ImportPeople(
     # is short enough not to scroll.
     imported_rows: list[dict] = (result["imported"] or []) as list[dict];
     imported_person_ids: list[str] = [_pid_of(entry) for entry in imported_rows if _pid_of(entry)];
+    # SOH-236: this batch's own people, already in hand from `ImportPeople`'s
+    # own report — handed to the embedded Deck as its `people` prop so
+    # opening it never re-fetches `ListPeople`.
+    imported_rows_people: list[dict] = [];
+    for entry in imported_rows {
+        person: dict = (entry["person"] or {}) as dict;
+        if person {
+            imported_rows_people.append(person);
+        }
+    }
     skipped_rows: list[dict] = (result["skipped"] or []) as list[dict];
     pending_count: int = 0;
     for entry in imported_rows {
@@ -1060,15 +1123,26 @@ def:pub ImportPeople(
                     } else {
                         <div className="flex flex-col gap-3">
                             {pending_count > 1 and
-                                <Button
-                                    variant="default"
-                                    size="sm"
-                                    className="h-11 self-start"
-                                    disabled={confirm_all_busy}
-                                    onClick={confirm_all}
-                                >
-                                    {("Confirming " + str(confirm_all_total) + "…") if confirm_all_busy else "Confirm all (" + str(pending_count) + ")"}
-                                </Button>}
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button
+                                        variant="default"
+                                        size="sm"
+                                        className="h-11"
+                                        disabled={confirm_all_busy or skip_all_busy}
+                                        onClick={confirm_all}
+                                    >
+                                        {("Confirming " + str(confirm_all_total) + "…") if confirm_all_busy else "Confirm all (" + str(pending_count) + ")"}
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-11"
+                                        disabled={confirm_all_busy or skip_all_busy}
+                                        onClick={skip_the_rest}
+                                    >
+                                        {"Skipping…" if skip_all_busy else "Skip the rest (" + str(pending_count) + ")"}
+                                    </Button>
+                                </div>}
                             <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">
                                 {for (idx, entry) in enumerate(imported_rows) {
                                     <ImportedRow
@@ -1117,7 +1191,7 @@ def:pub ImportPeople(
                 </div>
             } else {
                 <div key="import-deck" className="flex flex-col gap-4">
-                    <Deck onClose={close_deck} person_ids={imported_person_ids} onChanged={onChanged} />
+                    <Deck onClose={close_deck} person_ids={imported_person_ids} people={imported_rows_people as list[Person]} />
                 </div>
             }}
         </div>;

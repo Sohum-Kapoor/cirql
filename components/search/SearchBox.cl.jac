@@ -360,7 +360,8 @@ def:pub SearchBox(
         recall_loading: bool = False,
         recall_error: str = "",
         recall_asked: str = "",
-        debounceRef: Ref[any] = Ref(None);
+        debounceRef: Ref[any] = Ref(None),
+        reqRef: Ref[str] = Ref("");
 
     trimmed_query: str = query.strip();
     is_question: bool = _looks_like_question(query);
@@ -391,6 +392,7 @@ def:pub SearchBox(
             clearTimeout(debounceRef.current);  # jac:ignore[W2001,E1053]
             debounceRef.current = None;
         }
+        reqRef.current = "";
         query = "";
         results = [];
         total = 0;
@@ -403,21 +405,35 @@ def:pub SearchBox(
         recall_asked = "";
     }
 
+    """Results can arrive out of order (a fast retype can resolve after an
+    earlier one) — a per-call token dropped if a newer search has started by
+    the time this one resolves, same idiom `GraphView.cl.jac`'s `reqRef`
+    uses."""
     async def run_search(q: str) -> None {
+        token: str = q + ":" + str(Date.now());  # jac:ignore[W2001]
+        reqRef.current = token;
         out: dict = {};
         try {
             out = await search(q, 25);
+        } except Exception as err {
+            if reqRef.current == token {
+                error = "Couldn't search your people. " + str(err);
+                results = [];
+                total = 0;
+                loading = False;
+                searched = True;
+                active_index = -1;
+            }
+            return;
+        }
+        if reqRef.current == token {
             results = (out["results"] or []) as list[dict];
             total = (out["total"] or 0) as int;
             error = "";
-        } except Exception as err {
-            error = "Couldn't search your people. " + str(err);
-            results = [];
-            total = 0;
+            loading = False;
+            searched = True;
+            active_index = -1;
         }
-        loading = False;
-        searched = True;
-        active_index = -1;
     }
 
     def handle_retry_search(e: MouseEvent) {
@@ -460,6 +476,7 @@ def:pub SearchBox(
         }
         val_trimmed = val.strip();
         if not val_trimmed {
+            reqRef.current = "";
             results = [];
             total = 0;
             searched = False;

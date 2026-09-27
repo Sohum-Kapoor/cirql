@@ -25,8 +25,9 @@ import from ..ui.skeleton { Skeleton }
 import from .CardPreview { CardPreview }
 import from .CardQR { CardQR }  # SOH-228: one import + one JSX mount, fed this editor's own live handle/visibility
 import from ...lib.text { join_lines, split_lines }
-import from ..api_card { my_card, publish_card_full }
+import from ..api_card { publish_card_full }
 import from ...lib.toast { toast }
+import from react { useEffect }
 
 def _visibility_state(v: str) -> str {
     return "anyone with the link" if v == "link" else "only people you hand it to";
@@ -49,9 +50,18 @@ def _visibility_label(v: str) -> str {
     return "Anyone with the link" if v == "link" else "Only people I hand it to";
 }
 
-def:pub CardEditor() -> JsxElement {
-    has loaded: bool = False,
-        load_error: str = "",
+"""SOH-236: `card`/`loaded`/`load_error` are fetched ONCE by the caller
+(`AppearanceSheet.cl.jac`'s `load_header`, the same `my_card()` result its
+own header uses) and handed down here instead of this editor doing its own
+second `my_card()` fetch every time Settings opens. `onRetry` re-runs that
+same caller-owned fetch."""
+def:pub CardEditor(
+    card: dict = {},
+    loaded: bool = False,
+    load_error: str = "",
+    onRetry: Callable[[], None] | None = None
+) -> JsxElement {
+    has applied: bool = False,
         headline: str = "",
         about: str = "",
         looking_for_text: str = "",
@@ -83,22 +93,17 @@ def:pub CardEditor() -> JsxElement {
         updated_at = (card["updated_at"] or "") as str;
     }
 
-    async def load_card -> None {
-        load_error = "";
-        loaded = False;
-        try {
-            card: dict | None = await my_card();
-            if card is not None {
-                apply_card(card as dict);
-            }
-        } except Exception {
-            load_error = "Couldn't load your card. Check your connection and retry.";
+    useEffect(lambda {
+        if loaded and not load_error and card and not applied {
+            apply_card(card);
+            applied = True;
         }
-        loaded = True;
-    }
+    }, [loaded]);
 
-    async can with entry {
-        await load_card();
+    def do_retry(e: MouseEvent) {
+        if onRetry {
+            onRetry();
+        }
     }
 
     def edit_headline(e: ChangeEvent) {
@@ -205,7 +210,7 @@ def:pub CardEditor() -> JsxElement {
             {load_error and
                 <div className="flex items-center gap-2">
                     <p role="alert" className="flex-1 text-body-sm text-destructive">{load_error}</p>
-                    <Button size="sm" variant="outline" onClick={load_card}>Retry</Button>
+                    <Button size="sm" variant="outline" onClick={do_retry}>Retry</Button>
                 </div>}
 
             <Card>

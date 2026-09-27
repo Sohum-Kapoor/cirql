@@ -66,8 +66,10 @@ def:pub AppearanceSheet(
 ) -> JsxElement {
     has mode: str = stored_theme(),
         header_loaded: bool = False,
+        header_load_error: str = "",
         card_name: str = "",
-        card_handle: str = "";
+        card_handle: str = "",
+        card_data: dict = {};
 
     def change(value: str) -> None {
         mode = value;
@@ -80,11 +82,25 @@ def:pub AppearanceSheet(
         }
     }
 
+    """SOH-236: the one `my_card()` fetch for this whole sheet — both the
+    header (name/handle) and `CardEditor` (the full form) read off this same
+    result instead of each fetching it themselves."""
     async def load_header -> None {
-        card: dict | None = await my_card();
-        if card is not None {
-            card_name = (card["name"] or "") as str;
-            card_handle = (card["handle"] or "") as str;
+        header_load_error = "";
+        header_loaded = False;
+        try {
+            card: dict | None = await my_card();
+            if card is not None {
+                card_data = card as dict;
+                card_name = (card_data["name"] or "") as str;
+                card_handle = (card_data["handle"] or "") as str;
+            } else {
+                card_data = {};
+                card_name = "";
+                card_handle = "";
+            }
+        } except Exception {
+            header_load_error = "Couldn't load your card. Check your connection and retry.";
         }
         header_loaded = True;
     }
@@ -122,7 +138,7 @@ def:pub AppearanceSheet(
                     </p>
 
                     <h3 className="text-eyebrow text-muted-foreground">My card</h3>
-                    <CardEditor />
+                    <CardEditor card={card_data} loaded={header_loaded} load_error={header_load_error} onRetry={load_header} />
 
                     <h3 className="text-eyebrow text-muted-foreground">Data</h3>
                     <DataPanel onDeleted={deleted} />
