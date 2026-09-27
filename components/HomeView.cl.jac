@@ -36,7 +36,9 @@ import from .promises.Today { Today }
 import from .graph.GraphView { GraphView }
 import from .goals.GoalPicker { GoalPicker }
 import from .goals.RankList { RankList, RankSkeleton, is_partial }
-import from .exchange.GapAlert { GapAlerts }
+import from .home.PromisesDue { PromisesDue }
+import from .home.ReachOutRow { ReachOutList }
+import from .exchange.GapAlert { GapSingle }
 import from .exchange.Requests { RequestsSection }
 import from .exchange.Inbox { AsksSection }
 import from .agent.AgentInbox { AgentInbox }
@@ -51,7 +53,7 @@ import from ..lib.utils { cn }
 import from .agent.common { since_iso }
 sv import from ..schema { Person }
 
-glob RANK_PREVIEW: int = 5;
+glob RANK_PREVIEW: int = 3;
 glob MONTH_ABBR: list[str] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 ];
@@ -268,6 +270,14 @@ def:pub HomeView(
     def toggle_quiet(e: MouseEvent) {
         quiet_only = not quiet_only;
     }
+
+    # Home's "Promises due" -> See all (SOH-226): same list, in People > Today.
+    def go_promises_today() -> None {
+        view_tab = "today";
+        pick_tab("people");
+    }
+
+    # so a just-imported/confirmed person shows up without a manual refresh.
 
     # Import (SOH-181, moved to a "+" on List for SOH-226): Done switches the
     # People sub-tab back to the list and refreshes it — same refresh path as
@@ -537,6 +547,12 @@ def:pub HomeView(
                 </div>
             } else {
                 <div key="tab-home" className="flex flex-col gap-6">
+                    <PromisesDue
+                        onOpenPerson={open_person}
+                        onSeeAll={go_promises_today}
+                        onCapture={onCapture}
+                        refresh_key={today_key}
+                    />
                     {if not goals_loaded {
                         <div role="status" aria-label="Loading your goals" className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
                             <Skeleton className="h-3 w-12" />
@@ -553,9 +569,9 @@ def:pub HomeView(
                         />
                     }}
                     {has_active and
-                        <section aria-label="Who can help" className="flex flex-col gap-3">
+                        <section aria-label="Who to reach out to" className="flex flex-col gap-3">
                             <div className="flex items-center justify-between gap-2">
-                                <h2 className="text-eyebrow text-muted-foreground">Who can help</h2>
+                                <h2 className="text-eyebrow text-muted-foreground">Who to reach out to</h2>
                                 <div className="flex items-center gap-2">
                                     {rank_pending and
                                         <span role="status" className="text-caption text-muted-foreground">Walking your graph…</span>}
@@ -576,7 +592,11 @@ def:pub HomeView(
                                     Ranking is partial right now — tap Re-rank in a minute.
                                 </p>}
                             {if len(shown_rows) > 0 {
-                                <RankList rows={preview_rows} dim={rank_pending} on_open_person={open_person} />
+                                if expanded {
+                                    <RankList rows={preview_rows} dim={rank_pending} on_open_person={open_person} />
+                                } else {
+                                    <ReachOutList rows={preview_rows} on_open_person={open_person} />
+                                }
                                 if more > 0 {
                                     <Button
                                         variant="ghost"
@@ -603,7 +623,7 @@ def:pub HomeView(
                             }}
                         </section>}
                     {has_active and not (rank_pending and len(rank_rows) == 0) and
-                        <GapAlerts
+                        <GapSingle
                             gaps={gaps}
                             pending={gaps_pending}
                             error={gaps_error}

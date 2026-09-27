@@ -18,6 +18,19 @@ import from ..ui.sheet { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDesc
 import from ..ui.tabs { Tabs, TabsList, TabsTrigger }
 import from .common { StatusChip, req_label }
 
+"""A gap's `kind` never carries its own article ("climate-tech VC", "founder
+who has raised for hardware") — prefix "a"/"an" for the single-card sentence."""
+def _a_or_an(kind: str) -> str {
+    if not kind {
+        return "";
+    }
+    first: str = kind[0:1].lower();
+    if first in "aeiou" {
+        return "an " + kind;
+    }
+    return "a " + kind;
+}
+
 def:pub GapSkeleton() -> JsxElement {
     return
         <div aria-hidden="true" className="flex flex-col gap-2 rounded-lg border border-dashed border-border-strong pt-3 pb-3 pl-4 pr-4">
@@ -156,6 +169,110 @@ def:pub GapCard(
                     <Button size="sm" onClick={handle_open}>Ask my network</Button>
                 </div>}
         </li>;
+}
+
+"""Home's single gap card (SOH-226): one card for the highest-priority gap
+(`gaps[0]`) instead of the full dense list — "Looking for someone specific?",
+the gap's role in plain words, and one *Ask your network* button that opens
+the same `AskSheet`. No gap: one muted line, no disappearing section."""
+def:pub GapSingle(
+    gaps: list[dict],
+    pending: bool,
+    error: str,
+    asked: dict,
+    default_about: str,
+    busy: bool,
+    ask_error: str,
+    onAsk: Callable[[str, str, str], None],
+    onRetry: Callable[[], None],
+    friends_count: int = 0
+) -> JsxElement {
+    has open: bool = False,
+        posted: bool = False,
+        need: str = "",
+        about_line: str = "",
+        audience: str = "everyone";
+
+    def open_sheet(e: MouseEvent) {
+        if len(gaps) == 0 {
+            return;
+        }
+        open = True;
+        posted = False;
+        need = gaps[0]["suggested_need"] as str;
+        about_line = default_about;
+        audience = "everyone";
+    }
+
+    def post() -> None {
+        posted = True;
+        onAsk(need.strip(), about_line.strip(), "friends" if audience == "friends" and friends_count > 0 else "everyone");
+    }
+
+    def set_open(v: bool) -> None {
+        if not v {
+            open = False;
+            posted = False;
+        }
+    }
+
+    def handle_retry(e: MouseEvent) {
+        onRetry();
+    }
+
+    gap: dict = {};
+    if len(gaps) > 0 {
+        gap = gaps[0];
+    }
+    asked_status: str = "";
+    if len(gaps) > 0 {
+        asked_status = (asked[gap["suggested_need"]] or "") as str;
+    }
+    sheet_open: bool = open and not (posted and not busy and not ask_error);
+
+    if pending and len(gaps) == 0 {
+        return
+            <section aria-label="Gap" className="flex flex-col gap-2 rounded-lg border border-dashed border-border-strong pt-3 pb-3 pl-4 pr-4">
+                <span role="status" className="text-caption text-muted-foreground">Looking for gaps in your network…</span>
+                <Skeleton className="h-3.5 w-full" />
+            </section>;
+    }
+    if error {
+        return
+            <section aria-label="Gap" className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-border-strong pt-3 pb-3 pl-4 pr-4 text-caption text-muted-foreground">
+                <span>{error}</span>
+                <Button size="xs" variant="ghost" onClick={handle_retry}>Try again</Button>
+            </section>;
+    }
+    if len(gaps) == 0 {
+        return <p className="text-caption text-muted-foreground">Your graph covers this goal.</p>;
+    }
+
+    return
+        <section aria-label="Gap" className="flex flex-col gap-2 rounded-lg border bg-card pt-3 pb-3 pl-4 pr-4 shadow-edge">
+            <h2 className="text-body font-medium">Looking for someone specific?</h2>
+            <p className="text-body-sm text-muted-foreground">{"No warm path yet to " + _a_or_an(gap["kind"] as str) + "."}</p>
+            {if asked_status {
+                <div><StatusChip status={asked_status} label={req_label(asked_status)} /></div>
+            } else {
+                <div><Button onClick={open_sheet}>Ask your network</Button></div>
+            }}
+            <AskSheet
+                open={sheet_open}
+                kind={(gap["kind"] or "") as str}
+                need={need}
+                about_line={about_line}
+                busy={busy}
+                error={ask_error}
+                onNeed={lambda v: str { need = v; }}
+                onAbout={lambda v: str { about_line = v; }}
+                onPost={post}
+                onOpenChange={set_open}
+                audience={audience}
+                onAudience={lambda v: str { audience = v; }}
+                friends_count={friends_count}
+            />
+        </section>;
 }
 
 def:pub GapAlerts(
