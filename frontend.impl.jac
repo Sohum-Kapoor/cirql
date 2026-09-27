@@ -169,6 +169,96 @@ impl app.set_card_field(field: str, value: any) -> None {
     card = next_card;
 }
 
+"""Card step goal actions (GoalPicker.onSwitch): SetGoal(<that goal's text>)
+against `onboard["goals"]` — mirrors `switch_goal` but scoped to onboarding
+state, never `goals_list` (owned by the home view)."""
+impl app.onb_switch_goal(goal_id: str) -> None {
+    existing: list[dict] = (onboard["goals"] or []) as list[dict];
+    target: dict = {};
+    for g in existing {
+        if g["_jac_id"] == goal_id {
+            target = g;
+        }
+    }
+    if not target["_jac_id"] or target["active"] {
+        return;
+    }
+    before: dict = onboard;
+    next_onboard: dict = {**onboard};
+    next_onboard["goals"] = [mark_active(g, goal_id) for g in existing];
+    onboard = next_onboard;
+    onb_goal_error = "";
+    saved: dict = {};
+    try {
+        saved = await set_goal(target["text"] as str);
+    } except Exception as e {
+        onboard = before;
+        onb_goal_error = "Couldn't switch goals — try again. " + str(e);
+        return;
+    }
+}
+
+"""Card step goal actions (GoalPicker.onCreate / RecallStep.onAddGoal):
+SetGoal(text) — creates or reactivates a goal and deactivates every other one
+under `onboard["goals"]`."""
+impl app.onb_create_goal(text: str) -> None {
+    clean: str = text.strip();
+    if not clean {
+        return;
+    }
+    existing: list[dict] = (onboard["goals"] or []) as list[dict];
+    saved: dict = {};
+    onb_goal_busy = True;
+    onb_goal_error = "";
+    try {
+        saved = await set_goal(clean);
+    } except Exception as e {
+        onb_goal_busy = False;
+        onb_goal_error = "Couldn't save that goal. " + str(e);
+        return;
+    }
+    gid: str = (saved["_jac_id"] or "") as str;
+    new_goal: dict = {**saved};
+    new_goal["active"] = True;
+    kept: list[dict] = [mark_active(g, gid) for g in existing if g["_jac_id"] != gid];
+    next_onboard: dict = {**onboard};
+    next_onboard["goals"] = [new_goal] + kept;
+    onboard = next_onboard;
+    onb_goal_busy = False;
+}
+
+"""Card step goal actions (GoalPicker.onClose): CloseGoal(goal_id) — inactive,
+never deleted, scoped to `onboard["goals"]`."""
+impl app.onb_close_goal(goal_id: str) -> None {
+    existing: list[dict] = (onboard["goals"] or []) as list[dict];
+    out: str = "";
+    onb_goal_busy = True;
+    onb_goal_error = "";
+    try {
+        out = await close_goal(goal_id);
+    } except Exception as e {
+        onb_goal_busy = False;
+        onb_goal_error = "Couldn't close that goal. " + str(e);
+        return;
+    }
+    onb_goal_busy = False;
+    if out != "closed" {
+        onb_goal_error = "That goal wasn't found — refresh and try again.";
+        return;
+    }
+    next_goals: list[dict] = [];
+    for g in existing {
+        ng: dict = {**g};
+        if g["_jac_id"] == goal_id {
+            ng["active"] = False;
+        }
+        next_goals = next_goals + [ng];
+    }
+    next_onboard: dict = {**onboard};
+    next_onboard["goals"] = next_goals;
+    onboard = next_onboard;
+}
+
 impl app.set_row(i: int, field: str, value: str) -> None {
     next_rows: list[dict] = [];
     for (idx, r) in enumerate(rows) {
@@ -248,6 +338,14 @@ impl app.start_recall -> None {
     # Seed the home cache so landing on home doesn't spend a second GoalRank.
     RANK_ROWS[goal_id] = {"ok": True, "rows": out};
     publish_rank();
+}
+
+"""Step 4's own inline add-goal (RecallStep.onAddGoal, shown when OnboardMe
+never surfaced or activated a goal): SetGoal(text), then rank it immediately —
+`start_recall` already ran once this render and returned early with no goal_id."""
+impl app.recall_add_goal(text: str) -> None {
+    await onb_create_goal(text);
+    start_recall();
 }
 
 impl app.finish -> None {

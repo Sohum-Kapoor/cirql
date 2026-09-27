@@ -207,6 +207,8 @@ def:pub app -> JsxElement {
         goals_loaded: bool = False,
         goal_busy: bool = False,
         goal_error: str = "",
+        onb_goal_busy: bool = False,
+        onb_goal_error: str = "",
         rank_cache: dict = {},
         rank_pending_map: dict = {},
         rank_error_map: dict = {},
@@ -239,11 +241,15 @@ def:pub app -> JsxElement {
     async def enter -> None;
     async def submit_about -> None;
     def set_card_field(field: str, value: any) -> None;
+    async def onb_switch_goal(goal_id: str) -> None;
+    async def onb_create_goal(text: str) -> None;
+    async def onb_close_goal(goal_id: str) -> None;
     def set_row(i: int, field: str, value: str) -> None;
     async def submit_people -> None;
     def skip_people -> None;
     def people_next -> None;
     async def start_recall -> None;
+    async def recall_add_goal(text: str) -> None;
     def finish -> None;
     def open_capture -> None;
     def close_capture -> None;
@@ -459,7 +465,12 @@ def:pub app -> JsxElement {
                         card={card}
                         goals={goals}
                         interests={interests}
+                        goal_busy={onb_goal_busy}
+                        goal_error={onb_goal_error}
                         onFieldChange={set_card_field}
+                        onSwitchGoal={onb_switch_goal}
+                        onCreateGoal={onb_create_goal}
+                        onCloseGoal={onb_close_goal}
                         onContinue={lambda { step = 3; }}
                     />
                 } elif step == 3 {
@@ -481,6 +492,8 @@ def:pub app -> JsxElement {
                         rows={rank_rows}
                         pending={rank_pending}
                         error={rank_error}
+                        goal_busy={onb_goal_busy}
+                        onAddGoal={recall_add_goal}
                         onDone={finish}
                     />
                 }
