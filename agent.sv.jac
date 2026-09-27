@@ -31,7 +31,7 @@ import from gaps { warm_lines_for }
 import from paths { find_path }
 import from tend { tend_for }
 import from drafts { gather_follow_up_evidence, fallback_draft }
-import from scoring { collect_candidates, fallback_results, fallback_tokens }
+import from scoring { collect_candidates, fallback_tokens }
 import from exchange {
     all_requests, shared_replies, owner_root, visible_to_me, now_iso,
     post_request, reply_to_request
@@ -184,16 +184,35 @@ def _new_match_sort_key(c: dict[str, any]) -> tuple[int, str] {
     return (c["rank"] as int, str(c["observed_at"]));
 }
 
+"""True when the caller has ever had a new_match AgentAction (any status —
+open, approved, dismissed, snoozed): a proposal the human has actually seen.
+SOH-223 review fix #5: an early AgentRun whose `current` strengths came back
+empty (no active goal yet, or a goal with zero RelevantTo edges at all) is
+still recorded, so `prior_strengths` reads back `{}` next time — not None —
+and `step_new_match` would otherwise treat that as real history and skip the
+first-run cap entirely, proposing every match that "rose from empty". The
+cap must stay on until the user has actually seen a new_match proposal, not
+merely until an AgentRun row exists."""
+def has_new_match_action(me: Me) -> bool {
+    for a in [me ->:HasAction:->] {
+        if a.kind == "new_match" {
+            return True;
+        }
+    }
+    return False;
+}
+
 """new_match: RelevantTo edges on the active goal(s). strong/medium with
-resolvable evidence only. FIRST run ever (prior is None, i.e. no previous
-AgentRun recorded strengths): propose at most the top 3 candidates across
-every active goal, strong before medium, ties broken by newest evidence.
-Later runs: propose only when the (person, goal) strength rose since the
-previous run (SOH-223: no cap once the account has a history — a real rise
-is always worth a look). `current` is filled with every strength seen
-(including weak/below-threshold — SOH-223 tune verified this is what
-`prior_strengths` reads back next run), for the next run's comparison."""
-def step_new_match(goals: list[Goal], prior: dict[str, str] | None, current: dict[str, str]) -> list[dict[str, any]] {
+resolvable evidence only. FIRST run (prior is None, OR the account has never
+had a new_match action proposed yet — SOH-223 review fix #5, see
+`has_new_match_action`): propose at most the top 3 candidates across every
+active goal, strong before medium, ties broken by newest evidence. Later
+runs: propose only when the (person, goal) strength rose since the previous
+run (SOH-223: no cap once the account has a history — a real rise is always
+worth a look). `current` is filled with every strength seen (including
+weak/below-threshold — SOH-223 tune verified this is what `prior_strengths`
+reads back next run), for the next run's comparison."""
+def step_new_match(goals: list[Goal], prior: dict[str, str] | None, current: dict[str, str], seen_before: bool) -> list[dict[str, any]] {
     raw: list[dict[str, any]] = [];
     for goal in goals {
         gid = jid(goal);
@@ -232,7 +251,8 @@ def step_new_match(goals: list[Goal], prior: dict[str, str] | None, current: dic
         }
     }
 
-    if prior is None {
+    first_run = prior is None or not seen_before;
+    if first_run {
         top_keys: list[str] = [];
         for c in sorted(raw, key=_new_match_sort_key, reverse=True) {
             if len(top_keys) >= 3 {
@@ -419,9 +439,31 @@ def _tok_match(a: str, b: str) -> bool {
     return a.startswith(b) or b.startswith(a);
 }
 
-"""The distinct tokens of `need` (fallback_tokens) that also name something
-in THIS ONE candidate's own facts/intents/title/org text — never anywhere
-else on the root. Order follows the need's own token order."""
+"""Collapse `need`'s own tokens onto one representative per `_tok_match`
+family, so a plural/singular pair IN THE NEED ITSELF (e.g. "nurse nurses")
+never counts as two independent signals against a candidate (SOH-223 review
+fix #3). First token seen for a family wins; order otherwise preserved."""
+def _dedupe_need_tokens(tokens: list[str]) -> list[str] {
+    out: list[str] = [];
+    for t in tokens {
+        dup = False;
+        for o in out {
+            if _tok_match(t, o) {
+                dup = True;
+                break;
+            }
+        }
+        if not dup {
+            out.append(t);
+        }
+    }
+    return out;
+}
+
+"""The distinct tokens of `need` (fallback_tokens, deduped by `_tok_match`
+family — SOH-223 review fix #3) that also name something in THIS ONE
+candidate's own facts/intents/title/org text — never anywhere else on the
+root. Order follows the need's own token order."""
 def _answer_ask_match_tokens(need: str, cand: dict[str, any]) -> list[str] {
     p = cand["person"] as Person;
     text = f"{p.title} {p.org}";
@@ -430,7 +472,7 @@ def _answer_ask_match_tokens(need: str, cand: dict[str, any]) -> list[str] {
     }
     cand_tokens = fallback_tokens(text);
     matched: list[str] = [];
-    for nt in fallback_tokens(need) {
+    for nt in _dedupe_need_tokens(fallback_tokens(need)) {
         for ct in cand_tokens {
             if _tok_match(nt, ct) {
                 if nt not in matched {
@@ -443,44 +485,54 @@ def _answer_ask_match_tokens(need: str, cand: dict[str, any]) -> list[str] {
     return matched;
 }
 
-def _candidate_by_person_id(candidates: list[dict[str, any]], pid: str) -> dict[str, any] | None {
-    for c in candidates {
-        if jid(c["person"] as Person) == pid {
-            return c;
+"""Evidence items from THIS candidate that name something in `need`,
+allowing the same plural/prefix match `_answer_ask_match_tokens` uses."""
+def _answer_ask_evidence_hits(need: str, cand: dict[str, any]) -> list[dict[str, str]] {
+    need_tokens = _dedupe_need_tokens(fallback_tokens(need));
+    hits: list[dict[str, str]] = [];
+    for e in cand["evidence"] as list[dict[str, str]] {
+        for ct in fallback_tokens(e["text"]) {
+            found = False;
+            for nt in need_tokens {
+                if _tok_match(nt, ct) {
+                    found = True;
+                    break;
+                }
+            }
+            if found {
+                hits.append(e);
+                break;
+            }
         }
     }
-    return None;
+    return hits;
 }
 
-"""Tighter than scoring.fallback_results alone (SOH-223 tune, B's live
-feedback: "experienced nurses" was answered by an account with no nurses).
-scoring.fallback_results is used only as a cheap pre-filter (>= 1 exact
-token overlap, per-candidate already); a candidate is KEPT only when either
-(a) it carries a cached scorer strength of strong/medium already (none this
-weekend — score_need is never called from this deterministic module — but
-kept so a future cached score is honored without a second gate), or (b) at
-least 2 distinct need tokens name something in that candidate's OWN
-facts/intents/title/org text. Each kept item carries its `matched` tokens
-for `why`."""
+"""Tighter than a bare keyword scan (SOH-223 tune, B's live feedback:
+"experienced nurses" was answered by an account with no nurses). A candidate
+is KEPT only when at least 2 DISTINCT (by `_tok_match` family — SOH-223
+review fix #3) need tokens name something in that candidate's OWN
+facts/intents/title/org text. SOH-223 review fix #2: scans `candidates`
+directly with `_answer_ask_match_tokens`/`_answer_ask_evidence_hits` —
+never scoring.fallback_results' EXACT-token pre-filter, which dropped a
+candidate that matched only by prefix (need "nurses", fact "nurse") before
+`_answer_ask_match_tokens` ever saw it. Each kept item carries its `matched`
+tokens for `why`."""
 def _answer_ask_hits(candidates: list[dict[str, any]], need: str) -> list[dict[str, any]] {
-    raw = fallback_results(candidates, need);
     out: list[dict[str, any]] = [];
-    for h in raw {
-        strength = str(h["strength"]);
-        if strength == "strong" or strength == "medium" {
-            out.append({"person_id": h["person_id"], "evidence_ids": h["evidence_ids"], "matched": []});
-            continue;
-        }
-        pid = str(h["person_id"]);
-        cand = _candidate_by_person_id(candidates, pid);
-        if cand is None {
-            continue;
-        }
-        matched = _answer_ask_match_tokens(need, cand as dict[str, any]);
+    for cand in candidates {
+        matched = _answer_ask_match_tokens(need, cand);
         if len(matched) < 2 {
             continue;
         }
-        out.append({"person_id": h["person_id"], "evidence_ids": h["evidence_ids"], "matched": matched});
+        hits = _answer_ask_evidence_hits(need, cand);
+        evidence = cand["evidence"] as list[dict[str, str]];
+        source = hits if hits else evidence;
+        evidence_ids: list[str] = [];
+        for e in source {
+            evidence_ids.append(e["jid"]);
+        }
+        out.append({"person_id": jid(cand["person"] as Person), "evidence_ids": evidence_ids, "matched": matched});
     }
     return out;
 }
@@ -529,17 +581,12 @@ def step_answer_ask(me: Me, now: datetime) -> list[dict[str, any]] {
                 text_by_id[e["jid"]] = e["text"];
             }
         }
-        top = hits[0];
-        ev_ids: list[str] = [];
-        for i in top["evidence_ids"] as list[str] {
-            if i not in ev_ids and len(ev_ids) < 4 {
-                ev_ids.append(i);
-            }
-        }
-        ev = resolvable(ev_ids);
-        if not ev {
+        picked = _first_resolvable_hit(hits);
+        if picked is None {
             continue;
         }
+        top = picked["hit"] as dict[str, any];
+        ev = picked["evidence"] as list[str];
         quote = text_by_id[ev[0]] if ev[0] in text_by_id else "";
         matched = top["matched"] as list[str];
         matches_note = f" (matches: {', '.join(matched)})" if matched else "";
@@ -562,6 +609,27 @@ def step_answer_ask(me: Me, now: datetime) -> list[dict[str, any]] {
 
 def _req_key(r: IntroRequest) -> str {
     return r.created_at;
+}
+
+"""The first hit in `hits` (already ordered by `_answer_ask_hits`) whose
+evidence ids (capped at 4, deduped) resolve via `resolvable`; None when none
+do. SOH-223 review fix #4: the old code took `hits[0]` unconditionally, so
+one bad evidence id on the top hit silently dropped the whole request even
+when a lower-ranked hit's evidence was perfectly fine."""
+def _first_resolvable_hit(hits: list[dict[str, any]]) -> dict[str, any] | None {
+    for h in hits {
+        ev_ids: list[str] = [];
+        for i in h["evidence_ids"] as list[str] {
+            if i not in ev_ids and len(ev_ids) < 4 {
+                ev_ids.append(i);
+            }
+        }
+        resolved = resolvable(ev_ids);
+        if resolved {
+            return {"hit": h, "evidence": resolved};
+        }
+    }
+    return None;
 }
 
 # ---------------------------------------------------------------- upsert
@@ -631,8 +699,9 @@ def run_agent_for(me: Me, reason: str, now: datetime) -> dict[str, any] {
     goals = active_goals(me);
     prior = prior_strengths(me);
     current: dict[str, str] = {};
+    seen_before = has_new_match_action(me);
     findings: list[dict[str, any]] = [];
-    findings.extend(step_new_match(goals, prior, current));
+    findings.extend(step_new_match(goals, prior, current, seen_before));
     gaps = gap_goals(me, goals);
     findings.extend(step_ask_network(me, gaps));
     findings.extend(step_route(me, gaps));
