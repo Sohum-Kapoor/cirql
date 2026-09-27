@@ -9,6 +9,7 @@ import from ..ui.sheet { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDesc
 import from ..ui.tabs { Tabs, TabsList, TabsTrigger }
 import from ...lib.theme { stored_theme, set_theme }
 import from .DataPanel { DataPanel }
+import from .AboutPanel { AboutPanel }
 
 def:pub AppearanceSheet(
     open: bool,
@@ -44,6 +45,7 @@ def:pub AppearanceSheet(
                         </TabsList>
                     </Tabs>
                     <DataPanel onDeleted={deleted} />
+                    <AboutPanel />
                 </SheetBody>
             </SheetContent>
         </Sheet>;
