@@ -628,3 +628,37 @@ Bounded traversal over the caller's own root: every Note (text capped at 300 cha
   ### `ArchivePerson(person_id: str)` — SOH-222, new
   Reports `[Person]` (with `archived: true`) or `[{ error: "not_found" }]` — same `person_id` resolution (`[me ->:Knows:->]`) as `UpdatePerson`/`PersonDetail`. Soft delete only: sets `Person.archived = True`, hidden from lists and rankings (GoalRank/ListPeople should filter `archived` people out; restorable, no UI for that yet), never deletes/retracts any Fact/Intent/Promise/edge — unlike `Forget`.
   Client (`components/person/PersonSheet.cl.jac`): a header pencil button opens an inline form (name/org/title/how_met/email/phone/location/links-as-textarea, one link per line) that sends only changed fields non-empty, optimistic with rollback + an error line on failure. Read-only view is a "Contact" block (email `mailto:`, phone `tel:`, location, links `target="_blank" rel="noopener noreferrer"`), never shows `identity_tokens` (internal-only per AGENTS.md). "Forget this person" is now "Archive" (confirms: "Hides them from lists and rankings. Restore any time from Settings.") plus a "More" dropdown -> "Forget permanently" (the existing SOH-207 Forget flow, unchanged). Mocks: `components/mocks/person.cl.jac` `mock_update_person`/`mock_archive_person`, state in `MOCK_PERSON["overrides"]`/`["archived"]`.
+- 2026-09-26 — SOH-222 A4, B builds Circles + Events screens (`components/circles/Circles.cl.jac`, `components/events/Events.cl.jac`) against these shapes; walkers are on a parallel A branch, not on main yet — `components/api.cl.jac` calls them via `jacSpawn` (same pattern as `PersonDetail`/`Brief`) until they land, then flip to `sv import` + `root spawn`. `Circle`/`Event` nodes and `HasCircle`/`InCircle`/`HasEvent`/`MetAt` edges already exist in `schema.sv.jac` (SOH-215). All `:priv`, own-root only. Mocks in `components/mocks/circles.cl.jac`.
+
+  ### `CreateCircle(name: str)`
+  `[Circle]` (`{ _jac_id, name, created_at }`) or `[{ error: "exists" }]` (case-insensitive name match against the caller's own circles).
+
+  ### `RenameCircle(circle_id: str, name: str)`
+  `[Circle]` (updated) or `[{ error: "not_found" }]`.
+
+  ### `DeleteCircle(circle_id: str)`
+  `[{ ok: true }]` or `[{ error: "not_found" }]`. Deletes the `Circle` node and its `InCircle` edges only — the people in it are untouched (no cascade to `Person`, `Knows`, or anything else).
+
+  ### `AddToCircle(person_id: str, circle_id: str)` / `RemoveFromCircle(person_id: str, circle_id: str)`
+  `[{ ok: true }]` or `[{ error: "not_found" }]`. Idempotent (adding an existing member / removing a non-member is still `{ ok: true }`).
+
+  ### `ListCircles()`
+  `[{ circle: Circle, count: int }, ...]`, one row per circle the caller owns; `count` = number of `InCircle` members.
+
+  ### `CreateEvent(name: str, date: str = "", location: str = "")`
+  `[Event]` (`{ _jac_id, name, date, location }`). `date` is a plain ISO date string (`YYYY-MM-DD`) when set, else `""`; no uniqueness check (unlike `CreateCircle`).
+
+  ### `UpdateEvent(event_id: str, name: str, date: str, location: str)`
+  `[Event]` (updated) or `[{ error: "not_found" }]`. No `DeleteEvent` walker — events are edited, not removed.
+
+  ### `ListEvents()`
+  `[{ event: Event, count: int }, ...]`. Report order is unspecified; the client sorts newest-`date`-first (events with no date sort last).
+
+  ### `AddToEvent(person_id: str, event_id: str)` / `RemoveFromEvent(person_id: str, event_id: str)`
+  Same shape as `AddToCircle`/`RemoveFromCircle`.
+
+  ### `EventPeople(event_id: str)`
+  `[Person, ...]` — everyone attached to that event via `MetAt`. Same `Person` shape as `ListPeople`.
+
+  ### `ListPeople(circle_id: str = "", event_id: str = "", include_archived: bool = False)` — extends the existing no-arg `ListPeople`
+  Same `[Person, ...]` shape. `circle_id` set -> only that circle's `InCircle` members; `event_id` set -> only that event's `MetAt` attendees (mutually exclusive; `circle_id` wins if both are set); neither set -> every known person, exactly today's behavior. `include_archived` (default `False`) -> `Person.archived == True` rows are dropped unless `True`.
