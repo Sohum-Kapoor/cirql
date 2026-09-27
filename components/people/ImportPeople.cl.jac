@@ -387,6 +387,11 @@ def read_as_text(file: any) -> any {
     });
 }
 
+"""`n` skipped rows -> "1 row skipped: no name" / "2 rows skipped: no name"."""
+def _skipped_no_name_label(n: int) -> str {
+    return str(n) + (" row skipped: no name" if n == 1 else " rows skipped: no name");
+}
+
 def _reason_label(reason: str) -> str {
     if reason == "empty_name" {
         return "No name";
@@ -512,7 +517,7 @@ def:pub ImportedRow(
                     <span className="truncate text-body-sm">{name}</span>
                     {sub and <span className="truncate text-caption text-muted-foreground">{sub}</span>}
                 </span>
-                <Badge variant={"secondary" if is_new else "outline"}>{"New" if is_new else "Already knew"}</Badge>
+                <Badge variant="outline">{"New" if is_new else "Already knew"}</Badge>
             </button>
             {if decision == "confirmed" {
                 <span role="status" className="flex items-center gap-1 text-caption text-success-text">
@@ -524,7 +529,7 @@ def:pub ImportedRow(
                 <div className="flex items-center gap-2">
                     <Button
                         size="sm"
-                        variant="secondary"
+                        variant="outline"
                         disabled={busy}
                         aria-label={"Confirm " + (name or "this person")}
                         className="h-11 flex-1"
@@ -534,7 +539,7 @@ def:pub ImportedRow(
                     </Button>
                     <Button
                         size="sm"
-                        variant="outline"
+                        variant="ghost"
                         disabled={busy}
                         aria-label={"Skip " + (name or "this person")}
                         className="h-11 flex-1"
@@ -570,9 +575,27 @@ def:pub ImportPeople(
         import_error: str = "",
         result: dict = {},
         decisions: dict = {},
-        row_busy_id: str = "",
+        row_busy: dict = {},
         row_error: dict = {},
-        confirm_all_busy: bool = False;
+        confirm_all_busy: bool = False,
+        # SOH-232: Confirm/Skip never resolved on screen (row stuck
+        # "Confirming…", "N left" never decrementing) even though the server
+        # had already confirmed — `has` fields compile to `useState`, and a
+        # handler's closure over `decisions`/`row_error`/`row_busy` is frozen
+        # at the render the click happened in (`jac-cl-components`: "the
+        # closure stays stale until the next render"). Two decisions in
+        # flight at once (rapid Confirm/Skip taps, or `confirm_all`'s own
+        # await loop) each built their update from that SAME stale snapshot,
+        # so whichever resolved last silently overwrote the other's change.
+        # These three refs are the ground truth instead: `.current` mutates
+        # in place, so every in-flight call reads the latest merged value
+        # regardless of which render closed over it (same idiom as
+        # `exchange/common.cl.jac`'s `Poller` `latest` ref) — the plain
+        # `has` fields above stay purely for rendering, copied from the ref
+        # after every mutation.
+        decisions_ref: Ref[any] = Ref({}),
+        row_error_ref: Ref[any] = Ref({}),
+        row_busy_ref: Ref[any] = Ref({});
 
     def edit_paste(e: ChangeEvent) {
         paste_text = e.target.value;
@@ -668,6 +691,46 @@ def:pub ImportPeople(
         cap_notice = "";
     }
 
+    """`busy` on/off for one row — always reads/writes `row_busy_ref.current`
+    (never the `has row_busy` snapshot) so two rows in flight at once never
+    clobber each other (SOH-232)."""
+    def _set_row_busy(person_id: str, busy: bool) -> None {
+        next_busy: dict = {**row_busy_ref.current};
+        if busy {
+            next_busy[person_id] = True;
+        } else {
+            next_busy = _drop_str_key(next_busy, person_id);
+        }
+        row_busy_ref.current = next_busy;
+        row_busy = next_busy;
+    }
+
+    """One row's error line, or clears it (`message == ""`) — same
+    ref-is-truth pattern as `_set_row_busy` (SOH-232)."""
+    def _set_row_error(person_id: str, message: str) -> None {
+        next_err: dict = {**row_error_ref.current};
+        if message {
+            next_err[person_id] = message;
+        } else {
+            next_err = _drop_str_key(next_err, person_id);
+        }
+        row_error_ref.current = next_err;
+        row_error = next_err;
+    }
+
+    """Records one row's Confirm/Skip decision. Reads `decisions_ref.current`
+    (never the `has decisions` snapshot) so `confirm_all`'s own await loop,
+    and any other row's overlapping Confirm/Skip, always merge onto the
+    latest state instead of each other's stale one (SOH-232 — the bug
+    survived a solo click because there was nothing to race against; it
+    showed reliably as soon as two rows were in flight together)."""
+    def _set_decision(person_id: str, decision: str) -> None {
+        next_dec: dict = {**decisions_ref.current};
+        next_dec[person_id] = decision;
+        decisions_ref.current = next_dec;
+        decisions = next_dec;
+    }
+
     async def do_import() -> None {
         import_busy = True;
         import_error = "";
@@ -696,7 +759,11 @@ def:pub ImportPeople(
         }
         result = out;
         decisions = {};
+        decisions_ref.current = {};
         row_error = {};
+        row_error_ref.current = {};
+        row_busy = {};
+        row_busy_ref.current = {};
         step = "sort";
         imported_count: int = len((out["imported"] or []) as list[dict]);
         toast(str(imported_count) + " people imported", "success");
@@ -711,28 +778,22 @@ def:pub ImportPeople(
     }
 
     async def confirm_row(person_id: str) -> None {
-        row_busy_id = person_id;
-        row_error = _drop_str_key(row_error, person_id);
+        _set_row_busy(person_id, True);
+        _set_row_error(person_id, "");
         out: dict = {};
         try {
             out = await confirm_person(person_id, "");
         } except Exception as err {
-            row_busy_id = "";
-            next_err: dict = {**row_error};
-            next_err[person_id] = "Couldn't confirm. " + str(err);
-            row_error = next_err;
+            _set_row_busy(person_id, False);
+            _set_row_error(person_id, "Couldn't confirm. " + str(err));
             return;
         }
-        row_busy_id = "";
+        _set_row_busy(person_id, False);
         if out["error"] {
-            next_err2: dict = {**row_error};
-            next_err2[person_id] = "Couldn't confirm that person.";
-            row_error = next_err2;
+            _set_row_error(person_id, "Couldn't confirm that person.");
             return;
         }
-        next_dec: dict = {**decisions};
-        next_dec[person_id] = "confirmed";
-        decisions = next_dec;
+        _set_decision(person_id, "confirmed");
         confirmed_name: str = _name_for((result["imported"] or []) as list[dict], person_id);
         toast((confirmed_name if confirmed_name else "Person") + " confirmed", "success");
         if onChanged {
@@ -741,29 +802,23 @@ def:pub ImportPeople(
     }
 
     async def skip_row(person_id: str) -> None {
-        row_busy_id = person_id;
-        row_error = _drop_str_key(row_error, person_id);
+        _set_row_busy(person_id, True);
+        _set_row_error(person_id, "");
         out: dict = {};
         try {
             out = await skip_person(person_id);
         } except Exception as err {
-            row_busy_id = "";
-            next_err: dict = {**row_error};
-            next_err[person_id] = "Couldn't skip. " + str(err);
-            row_error = next_err;
+            _set_row_busy(person_id, False);
+            _set_row_error(person_id, "Couldn't skip. " + str(err));
             return;
         }
-        row_busy_id = "";
+        _set_row_busy(person_id, False);
         if out["error"] {
             reason: str = (out["error"] or "") as str;
-            next_err2: dict = {**row_error};
-            next_err2[person_id] = "Already confirmed. Can't skip." if reason == "not_proposed" else "Couldn't skip that person.";
-            row_error = next_err2;
+            _set_row_error(person_id, "Already confirmed. Can't skip." if reason == "not_proposed" else "Couldn't skip that person.");
             return;
         }
-        next_dec: dict = {**decisions};
-        next_dec[person_id] = "skipped";
-        decisions = next_dec;
+        _set_decision(person_id, "skipped");
         skipped_name: str = _name_for((result["imported"] or []) as list[dict], person_id);
         toast((skipped_name if skipped_name else "Person") + " skipped");
         if onChanged {
@@ -776,7 +831,7 @@ def:pub ImportPeople(
         imported: list[dict] = (result["imported"] or []) as list[dict];
         for entry in imported {
             pid: str = _pid_of(entry);
-            if not pid or pid in decisions {
+            if not pid or pid in decisions_ref.current {
                 continue;
             }
             await confirm_row(pid);
@@ -796,8 +851,11 @@ def:pub ImportPeople(
         import_error = "";
         result = {};
         decisions = {};
+        decisions_ref.current = {};
         row_error = {};
-        row_busy_id = "";
+        row_error_ref.current = {};
+        row_busy = {};
+        row_busy_ref.current = {};
     }
 
     def handle_done(e: MouseEvent) {
@@ -808,6 +866,11 @@ def:pub ImportPeople(
         }
     }
 
+    # SOH-232: the sort step's outer div below carries `pb-20` — the fixed
+    # bottom "N people imported" toast (and every later Confirm/Skip toast,
+    # `lib/toast.cl.jac`, rendered above the bottom tab bar) otherwise sits
+    # directly on top of "Import more"/"Done" whenever this step's content
+    # is short enough not to scroll.
     imported_rows: list[dict] = (result["imported"] or []) as list[dict];
     skipped_rows: list[dict] = (result["skipped"] or []) as list[dict];
     pending_count: int = 0;
@@ -824,7 +887,7 @@ def:pub ImportPeople(
                 <div key="import-paste" className="flex flex-col gap-4">
                     <div className="flex flex-col gap-1">
                         <h2 className="text-eyebrow text-muted-foreground">Import people</h2>
-                        <p className="text-body-sm text-muted-foreground">
+                        <p className="text-caption text-muted-foreground">
                             Paste a list, one person per line: "Name", "Name, Org", "Name, Org, Title", or "Name &lt;email&gt;", or a CSV with a header row. You can also upload a .csv or .vcf export from your contacts. Or drop in the Connections.csv from LinkedIn's data export (Settings → Data privacy → Get a copy of your data).
                         </p>
                     </div>
@@ -864,6 +927,9 @@ def:pub ImportPeople(
                         >
                             {"Reading…" if file_busy else "Upload .csv / .vcf"}
                         </Button>
+                        <Button variant="ghost" className="h-11 text-muted-foreground" onClick={handle_done}>
+                            Cancel
+                        </Button>
                     </div>
                     {file_error and <p role="alert" className="text-body-sm text-destructive">{file_error}</p>}
                 </div>
@@ -878,7 +944,7 @@ def:pub ImportPeople(
                     {source == "linkedin" and
                         <Badge variant="secondary" className="self-start">{"LinkedIn export · " + str(len(parsed_rows)) + " connections"}</Badge>}
                     {preview_skipped_no_name > 0 and
-                        <p className="text-caption text-muted-foreground">{str(preview_skipped_no_name) + " rows skipped: no name"}</p>}
+                        <p className="text-caption text-muted-foreground">{_skipped_no_name_label(preview_skipped_no_name)}</p>}
                     {cap_notice and <p className="text-caption text-muted-foreground">{cap_notice}</p>}
                     <div className="flex flex-col gap-2">
                         <Label htmlFor="import-how-met">How you know them</Label>
@@ -914,7 +980,7 @@ def:pub ImportPeople(
                     </Button>
                 </div>
             } else {
-                <div key="import-sort" className="flex flex-col gap-4">
+                <div key="import-sort" className="flex flex-col gap-4 pb-20">
                     <div className="flex items-center justify-between gap-2">
                         <h2 className="text-eyebrow text-muted-foreground">Confirm your people</h2>
                         <span className="text-caption tabular-nums text-muted-foreground">{str(pending_count) + " left"}</span>
@@ -925,7 +991,7 @@ def:pub ImportPeople(
                         <div className="flex flex-col gap-3">
                             {pending_count > 1 and
                                 <Button
-                                    variant="outline"
+                                    variant="default"
                                     size="sm"
                                     className="h-11 self-start"
                                     disabled={confirm_all_busy}
@@ -939,7 +1005,7 @@ def:pub ImportPeople(
                                         key={_pid_of(entry) or str(idx)}
                                         row_entry={entry}
                                         decision={(decisions[_pid_of(entry)] or "") as str}
-                                        busy={row_busy_id == _pid_of(entry)}
+                                        busy={(row_busy[_pid_of(entry)] or False) as bool}
                                         error={(row_error[_pid_of(entry)] or "") as str}
                                         onConfirm={confirm_row}
                                         onSkip={skip_row}
