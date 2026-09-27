@@ -12,3 +12,4 @@ docs/research
 *.ipa
 *.apk
 .DS_Store
+!deploy/client-dist

@@ -18,11 +18,12 @@ RUN curl -fsSL https://bun.sh/install | bash
 ENV BUN_INSTALL=/root/.bun PATH=/root/.bun/bin:$PATH
 
 COPY . .
-# Pre-build the client bundle into the image so the first boot serves / at once.
-# jac start reuses .jac/client/dist/client.*.js when it exists (server.impl.jac
-# "Client bundle already built"); a failed prebuild must FAIL the image build,
-# otherwise every boot rebuilds for minutes on a shared CPU (seen on Fly, SOH-173).
-RUN jac build main.jac && ls .jac/client/dist/client.*.js
+# The client bundle is built on the deploying machine (scripts/fly_deploy.sh runs
+# `jac build` and copies .jac/client/dist to deploy/client-dist), then shipped here.
+# Fly's remote builder OOM-kills the Vite build, and a boot-time build takes 7+
+# minutes on a shared CPU. jac start reuses the bundle when client.*.js exists.
+COPY deploy/client-dist/ /app/.jac/client/dist/
+RUN ls /app/.jac/client/dist/client.*.js
 
 # The volume is mounted at /data; the entrypoint links .jac/data and uploads/ into it.
 RUN chmod +x scripts/entrypoint.sh

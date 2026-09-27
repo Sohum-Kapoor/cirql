@@ -18,7 +18,7 @@ cd ~/Downloads/cirql
 fly launch --no-deploy --copy-config --name cirql --region ord
 fly volumes create data --region ord --size 1
 fly secrets set GOOGLE_API_KEY=... ELEVENLABS_API_KEY=... JWT_SECRET=...   # values from .env
-fly deploy                                      # remote build, ~5 min the first time
+scripts/fly_deploy.sh                           # builds the client here, then deploys (~5 min)
 ```
 
 Pick a different `--name` if `cirql` is taken (it becomes `https://<name>.fly.dev`);
@@ -67,7 +67,7 @@ fly logs                                                                 # "high
 ## Day-to-day
 
 ```
-fly deploy            # after every merge to main you want live
+scripts/fly_deploy.sh # after every merge to main you want live
 fly logs              # tail
 fly ssh console       # a shell in the container; data is under /data
 fly machine restart   # if the process wedges
