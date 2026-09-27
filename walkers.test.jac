@@ -121,6 +121,7 @@ test "isolation: A never sees B's person" {
         assert str(alice_people[0]["name"]) == "Alice's Friend";
         for p in alice_people {
             assert "Bob" not in str(p["name"]), f"alice's ListPeople leaked a Bob record: {p}";
+            assert "last_contact" in p and "how_met" in p, f"ListPeople row lacks the Knows fields: {p}";
         }
         alice_me = client.post("/walker/GetMe").data["reports"] as list[dict[str, any]];
         assert len(alice_me) == 1;
