@@ -259,6 +259,44 @@ def _fact_is_spliceable(fact_text: str) -> bool {
     return False;
 }
 
+"""SOH-232 (audit I-4): a stored Promise span like "send Maya our deck" or
+"intro Dev to Priya" carries the RECIPIENT's own name (or a pronoun standing
+in for them) inside its object, because `capture.sv.jac` stores the span
+verbatim from the conversation. Spliced into a message already addressed to
+that same person ("Hi Maya, ... the Maya our deck ...") it reads as a
+name-splice bug. Strips, at most once, the first token that is either the
+recipient's own first name (case-insensitive) or a third-person object
+pronoun standing in for them ("her"/"him"/"them") -- never a name read off
+anyone else's graph, just the one name this function is explicitly given.
+
+Once that token is gone, a self-referential possessive determiner ("my" /
+"our" / "your") that is now the leading word no longer has a clear referent
+(it was disambiguated by standing next to the recipient's name/pronoun) and
+reads oddly addressed back to the same person -- normalized to "the"
+("Maya our deck" -> "our deck" -> "the deck"). A determiner that already
+reads fine as-is ("the"/"a"/"an"/"his"/"her"/"their"/"its") is left alone
+("her the intro deck" -> "the intro deck", untouched)."""
+glob RECIPIENT_OBJECT_PRONOUNS: list[str] = ["her", "him", "them"];
+glob RECIPIENT_AMBIGUOUS_DETERMINERS: list[str] = ["my", "our", "your"];
+
+def _strip_recipient_tokens(words: list[str], recipient_name: str) -> list[str] {
+    rn = first_name(recipient_name).lower().strip();
+    out: list[str] = [];
+    removed = False;
+    for w in words {
+        bare = w.lower().strip(".,!?;:\"'");
+        if not removed and ((rn and bare == rn) or bare in RECIPIENT_OBJECT_PRONOUNS) {
+            removed = True;
+            continue;
+        }
+        out.append(w);
+    }
+    if removed and out and out[0].lower() in RECIPIENT_AMBIGUOUS_DETERMINERS {
+        out[0] = "the";
+    }
+    return out;
+}
+
 """Render a promise's concrete-deliverable text as a noun phrase instead of
 a raw verb-first clause. When the text starts with one of a short list of
 common commitment verbs, everything after the verb reads naturally as "the
@@ -268,14 +306,36 @@ doubled). The closing clause is "sending it over now." for a singular
 deliverable and "sending them over now." when the noun phrase's head word
 looks plural (SOH-212 judge3). Anything else (no recognized verb, or nothing
 after it) has no clean noun phrase to extract, so the whole text is quoted
-plainly instead."""
-def promise_noun_phrase(text: str) -> str {
+plainly instead.
+
+SOH-232 (audit I-4): `recipient_name` (the person the promise is TO, i.e. the
+message's own greeting name) is stripped out of the object first via
+`_strip_recipient_tokens` -- "send Maya our deck" -> "About the deck I said
+I'd send: sending it over now."; "send her the intro deck" -> "About the
+intro deck I said I'd send: sending it over now.". `intro`/`introduce` gets
+its own phrasing for the "<target> to <third party>" shape ("intro Dev to
+Priya", recipient Dev): once the recipient token is gone all that is left is
+the trailing "to <third party>" clause, which has no deliverable noun to
+call "the X I said I'd intro" (nobody says "I said I'd intro"), so it is
+rendered "the intro to Priya I said I'd make" instead -- deterministic, and
+the third party's name is correctly kept (they are not who this message is
+addressed to)."""
+def promise_noun_phrase(text: str, recipient_name: str = "") -> str {
     t = _strip_trailing_stop(text);
     words = t.split();
     if len(words) > 1 {
         verb = words[0].lower();
         if verb in PROMISE_VERBS {
-            rest = " ".join(words[1:]).strip();
+            rest_words = _strip_recipient_tokens(words[1:], recipient_name);
+            if not rest_words {
+                rest_words = words[1:];
+            }
+            rest = " ".join(rest_words).strip();
+            if (verb == "intro" or verb == "introduce") and rest.lower().startswith("to ") {
+                phrase = "the intro " + rest;
+                closing = "sending them over now." if _looks_plural(rest) else "sending it over now.";
+                return f"About {phrase} I said I'd make: {closing}";
+            }
             if _needs_article(rest) {
                 rest = "the " + rest;
             }
@@ -382,7 +442,7 @@ def fallback_draft(p: Person, evidence: list[EvidenceItem]) -> dict[str, any] {
     if promise_item is not None {
         pi = promise_item as EvidenceItem;
         used: list[EvidenceItem] = [pi];
-        promise_sentence = promise_noun_phrase(pi.span);
+        promise_sentence = promise_noun_phrase(pi.span, p.name);
         # SOH-212: the context clause is optional and only added for a SHORT
         # fact (< 80 chars) whose own text is a trusted lowercase noun phrase
         # (judge3: NEVER splice a fact after "with" otherwise — it can read

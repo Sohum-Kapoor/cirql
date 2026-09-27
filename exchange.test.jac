@@ -247,10 +247,20 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
         assert int(rv["match_count"]) >= 0 and str(rv["status"]) == "pending";
         assert int(rv["match_count"]) >= 1, f"seeded offer should keep Priya as medium+: {rv}";
         reply_id = str(rv["_jac_id"]);
-        # replied -> no longer incoming for B; a second reply is idempotent
-        # (SOH-229): the SAME reply comes back, never an error (a double-submit
-        # race no longer needs client-side handling).
-        assert req_id not in [str(r["_jac_id"]) for r in _run(cl, b, "ListIncomingRequests", {})];
+        # SOH-232 (audit I-1): replied-but-pending still shows in B's incoming
+        # list (it used to vanish here), now carrying `my_reply` with the same
+        # match_count/strength/status the reply itself reported.
+        b_in_after_reply = [r for r in _run(cl, b, "ListIncomingRequests", {}) if str(r["_jac_id"]) == req_id];
+        assert len(b_in_after_reply) == 1, b_in_after_reply;
+        my_reply_row = dict(b_in_after_reply[0]["my_reply"]);
+        assert str(my_reply_row["_jac_id"]) == reply_id, my_reply_row;
+        assert int(my_reply_row["match_count"]) == int(rv["match_count"]), (my_reply_row, rv);
+        assert str(my_reply_row["strength"]) == str(rv["strength"]) and str(my_reply_row["status"]) == "pending", my_reply_row;
+        # C never replied: same request, empty my_reply.
+        c_in_rows = [r for r in _run(cl, c, "ListIncomingRequests", {}) if str(r["_jac_id"]) == req_id];
+        assert len(c_in_rows) == 1 and dict(c_in_rows[0]["my_reply"]) == {}, c_in_rows;
+        # a second reply is idempotent (SOH-229): the SAME reply comes back,
+        # never an error (a double-submit race no longer needs client-side handling).
         again_rv = _run(cl, b, "ReplyToRequest", {"request_id": req_id})[0];
         assert str(again_rv["_jac_id"]) == reply_id, again_rv;
         assert int(again_rv["match_count"]) == int(rv["match_count"]) and str(again_rv["strength"]) == str(rv["strength"]), (rv, again_rv);
@@ -284,6 +294,9 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
         # B's clicks.
         ap = _run(cl, b, "ApproveReply", {"reply_id": reply_id})[0];
         assert str(ap["status"]) == "approved", ap;
+        # SOH-232 (audit I-1): still listed, approved, while in flight.
+        b_in_approved = [r for r in _run(cl, b, "ListIncomingRequests", {}) if str(r["_jac_id"]) == req_id];
+        assert len(b_in_approved) == 1 and str(dict(b_in_approved[0]["my_reply"])["status"]) == "approved", b_in_approved;
         oi = _run(cl, b, "OptIn", {"reply_id": reply_id})[0];
         print(f"[ex] OptIn -> {oi}");
         assert str(oi["reply"]["status"]) == "opted_in" and len(str(oi["opt_in_draft"])) > 0;
@@ -294,6 +307,9 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
         handle = str(rl["revealed_card_handle"]);
         assert handle and str(rl["reply"]["status"]) == "revealed";
         assert "match_person_id" not in dict(rl["reply"]) and "revealed_card_id" not in dict(rl["reply"]);
+        # SOH-232 (audit I-1): once revealed, the row drops off B's incoming
+        # list (the flow has moved on to the requester's ClaimReveal step).
+        assert req_id not in [str(r["_jac_id"]) for r in _run(cl, b, "ListIncomingRequests", {})];
 
         # C (bystander) cannot claim.
         assert _err(_run(cl, c, "ClaimReveal", {"reply_id": reply_id})) == "forbidden";
@@ -354,6 +370,54 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
         # SOH-211: a reply the friend declines after reveal can no longer be claimed.
         assert _run(cl, b, "DeclineReply", {"reply_id": reply_id}) == ["declined"];
         assert _err(_run(cl, a, "ClaimReveal", {"reply_id": reply_id})) == "reply_declined";
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "exchange SOH-232 (audit I-1): a pending reply keeps the request in ListIncomingRequests with my_reply.match_count; declining it removes the row" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_ex_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "ex_i1_a@example.com");
+        b = _reg(cl, "ex_i1_b@example.com");
+
+        _run(cl, b, "DevAddPerson", {"name": "Priya Rao", "me_name": "Bob"});
+        seeded = _run(cl, b, "DevSeedMatch", {
+            "name": "Priya Rao",
+            "fact": "Priya is a partner at a climate-tech seed fund.",
+            "offer": "intros to climate-tech seed investors"
+        });
+        assert "person_id" in dict(seeded[0]), seeded;
+
+        _card(cl, a, "I'm Alice, building a battery-recycling startup.", "Alice");
+        _card(cl, b, "I'm Bob, I run a climate meetup.", "Bob");
+
+        posted = _run(cl, a, "PostRequest", {"audience": "everyone", "need": "a climate-tech seed investor", "about_line": "Building battery recycling"});
+        req_id = str(posted[0]["_jac_id"]);
+
+        orig = _stub_model_medium();
+        try {
+            rv = _run(cl, b, "ReplyToRequest", {"request_id": req_id})[0];
+        } finally {
+            _restore_model(orig);
+        }
+        reply_id = str(rv["_jac_id"]);
+
+        # Reply -> the request is still listed, carrying my_reply.match_count.
+        rows = [r for r in _run(cl, b, "ListIncomingRequests", {}) if str(r["_jac_id"]) == req_id];
+        assert len(rows) == 1, rows;
+        my_reply_row = dict(rows[0]["my_reply"]);
+        assert my_reply_row != {}, my_reply_row;
+        assert int(my_reply_row["match_count"]) == int(rv["match_count"]), (my_reply_row, rv);
+        assert str(my_reply_row["status"]) == "pending", my_reply_row;
+
+        # Decline -> gone.
+        assert _run(cl, b, "DeclineReply", {"reply_id": reply_id}) == ["declined"];
+        assert req_id not in [str(r["_jac_id"]) for r in _run(cl, b, "ListIncomingRequests", {})];
     } finally {
         if client is not None { client.close(); }
         shutil.rmtree(tmp_dir, ignore_errors=True);

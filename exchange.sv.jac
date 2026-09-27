@@ -233,6 +233,18 @@ def view(r: IntroReply) -> dict[str, object] {
     };
 }
 
+"""SOH-232 (audit I-1): the caller's own reply-in-progress shape, embedded on
+an incoming-request row -- never the redacted ReplyView (no request_id/
+from_handle; those already sit on the row itself)."""
+def my_reply_view(r: IntroReply) -> dict[str, object] {
+    return {
+        "_jac_id": jid(r),
+        "match_count": r.match_count,
+        "strength": r.strength,
+        "status": r.status
+    };
+}
+
 """A shared IntroReply OWNED by the caller, by id; None if unknown or not mine."""
 def my_reply(reply_id: str) -> IntroReply | None {
     n = load(reply_id);
@@ -724,21 +736,38 @@ walker:priv ClaimReveal {
 # ---------------------------------------------------------------- friend side
 
 walker:priv ListIncomingRequests {
-    """Requests posted by others, not expired, not declined, not yet answered by
-    me. Reports the same flat shape as the raw `IntroRequest` node always did
-    (`_jac_id`, `need`, `from_handle`, `about_line`, `status`, `created_at`,
-    `expires_at`, `audience`, `goal_text`) -- additive only, so `r["_jac_id"]`
-    keeps working -- PLUS two computed, non-persisted fields (SOH-229):
-    `from_name` (the requester's own first name, resolved ONLY through their
-    published, visibility=="link" Card via cards.get_card -- "" for a
-    handshake_only or missing card, never a name off anyone's graph) and
-    `need_key` (a deterministic grouping key, see exchange.need_key)."""
+    """Requests posted by others, not expired, not declined. Reports the same
+    flat shape as the raw `IntroRequest` node always did (`_jac_id`, `need`,
+    `from_handle`, `about_line`, `status`, `created_at`, `expires_at`,
+    `audience`, `goal_text`) -- additive only, so `r["_jac_id"]` keeps working
+    -- PLUS computed, non-persisted fields (SOH-229): `from_name` (the
+    requester's own first name, resolved ONLY through their published,
+    visibility=="link" Card via cards.get_card -- "" for a handshake_only or
+    missing card, never a name off anyone's graph) and `need_key` (a
+    deterministic grouping key, see exchange.need_key).
+
+    SOH-232 (audit I-1): a request this account has already replied to is NOT
+    dropped from this list while the reply is still in flight (`pending`,
+    `approved`, `opted_in`) -- it used to vanish the moment `ReplyToRequest`
+    ran, so "Needs your OK" read "Nothing waiting" on reload even though
+    `ListMyReplies` still held a pending reply with matches. The row instead
+    gains `my_reply` (see `my_reply_view`; `{}` when this account has never
+    replied). A row is hidden only once ITS OWN reply reaches a terminal
+    state -- `declined` (I declined my own reply) or `revealed` (the flow
+    moved past this list into the requester's `ClaimReveal` step) -- or the
+    request itself is closed (declined/expired by the requester; unchanged,
+    checked below same as before)."""
     has reports: list[object] = [];
 
     can go with Root entry {
         me_root = jid(root);
         now = now_iso();
-        answered = [r.request_id for r in shared_replies() if owner_root(r) == me_root];
+        my_replies_by_request: dict[str, IntroReply] = {};
+        for r in shared_replies() {
+            if owner_root(r) == me_root {
+                my_replies_by_request[r.request_id] = r;
+            }
+        }
         friends: list[str] = [];
         blocked: list[str] = [];
         m = my_me();
@@ -760,8 +789,14 @@ walker:priv ListIncomingRequests {
             if req.expires_at and req.expires_at < now {
                 continue;
             }
-            if jid(req) in answered {
-                continue;
+            rid = jid(req);
+            my_reply_row: dict[str, object] = {};
+            if rid in my_replies_by_request {
+                reply = my_replies_by_request[rid];
+                if reply.status == "declined" or reply.status == "revealed" {
+                    continue;
+                }
+                my_reply_row = my_reply_view(reply);
             }
             report {
                 "_jac_id": jid(req),
@@ -774,7 +809,8 @@ walker:priv ListIncomingRequests {
                 "audience": req.audience,
                 "goal_text": req.goal_text,
                 "from_name": requester_first_name(req.from_handle),
-                "need_key": need_key(req.need)
+                "need_key": need_key(req.need),
+                "my_reply": my_reply_row
             };
         }
     }

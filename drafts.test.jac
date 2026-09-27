@@ -14,7 +14,8 @@ picked, so it's safe through `root spawn`.
 
 import from drafts {
     EvidenceItem, gather_follow_up_evidence, fallback_draft,
-    build_evidence_text, map_evidence_indices, DraftFollowUp, first_name
+    build_evidence_text, map_evidence_indices, DraftFollowUp, first_name,
+    promise_noun_phrase
 }
 import from schema {
     Person, Note, Fact, Intent, Promise,
@@ -343,4 +344,20 @@ test "DraftFollowUp: an unresolvable person_id reports not_found" {
     result = root spawn DraftFollowUp(person_id="not-a-real-person-id-at-all");
     assert len(result.reports) == 1;
     assert result.reports[0] == {"error": "not_found"};
+}
+
+test "SOH-232 (audit I-4) promise_noun_phrase: recipient's name in the object is stripped, not spliced ('send Maya our deck')" {
+    assert promise_noun_phrase("send Maya our deck", "Maya") == "About the deck I said I'd send: sending it over now.";
+}
+
+test "SOH-232 (audit I-4) promise_noun_phrase: a bare object pronoun standing in for the recipient is stripped ('send her the intro deck')" {
+    assert promise_noun_phrase("send her the intro deck", "Maya") == "About the intro deck I said I'd send: sending it over now.";
+}
+
+test "SOH-232 (audit I-4) promise_noun_phrase: 'intro X to Y' strips the recipient (the intro's first party) and keeps the third party's name" {
+    assert promise_noun_phrase("intro Dev to Priya", "Dev") == "About the intro to Priya I said I'd make: sending it over now.";
+}
+
+test "SOH-232 (audit I-4) promise_noun_phrase: no recipient-name match leaves the object untouched (existing behavior)" {
+    assert promise_noun_phrase("send the ROI deck", "Someone Else") == "About the ROI deck I said I'd send: sending it over now.";
 }
