@@ -306,7 +306,7 @@ impl app.submit_people -> None {
     capture_pending = True;
     capture_error = "";
     try {
-        out = await capture(blob, "paste");
+        out = await capture(blob, "paste", "", "added when you set up Cirql (" + today_month_day() + ")");
     } except Exception as e {
         capture_pending = False;
         capture_error = "Couldn't capture those. " + str(e);
