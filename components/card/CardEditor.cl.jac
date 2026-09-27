@@ -250,14 +250,14 @@ def:pub CardEditor() -> JsxElement {
                             </p>}
                         {visibility == "handshake_only" and
                             <p className="text-caption text-muted-foreground">
-                                Isolated by construction until you hand it to someone yourself — nothing is granted yet.
+                                Isolated by construction until you hand it to someone yourself. Nothing is granted yet.
                             </p>}
                     </div>
 
                     {handle and
                         <div className="flex items-center justify-between gap-2 rounded-md border bg-secondary pt-2 pb-2 pl-3 pr-3">
                             <div className="flex min-w-0 flex-col">
-                                <span className="text-caption text-muted-foreground">Your handle — share your handle</span>
+                                <span className="text-caption text-muted-foreground">Your handle · share your handle</span>
                                 <span className="truncate text-body-sm font-medium">{handle}</span>
                             </div>
                             <Button size="sm" variant="outline" onClick={do_copy_handle}>{"Copied" if copied else "Copy"}</Button>

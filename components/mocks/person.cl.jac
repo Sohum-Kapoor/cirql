@@ -18,7 +18,7 @@ glob _PEOPLE: dict[str, any] = {
              "name": "Maya Chen", "org": "Stripe Climate", "title": "Carbon removal lead",
              "how_met": "worked together at Stripe", "label": "known", "strength": "strong",
              "reason": "Runs Stripe's climate purchasing and said she knows pre-seed hardware funds.",
-             "opener": "Maya — which climate hardware funds would you ask first?",
+             "opener": "Maya, which climate hardware funds would you ask first?",
              "email": "maya.chen@stripeclimate.example", "phone": "+1 415 555 0148",
              "location": "San Francisco, CA",
              "links": ["https://stripe.com/climate", "https://maya-chen.example"]
@@ -92,7 +92,7 @@ def _facts(pid: str) -> list[dict[str, any]] {
     if pid == "mock-person-maya" {
         return [
             {"fact": {"_jac_id": "mock-fact-maya-2", "text": "Leads carbon removal purchasing at Stripe Climate", "observed_at": "2026-09-23T18:40:00Z", "valid_to": "", "status": "reported", "source_kind": "web", "source_url": "https://stripe.com/climate"}, "age_days": 3, "source_note_id": "", "span": "Carbon removal lead, Stripe Climate"},
-            {"fact": {"_jac_id": "mock-fact-maya-1", "text": "Worked together at Stripe", "observed_at": "2026-07-12T16:10:00Z", "valid_to": "", "status": "confirmed", "source_kind": "reported", "source_url": ""}, "age_days": 76, "source_note_id": "mock-note-maya", "span": "Maya Chen — worked together at Stripe."}
+            {"fact": {"_jac_id": "mock-fact-maya-1", "text": "Worked together at Stripe", "observed_at": "2026-07-12T16:10:00Z", "valid_to": "", "status": "confirmed", "source_kind": "reported", "source_url": ""}, "age_days": 76, "source_note_id": "mock-note-maya", "span": "Maya Chen: worked together at Stripe."}
         ];
     }
     return [
@@ -200,7 +200,7 @@ def:pub mock_draft_follow_up(person_id: str, intent: str = "") -> list[dict[str,
     first: str = (person["name"] as str).split(" ")[0];
     return [{
         "person_id": person_id,
-        "draft": "Hi " + first + " — great catching up last week. Following up on what we talked about; happy to send over anything useful.",
+        "draft": "Hi " + first + ", great catching up last week. Following up on what we talked about; happy to send over anything useful.",
         "based_on": [],
         "fallback": True
     }];

@@ -12,7 +12,7 @@ glob _MOCK_CARD: dict = {
     "id": "mock-card-1",
     "handle": _MOCK_HANDLE,
     "name": "Rowan Vale",
-    "headline": "Building Kiln Labs — thermal storage for factories",
+    "headline": "Building Kiln Labs: thermal storage for factories",
     "about": "Raising a pre-seed for hardware that stores industrial waste heat. Always happy to swap notes with other student founders.",
     "looking_for": ["a climate-tech VC who takes cold student pitches", "a founder who has raised for hardware"],
     "can_offer": ["intros into decarbonization pilots", "feedback on hardware pitch decks"],

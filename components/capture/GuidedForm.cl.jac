@@ -100,7 +100,7 @@ def:pub PersonFields(
             </div>
             <Input
                 aria-label={"Person " + n + " role and org"}
-                placeholder="Role, org — optional (e.g. Prof., UMich)"
+                placeholder="Role, org: optional (e.g. Prof., UMich)"
                 autoComplete="off"
                 value={(person["role"] or "") as str}
                 disabled={disabled}
@@ -175,9 +175,9 @@ def:pub GuidedForm(
     }
 
     detail_placeholder: str = (
-        "Where — e.g. Ross café"
+        "Where: e.g. Ross café"
         if met == "coffee"
-        else ("Which event — e.g. MHacks career fair" if met == "networking" or met == "conference" else "Where / which event — optional")
+        else ("Which event: e.g. MHacks career fair" if met == "networking" or met == "conference" else "Where / which event: optional")
     );
 
     return
@@ -217,7 +217,7 @@ def:pub GuidedForm(
                     <Input
                         id="guided-intro-by"
                         aria-label="Introduced by"
-                        placeholder="Introduced by — who?"
+                        placeholder="Introduced by: who?"
                         value={(guided["intro_by"] or "") as str}
                         disabled={pending}
                         onChange={text_handler("intro_by")}
@@ -305,11 +305,11 @@ def:pub GuidedForm(
                         onChange={handle_preview}
                     />
                     <p className="text-caption text-muted-foreground">
-                        Fix spellings here before Cirql reads it — a name, or “UMich” instead of what autocorrect guessed.
+                        Fix spellings here before Cirql reads it: a name, or “UMich” instead of what autocorrect guessed.
                     </p>
                     if edited {
                         <div className="flex items-center justify-between gap-2">
-                            <span className="text-caption text-muted-foreground">Edited by you — form changes won't update it.</span>
+                            <span className="text-caption text-muted-foreground">Edited by you. Form changes won't update it.</span>
                             <Button size="xs" variant="outline" disabled={pending} onClick={reset_preview}>Reset to form</Button>
                         </div>
                     }

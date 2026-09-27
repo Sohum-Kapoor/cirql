@@ -33,7 +33,7 @@ def:pub mock_capture_image(image_b64: str, mime: str) -> dict {
             "error": "no_person"
         };
     }
-    out: dict = mock_capture("Kofi Mensah — DTE Energy grid planner, met at the badge table", "paste");
+    out: dict = mock_capture("Kofi Mensah: DTE Energy grid planner, met at the badge table", "paste");
     out["photo_ref"] = "uploads/mock.jpg";
     out["read"] = read;
     out["fallback"] = False;

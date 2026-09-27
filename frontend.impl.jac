@@ -216,7 +216,7 @@ impl app.onb_switch_goal(goal_id: str) -> None {
     } except Exception as e {
         onboard = before;
         onb_goal_busy = False;
-        onb_goal_error = "Couldn't switch goals — try again. " + str(e);
+        onb_goal_error = "Couldn't switch goals. Try again. " + str(e);
         return;
     }
     onb_goal_busy = False;
@@ -268,7 +268,7 @@ impl app.onb_close_goal(goal_id: str) -> None {
     }
     onb_goal_busy = False;
     if out != "closed" {
-        onb_goal_error = "That goal wasn't found — refresh and try again.";
+        onb_goal_error = "That goal wasn't found. Refresh and try again.";
         return;
     }
     next_goals: list[dict] = [];
@@ -296,14 +296,14 @@ impl app.set_row(i: int, field: str, value: str) -> None {
     rows = next_rows;
 }
 
-"""Step 3 -> one paste blob ("Name — how.\n...") -> Capture(text, kind="paste")."""
+"""Step 3 -> one paste blob ("Name: how.\n...") -> Capture(text, kind="paste")."""
 impl app.submit_people -> None {
     lines: list[str] = [];
     for r in rows {
         name: str = (r["name"] as str).strip();
         how: str = (r["how"] as str).strip().rstrip(".");
         if name {
-            lines = lines + [(name + " — " + how + ".") if how else (name + ".")];
+            lines = lines + [(name + ": " + how + ".") if how else (name + ".")];
         }
     }
     if len(lines) == 0 {
@@ -435,7 +435,7 @@ impl app.submit_capture -> None {
         out = await capture(note, walker_kind, audio, met_line);
     } except Exception as e {
         cap_pending = False;
-        cap_error = "Couldn't capture that — your text is still here. " + str(e);
+        cap_error = "Couldn't capture that. Your text is still here. " + str(e);
         return;
     }
     if mode == "guided" {
@@ -617,7 +617,7 @@ impl app.switch_goal(goal_id: str) -> None {
         saved = await set_goal(target["text"] as str);
     } except Exception as e {
         goals_list = before;
-        goal_error = "Couldn't switch goals — try again. " + str(e);
+        goal_error = "Couldn't switch goals. Try again. " + str(e);
         return;
     }
 }
@@ -664,7 +664,7 @@ impl app.end_goal(goal_id: str) -> None {
     }
     goal_busy = False;
     if out != "closed" {
-        goal_error = "That goal wasn't found — refresh and try again.";
+        goal_error = "That goal wasn't found. Refresh and try again.";
         return;
     }
     next_goals: list[dict] = [];
@@ -833,7 +833,7 @@ impl app.post_ask(need: str, about_line: str, audience: str = "everyone") -> Non
         }
     } except Exception as e {
         ask_busy = False;
-        ask_error = "Couldn't post that — try again. " + str(e);
+        ask_error = "Couldn't post that. Try again. " + str(e);
         return;
     }
     if out["error"] {
@@ -863,7 +863,7 @@ impl app.cancel_request(rid: str) -> None {
         out = await decline_request(rid);
     } except Exception as e {
         req_busy = False;
-        req_error = "Couldn't withdraw it — try again. " + str(e);
+        req_error = "Couldn't withdraw it. Try again. " + str(e);
         return;
     }
     req_busy = False;
@@ -1211,7 +1211,7 @@ impl app.run_agent_now(reason: str) -> None {
         out = {"error": "failed"};
     }
     if out["error"] {
-        AGENT["error"] = "Couldn't finish that check — try again.";
+        AGENT["error"] = "Couldn't finish that check. Try again.";
     } else {
         last: dict = {
             "ran_at": (out["ran_at"] or "") as str,

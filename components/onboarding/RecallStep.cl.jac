@@ -68,7 +68,7 @@ def:pub RecallStep(
                 </div>
             } elif len(rows) == 0 and not error {
                 <p className="rounded-lg border border-dashed border-border-strong pt-4 pb-4 pl-4 pr-4 text-body-sm text-muted-foreground">
-                    No one yet — capture a conversation to start.
+                    No one yet, capture a conversation to start.
                 </p>
             } else {
                 <RankList rows={rows} />

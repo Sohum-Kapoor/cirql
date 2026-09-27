@@ -4,7 +4,7 @@ The shell keeps one `guided` dict (so the draft survives tab switches and
 "Try again"); `compose_guided` turns it into labeled prose for the Capture
 extractor, e.g.
 
-  Met Dana Lee (PM, Rivian) at a networking event — MHacks career fair — today
+  Met Dana Lee (PM, Rivian) at a networking event (MHacks career fair) today
   (2026-09-26). Introduced by Priya. We talked about battery supply chains. Why
   Dana is interesting to me: … How Dana reacted: … Next step: coffee chat.
   I promised to send the deck by the end of this week.
@@ -37,7 +37,7 @@ glob:pub MET_OPTIONS: list[list[str]] = [
          ["follow_up", "Follow up"],
          ["send", "Send something"],
          ["intro", "Make an intro"],
-         ["nothing", "Nothing yet — just remember them"]
+         ["nothing", "Nothing yet, just remember them"]
      ],
      DUE_OPTIONS: list[list[str]] = [
          ["today", "Today"],
@@ -72,7 +72,7 @@ glob _MET_PHRASE: dict = {
          "follow_up": "Next step: follow up.",
          "send": "Next step: send them something.",
          "intro": "Next step: make an intro.",
-         "nothing": "Nothing planned yet — just remembering them."
+         "nothing": "Nothing planned yet, just remembering them."
      };
 
 def:pub empty_person() -> dict {
@@ -187,14 +187,14 @@ def _due_phrase(g: dict) -> str {
 }
 
 """Short how-met line for `Capture(how_met)` / the person edit form:
-"coffee chat — Ross café", "networking event — MHacks career fair", "intro via Priya"."""
+"coffee chat, Ross café", "networking event, MHacks career fair", "intro via Priya"."""
 def:pub how_met_line(g: dict) -> str {
     met: str = (g["met"] or "") as str;
     detail: str = ((g["met_detail"] or "") as str).strip();
     if met == "intro" {
         by: str = ((g["intro_by"] or "") as str).strip();
         base: str = ("intro via " + by) if by else "intro";
-        return (base + " — " + detail) if detail else base;
+        return (base + ", " + detail) if detail else base;
     }
     if not met {
         return detail;
@@ -203,7 +203,7 @@ def:pub how_met_line(g: dict) -> str {
         return detail or "other";
     }
     short: str = (_MET_SHORT[met] or met) as str;
-    return (short + " — " + detail) if detail else short;
+    return (short + ", " + detail) if detail else short;
 }
 
 """The labeled prose Cirql reads (see module docstring)."""
@@ -225,7 +225,7 @@ def:pub compose_guided(g: dict) -> str {
         first = first + " " + phrase;
     }
     if detail {
-        first = first + (" — " + detail + " —" if phrase else " at " + detail + ",");
+        first = first + (" (" + detail + ")" if phrase else " at " + detail + ",");
     }
     first = first + " " + _when_phrase(g) + ".";
     parts: list[str] = [first];

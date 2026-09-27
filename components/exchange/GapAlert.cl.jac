@@ -69,7 +69,7 @@ def:pub AskSheet(
     } elif friends_count == 0 {
         aud_hint = "Exchange cards with someone to add friends.";
     } elif aud == "friends" {
-        aud_hint = "Only your " + str(friends_count) + (" friend" if friends_count == 1 else " friends") + " can see it — people whose card you hold.";
+        aud_hint = "Only your " + str(friends_count) + (" friend" if friends_count == 1 else " friends") + " can see it: people whose card you hold.";
     } else {
         aud_hint = "Anyone on Cirql can see it.";
     }

@@ -105,19 +105,19 @@ def _seed_rows() -> list[dict] {
     return [
         _row(
             "7c1e0a94b2d34f6e9a51c0de4b7f2a18", "route",
-            "Dev knows someone at Northwind Capital — ask Dev?",
+            "Dev knows someone at Northwind Capital: ask Dev?",
             "Northwind leads climate-hardware pre-seed rounds, and Dev co-invested with their partner last spring.",
             [
                 _ev("a41f9e0c7d2b4c58b3e6f1a2d9c07e55", "fact", "2026-09-23T18:40:00Z", "Dev said he co-invested with Priya at Northwind on a battery deal last spring."),
-                _ev("5be3d0f2a8c14e7f96b0c3d1e2f4a687", "note", "2026-09-23T18:40:00Z", "Spring pitch night — Dev screens energy deals for Great Lakes Angels.")
+                _ev("5be3d0f2a8c14e7f96b0c3d1e2f4a687", "note", "2026-09-23T18:40:00Z", "Spring pitch night: Dev screens energy deals for Great Lakes Angels.")
             ],
             "mock-person-dev",
-            "Hi Dev — hope the fall deal flow is treating you well. You mentioned co-investing with Northwind on that battery deal. Would you be open to introducing me to their climate partner? I'm raising a pre-seed for Kiln Labs (thermal batteries for mid-size plants). Happy to send a two-line blurb you can forward.",
+            "Hi Dev, hope the fall deal flow is treating you well. You mentioned co-investing with Northwind on that battery deal. Would you be open to introducing me to their climate partner? I'm raising a pre-seed for Kiln Labs (thermal batteries for mid-size plants). Happy to send a two-line blurb you can forward.",
             {"target_org": "Northwind Capital"}, "", "PathFinder", 4
         ),
         _row(
             "e2d94b17c0a6438f8d5e7b21a9c3f046", "ask_network",
-            "No warm path to a climate-tech VC — ask your network?",
+            "No warm path to a climate-tech VC: ask your network?",
             "Nobody you know is a climate-tech VC yet, and it's the missing piece for raising a pre-seed round.",
             [
                 _ev("0f7a3c9e1b2d4e5f8a6c7b9d0e1f2a3b", "goal", "2026-09-26T13:05:00Z", "Raise a pre-seed round for Kiln Labs by December.")
@@ -134,12 +134,12 @@ def _seed_rows() -> list[dict] {
                 _ev("mock-promise-maya", "promise", "2026-09-23T18:40:00Z", "I said I'd send Maya the one-pager this weekend.")
             ],
             "mock-person-maya",
-            "Hi Maya — as promised, here's the Kiln Labs one-pager. The short version: we store off-peak heat in firebrick and release it on shift. Would love your read on which climate hardware funds would care.",
+            "Hi Maya, as promised, here's the Kiln Labs one-pager. The short version: we store off-peak heat in firebrick and release it on shift. Would love your read on which climate hardware funds would care.",
             {"promise_id": "mock-promise-maya", "due": "2026-09-28"}, "", "Tend", 8
         ),
         _row(
             "b5c7e9a1d3f24b6c8e0a2c4e6a8b0d2f", "answer_ask",
-            "Jordan's agent is looking for a plant manager — your network may fit",
+            "Jordan's agent is looking for a plant manager: your network may fit",
             "You know a plant manager at a Midwest foundry; answering shows Jordan a count and a strength, never a name.",
             [
                 _ev("mock-card-sam", "card", "2026-08-30T12:00:00Z", "Looking for: ways to cut peak-hour energy costs")
@@ -152,10 +152,10 @@ def _seed_rows() -> list[dict] {
             "She offered at the Ross climate panel, and two of those VCs back pre-seed hardware.",
             [
                 _ev("mock-intent-lena", "intent", "2026-09-20T15:30:00Z", "Lena offered to connect founders with speaker-series VCs."),
-                _ev("c6e8a0b2d4f64c8e9a1b3d5f7a9c1e3b", "note", "2026-09-20T15:30:00Z", "Ross climate panel — Lena runs the Campus Energy Club speaker series.")
+                _ev("c6e8a0b2d4f64c8e9a1b3d5f7a9c1e3b", "note", "2026-09-20T15:30:00Z", "Ross climate panel: Lena runs the Campus Energy Club speaker series.")
             ],
             "mock-person-lena",
-            "Hi Lena — thanks again for the panel. You mentioned you could connect founders with the speaker-series VCs; I'd be grateful for an intro to whoever looks at pre-seed climate hardware. Happy to send a short blurb.",
+            "Hi Lena, thanks again for the panel. You mentioned you could connect founders with the speaker-series VCs; I'd be grateful for an intro to whoever looks at pre-seed climate hardware. Happy to send a short blurb.",
             {"intent_id": "mock-intent-lena"}, "", "Tend", 14
         ),
         _row(
@@ -171,23 +171,23 @@ def _seed_rows() -> list[dict] {
         _row(
             "6b8d0f2a4c6e48a0b2d4f6a8c0e2a4b6", "reconnect",
             "Sam's card asks about peak-hour energy costs",
-            "That's exactly what your pilot measures — a reason to reach out, not a reminder.",
+            "That's exactly what your pilot measures: a reason to reach out, not a reminder.",
             [
                 _ev("mock-card-sam", "card", "2026-08-30T12:00:00Z", "Looking for: ways to cut peak-hour energy costs")
             ],
             "mock-person-sam",
-            "Hi Sam — your card mentions cutting peak-hour energy costs. We're running a small thermal-battery pilot this winter; could I show you what it would save Ruiz Castings on a typical shift?",
+            "Hi Sam, your card mentions cutting peak-hour energy costs. We're running a small thermal-battery pilot this winter; could I show you what it would save Ruiz Castings on a typical shift?",
             {}, "", "Tend", 25
         ),
         _row(
             "d0a2c4e6b8f04a2c6e8b0d2f4a6c8e0b", "route",
-            "Lena knows two facilities managers in Ann Arbor — ask Lena?",
+            "Lena knows two facilities managers in Ann Arbor: ask Lena?",
             "A plant pilot needs a facilities manager, and Lena set up the club's plant tours with two of them.",
             [
                 _ev("mock-note-lena-tour", "note", "2026-09-20T15:30:00Z", "Lena set up the club's plant tours with two Ann Arbor facilities managers.")
             ],
             "mock-person-lena",
-            "Hi Lena — would one of the facilities managers from the plant tours take a 15-minute call about a heat-battery pilot? No pitch deck, just their read on whether it would fit.",
+            "Hi Lena, would one of the facilities managers from the plant tours take a 15-minute call about a heat-battery pilot? No pitch deck, just their read on whether it would fit.",
             {"target_org": "Ann Arbor facilities"}, "", "PathFinder", 32
         )
     ];
@@ -208,23 +208,23 @@ def _extra_rows() -> list[dict] {
         _row(
             "c2e4a6b8d0f24c6e8a0b2d4f6a8c0e2d", "follow_up",
             "Dev asked for your deck after pitch night",
-            "He asked to see the deck once the pilot numbers were in — they are now.",
+            "He asked to see the deck once the pilot numbers were in. They are now.",
             [
                 _ev("f4a6c8e0b2d44f6a8c0e2a4b6d8f0a2c", "intent", "2026-09-26T16:10:00Z", "Dev: send me the deck once you have pilot numbers.")
             ],
             "mock-person-dev",
-            "Hi Dev — the pilot numbers are in (18% peak-hour savings on the test line). Here's the updated deck you asked for. Would love 20 minutes when you have them.",
+            "Hi Dev, the pilot numbers are in (18% peak-hour savings on the test line). Here's the updated deck you asked for. Would love 20 minutes when you have them.",
             {}, "", "Tend", 0
         ),
         _row(
             "a8c0e2f4b6d84a0c2e4f6a8b0d2c4e6f", "route",
-            "Maya knows the Stripe Climate hardware lead — ask Maya?",
+            "Maya knows the Stripe Climate hardware lead: ask Maya?",
             "Stripe's hardware purchases need a pilot partner, and Maya sits next to the person who picks them.",
             [
-                _ev("mock-fact-maya-1", "fact", "2026-07-12T16:10:00Z", "Maya Chen — worked together at Stripe.")
+                _ev("mock-fact-maya-1", "fact", "2026-07-12T16:10:00Z", "Maya Chen: worked together at Stripe.")
             ],
             "mock-person-maya",
-            "Hi Maya — would you be up for introducing me to whoever leads hardware purchases at Stripe Climate? A two-line blurb is below if it helps.",
+            "Hi Maya, would you be up for introducing me to whoever leads hardware purchases at Stripe Climate? A two-line blurb is below if it helps.",
             {"target_org": "Stripe Climate"}, "", "PathFinder", 0
         )
     ];

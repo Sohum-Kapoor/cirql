@@ -450,7 +450,7 @@ def:pub HomeView(
                         <section aria-label="Needs your OK" className="flex flex-col gap-3">
                             <h2 className="text-eyebrow text-muted-foreground">Needs your OK</h2>
                             <EmptyNote>
-                                Nothing waiting. When someone on Cirql asks your network for help, it lands here — only a count and a strength are shared until you approve.
+                                Nothing waiting. When someone on Cirql asks your network for help, it lands here. Only a count and a strength are shared until you approve.
                             </EmptyNote>
                         </section>
                     }}
@@ -502,12 +502,12 @@ def:pub HomeView(
                                 </Button>
                                 {if len(known) == 0 {
                                     <EmptyNote>
-                                        {"No one yet — "}
+                                        {"No one yet, "}
                                         <Button variant="link" size="inline" onClick={handle_capture}>capture a conversation</Button>
                                         {" to start."}
                                     </EmptyNote>
                                 } elif quiet_only and len(shown_known) == 0 {
-                                    <EmptyNote>Nobody's overdue — everyone you know has a note from the last 90 days.</EmptyNote>
+                                    <EmptyNote>Nobody's overdue. Everyone you know has a note from the last 90 days.</EmptyNote>
                                 } else {
                                     <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">
                                         {for (idx, p) in enumerate(shown_known) {
@@ -593,7 +593,7 @@ def:pub HomeView(
                             {rank_error and <p role="alert" className="text-body-sm text-destructive">{rank_error}</p>}
                             {partial and not rank_pending and
                                 <p role="status" className="rounded-lg border border-dashed border-border-strong pt-2 pb-2 pl-3 pr-3 text-caption text-muted-foreground">
-                                    Ranking is partial right now — tap Re-rank in a minute.
+                                    Ranking is partial right now. Tap Re-rank in a minute.
                                 </p>}
                             {if len(shown_rows) > 0 {
                                 if expanded {
@@ -620,7 +620,7 @@ def:pub HomeView(
                                 <RankSkeleton />
                             } elif not rank_error {
                                 <EmptyNote>
-                                    {"No one yet — "}
+                                    {"No one yet, "}
                                     <Button variant="link" size="inline" onClick={handle_capture}>capture a conversation</Button>
                                     {" to start."}
                                 </EmptyNote>
