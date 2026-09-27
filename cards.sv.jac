@@ -136,6 +136,7 @@ walker:priv PublishCard {
     has looking_for: list[str] = [];
     has can_offer: list[str] = [];
     has links: list[str] = [];
+    has interests: list[str] = [];
     has contact_pref: str = "";
     has visibility: str = "link";
     has name: str = "";
@@ -181,6 +182,9 @@ walker:priv PublishCard {
         if self.links {
             card.links = self.links;
         }
+        if self.interests {
+            card.interests = self.interests;
+        }
         if self.contact_pref {
             card.contact_pref = self.contact_pref;
         }
@@ -206,8 +210,8 @@ def empty_my_card() -> dict[str, object] {
         "found": False,
         "card": {
             "name": "", "handle": "", "headline": "", "about": "",
-            "looking_for": [], "can_offer": [], "links": [], "contact_pref": "",
-            "updated_at": "", "visibility": ""
+            "looking_for": [], "can_offer": [], "links": [], "interests": [],
+            "contact_pref": "", "updated_at": "", "visibility": ""
         },
         "handle": ""
     };
@@ -248,6 +252,7 @@ walker:priv MyCard {
                 "looking_for": card.looking_for,
                 "can_offer": card.can_offer,
                 "links": card.links,
+                "interests": card.interests,
                 "contact_pref": card.contact_pref,
                 "updated_at": card.updated_at,
                 "visibility": card.visibility
@@ -274,6 +279,7 @@ def:pub get_card(handle: str) -> dict[str, object] {
         "looking_for": [],
         "can_offer": [],
         "links": [],
+        "interests": [],
         "contact_pref": "",
         "updated_at": ""
     };
@@ -288,6 +294,7 @@ def:pub get_card(handle: str) -> dict[str, object] {
                 "looking_for": card.looking_for,
                 "can_offer": card.can_offer,
                 "links": card.links,
+                "interests": card.interests,
                 "contact_pref": card.contact_pref,
                 "updated_at": card.updated_at
             };

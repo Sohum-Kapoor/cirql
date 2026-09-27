@@ -60,8 +60,8 @@ def card_dict(c: Card) -> dict[str, any] {
     return {
         "id": jid(c), "handle": c.handle, "name": c.name, "headline": c.headline,
         "about": c.about, "looking_for": c.looking_for, "can_offer": c.can_offer,
-        "links": c.links, "contact_pref": c.contact_pref, "visibility": c.visibility,
-        "updated_at": c.updated_at
+        "links": c.links, "interests": c.interests, "contact_pref": c.contact_pref,
+        "visibility": c.visibility, "updated_at": c.updated_at
     };
 }
 

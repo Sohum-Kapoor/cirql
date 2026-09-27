@@ -51,6 +51,7 @@ def:pub CardEditor() -> JsxElement {
         looking_for_text: str = "",
         can_offer_text: str = "",
         links_text: str = "",
+        interests_text: str = "",
         contact_pref: str = "",
         name: str = "",
         visibility: str = "link",
@@ -67,6 +68,7 @@ def:pub CardEditor() -> JsxElement {
         looking_for_text = join_lines((card["looking_for"] or []) as list[str]);
         can_offer_text = join_lines((card["can_offer"] or []) as list[str]);
         links_text = join_lines((card["links"] or []) as list[str]);
+        interests_text = join_lines((card["interests"] or []) as list[str]);
         contact_pref = (card["contact_pref"] or "") as str;
         name = (card["name"] or "") as str;
         visibility = (card["visibility"] or "link") as str;
@@ -112,6 +114,10 @@ def:pub CardEditor() -> JsxElement {
         links_text = e.target.value;
     }
 
+    def edit_interests(e: ChangeEvent) {
+        interests_text = e.target.value;
+    }
+
     def edit_contact(e: ChangeEvent) {
         contact_pref = e.target.value;
     }
@@ -132,7 +138,7 @@ def:pub CardEditor() -> JsxElement {
         try {
             card: dict = await publish_card_full(
                 headline.strip(), about.strip(), _clean_lines(looking_for_text),
-                _clean_lines(can_offer_text), _clean_lines(links_text),
+                _clean_lines(can_offer_text), _clean_lines(links_text), _clean_lines(interests_text),
                 contact_pref.strip(), visibility, name.strip()
             );
             if card["error"] {
@@ -160,6 +166,7 @@ def:pub CardEditor() -> JsxElement {
     preview_looking_for: list[str] = _clean_lines(looking_for_text);
     preview_can_offer: list[str] = _clean_lines(can_offer_text);
     preview_links: list[str] = _clean_lines(links_text);
+    preview_interests: list[str] = _clean_lines(interests_text);
 
     if not loaded {
         return
@@ -217,6 +224,11 @@ def:pub CardEditor() -> JsxElement {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="card-interests">Interests (one per line)</Label>
+                        <Textarea id="card-interests" value={interests_text} onChange={edit_interests} placeholder={"thermal storage\nstudent founders"} />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
                         <Label htmlFor="card-contact">Contact preference</Label>
                         <Input id="card-contact" value={contact_pref} onChange={edit_contact} placeholder="e.g. email: you@example.com" />
                     </div>
@@ -270,6 +282,7 @@ def:pub CardEditor() -> JsxElement {
                 looking_for={preview_looking_for}
                 can_offer={preview_can_offer}
                 links={preview_links}
+                interests={preview_interests}
                 contact_pref={contact_pref}
                 updated_at={updated_at}
                 visibility={visibility}

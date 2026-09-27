@@ -65,15 +65,15 @@ overwriting a field when the ARGUMENT is empty, so this is the one caller
 that must always pass every field."""
 async def:pub publish_card_full(
     headline: str, about: str, looking_for: list[str], can_offer: list[str],
-    links: list[str], contact_pref: str, visibility: str, name: str
+    links: list[str], interests: list[str], contact_pref: str, visibility: str, name: str
 ) -> dict {
     if mocks_on() {
         await fake_delay(MOCK_FAST_MS);
-        return mock_publish_card_full(headline, about, looking_for, can_offer, links, contact_pref, visibility, name);
+        return mock_publish_card_full(headline, about, looking_for, can_offer, links, interests, contact_pref, visibility, name);
     }
     result = root spawn PublishCard(
         headline=headline, about=about, looking_for=looking_for, can_offer=can_offer,
-        links=links, contact_pref=contact_pref, visibility=visibility, name=name
+        links=links, interests=interests, contact_pref=contact_pref, visibility=visibility, name=name
     );
     card = _first(result, "PublishCard") as dict;
     return card;
