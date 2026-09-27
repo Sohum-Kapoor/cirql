@@ -63,6 +63,7 @@ import from .components.mocks.exchange { mock_as_friend, mock_set_as_friend }
 import from .components.exchange.common { Poller, req_active }
 import from .components.exchange.Requests { RequestDetail }
 import from .components.exchange.Inbox { ApprovalView }
+import from .components.nav.TabBar { DesktopRail }
 import from .components.agent.common { asks_needing_count, pick_unchecked, payload_of, resolve_ask_entry }
 import from .components.ui.toaster { Toaster }
 import from .components.card.PublicCard { PublicCard }
@@ -640,16 +641,20 @@ def:pub app -> JsxElement {
         return <PublicCard handle={public_handle} />;
     }
 
-    # Desktop shell (SOH-234): only the "home" view (Home / Inbox / People
-    # tabs) has a nav (bottom bar on phone, left rail at lg:); at lg: the
-    # column clears the ~14rem rail and widens — max-w-5xl for People (graph
-    # + list need room), max-w-3xl for Home/Inbox/Settings. Below lg: this
+    # Desktop shell (SOH-234, widened in the follow-up to every full-page
+    # view): the "home" view (Home / Inbox / People tabs) has a nav (bottom
+    # bar on phone, left rail at lg:); Capture, Review, Request and Ask are
+    # full-page views with no nav of their own, so they render the rail
+    # directly further down and pick up the same `lg:ml-56` offset here. At
+    # lg: the column clears the ~14rem rail and widens — max-w-5xl for People
+    # (list + chart need room), max-w-3xl everywhere else. Below lg: this
     # adds nothing — same classes as before, pixel-identical phone.
-    desktop_wide: str = "lg:max-w-5xl" if tab == "people" else "lg:max-w-3xl";
+    rail_views: bool = view == "home" or view == "capture" or view == "review" or view == "request" or view == "ask";
+    desktop_wide: str = "lg:max-w-5xl" if (view == "home" and tab == "people") else "lg:max-w-3xl";
     main_class: str = (
         "mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 pt-6 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pl-4 pr-4 lg:ml-56 lg:w-auto lg:pb-6 "
         + desktop_wide
-    ) if view == "home" else "mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 pt-6 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pl-4 pr-4";
+    ) if rail_views else "mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 pt-6 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pl-4 pr-4";
 
     return
         <main className={main_class}>
@@ -729,6 +734,8 @@ def:pub app -> JsxElement {
                 />
                 </div>
             } elif view == "request" {
+                <div key="request">
+                <DesktopRail tab={tab} onTab={lambda v: str { view = "home"; set_tab(v); }} onCapture={open_capture} inbox_badge={inbox_badge} />
                 <RequestDetail
                     key={"request-" + open_req_id}
                     item={open_item}
@@ -740,7 +747,10 @@ def:pub app -> JsxElement {
                     onCancel={cancel_request}
                     onClaim={claim}
                 />
+                </div>
             } elif view == "ask" {
+                <div key="ask">
+                <DesktopRail tab={tab} onTab={lambda v: str { view = "home"; set_tab(v); }} onCapture={open_capture} inbox_badge={inbox_badge} />
                 <ApprovalView
                     key={"ask-" + open_ask_id}
                     ask={open_ask_entry}
@@ -751,9 +761,12 @@ def:pub app -> JsxElement {
                     onReveal={friend_reveal}
                     onDecline={friend_decline}
                 />
+                </div>
             } elif view == "capture" {
+                <div key="capture">
+                <DesktopRail tab={tab} onTab={lambda v: str { view = "home"; set_tab(v); }} onCapture={open_capture} inbox_badge={inbox_badge} />
                 <CaptureForm
-                    key="capture"
+                    key="capture-form"
                     mode={cap_kind}
                     text={cap_text}
                     guided={cap_guided}
@@ -768,9 +781,12 @@ def:pub app -> JsxElement {
                     onBack={close_capture}
                     onPhotoResult={lambda r: dict, note: str { cap_result = r; cap_note = note; cap_error = ""; view = "review"; }}
                 />
+                </div>
             } elif view == "review" {
+                <div key="review">
+                <DesktopRail tab={tab} onTab={lambda v: str { view = "home"; set_tab(v); }} onCapture={open_capture} inbox_badge={inbox_badge} />
                 <Review
-                    key="review"
+                    key="review-body"
                     result={cap_result}
                     note_text={cap_note}
                     known={people_shown}
@@ -781,6 +797,7 @@ def:pub app -> JsxElement {
                     onResult={set_cap_result}
                     onOpenPerson={lambda pid: str { capture_done(); post_capture = {}; open_person_id = pid; }}
                 />
+                </div>
             } else {
                 <StepIndicator key="indicator" step={step} total={4} labels={STEP_LABELS} />
                 if step == 1 {

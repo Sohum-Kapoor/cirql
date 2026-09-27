@@ -132,6 +132,10 @@ def:pub CaptureForm(
     # form behind it. The inner column mirrors TabBar's own centered max-w-md
     # + 16px gutters (components/nav/TabBar.cl.jac, read-only) instead of
     # padding the full-width bar, so the button lines up with the page content.
+    # At `lg:` (SOH-234 follow-up) the page column itself clears the rail and
+    # widens (`lg:ml-56 lg:max-w-3xl` on `<main>` in frontend.cl.jac); mirror
+    # the same two classes here so the button stays under the form instead of
+    # centering on the full viewport behind the rail. Below lg: unchanged.
     return
         <div className="flex flex-col gap-5 pb-[calc(6.5rem+env(safe-area-inset-bottom))]">
             <header className="-ml-2 flex items-center gap-1">
@@ -182,7 +186,7 @@ def:pub CaptureForm(
                 </div>
             }}
             <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-background pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-                <div className="mx-auto flex w-full max-w-md flex-col gap-2 pl-4 pr-4">
+                <div className="mx-auto flex w-full max-w-md flex-col gap-2 pl-4 pr-4 lg:ml-56 lg:w-auto lg:max-w-3xl">
                     <div className="flex h-5 items-center justify-center">
                         {if pending {
                             <span role="status" aria-live="polite" className="sr-only">{wait_copy(wait_stage)}</span>
