@@ -305,7 +305,7 @@ def:pub HomeView(
                     <DropdownMenuContent align="end" className="w-48">
                         <DropdownMenuGroup>
                             <DropdownMenuItem onSelect={handle_refresh}>Refresh</DropdownMenuItem>
-                            <DropdownMenuItem onSelect={open_appearance}>Appearance</DropdownMenuItem>
+                            <DropdownMenuItem onSelect={open_appearance}>Settings</DropdownMenuItem>
                         </DropdownMenuGroup>
                         <DropdownMenuSeparator />
                         <DropdownMenuGroup>

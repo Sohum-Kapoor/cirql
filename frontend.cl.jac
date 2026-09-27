@@ -62,7 +62,7 @@ import from .components.mocks.exchange { mock_as_friend, mock_set_as_friend }
 import from .components.exchange.common { Poller, req_active }
 import from .components.exchange.Requests { RequestDetail }
 import from .components.exchange.Inbox { ApprovalView, asks_needing_you }
-import from .lib.text { join_lines }
+import from .lib.text { join_lines, today_month_day }
 
 sv import from walkers { GetMe }
 sv import from schema { Person }
