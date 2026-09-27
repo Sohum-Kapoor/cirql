@@ -17,6 +17,7 @@ glob _MOCK_CARD: dict = {
     "looking_for": ["a climate-tech VC who takes cold student pitches", "a founder who has raised for hardware"],
     "can_offer": ["intros into decarbonization pilots", "feedback on hardware pitch decks"],
     "links": ["kilnlabs.com"],
+    "interests": ["thermal storage", "student founders"],
     "contact_pref": "email: rowan@kilnlabs.com",
     "visibility": "link",
     "updated_at": "2026-09-26T18:00:00Z"
@@ -35,13 +36,14 @@ sent (the mock always applies every arg — the real walker only overwrites
 non-empty ones, but the editor always sends its whole form state)."""
 def:pub mock_publish_card_full(
     headline: str, about: str, looking_for: list[str], can_offer: list[str],
-    links: list[str], contact_pref: str, visibility: str, name: str
+    links: list[str], interests: list[str], contact_pref: str, visibility: str, name: str
 ) -> dict {
     _MOCK_CARD["headline"] = headline;
     _MOCK_CARD["about"] = about;
     _MOCK_CARD["looking_for"] = looking_for;
     _MOCK_CARD["can_offer"] = can_offer;
     _MOCK_CARD["links"] = links;
+    _MOCK_CARD["interests"] = interests;
     _MOCK_CARD["contact_pref"] = contact_pref;
     _MOCK_CARD["visibility"] = visibility;
     if name {
@@ -56,7 +58,7 @@ handshake_only card exactly like the live def:pub does."""
 def:pub mock_get_card(handle: str) -> dict {
     empty: dict = {
         "found": False, "name": "", "handle": "", "headline": "", "about": "",
-        "looking_for": [], "can_offer": [], "links": [], "contact_pref": "", "updated_at": ""
+        "looking_for": [], "can_offer": [], "links": [], "interests": [], "contact_pref": "", "updated_at": ""
     };
     if handle != _MOCK_CARD["handle"] or _MOCK_CARD["visibility"] != "link" {
         return empty;
@@ -70,6 +72,7 @@ def:pub mock_get_card(handle: str) -> dict {
         "looking_for": _MOCK_CARD["looking_for"],
         "can_offer": _MOCK_CARD["can_offer"],
         "links": _MOCK_CARD["links"],
+        "interests": _MOCK_CARD["interests"],
         "contact_pref": _MOCK_CARD["contact_pref"],
         "updated_at": _MOCK_CARD["updated_at"]
     };

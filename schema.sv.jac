@@ -104,6 +104,7 @@ node Card {
     has looking_for: list[str] = [];
     has can_offer: list[str] = [];
     has links: list[str] = [];
+    has interests: list[str] = [];   # SOH-179 (interests): owner's own public list; distinct from private Interest nodes, never copied automatically
     has contact_pref: str = "";
     has visibility: str = "link";    # link | handshake_only
     has updated_at: str = "";

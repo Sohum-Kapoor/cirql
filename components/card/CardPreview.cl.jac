@@ -18,7 +18,7 @@ import from ...lib.text { short_date }
 def:pub CardPreview(
     name: str, handle: str, headline: str, about: str,
     looking_for: list[str], can_offer: list[str], links: list[str],
-    contact_pref: str, updated_at: str, visibility: str = "link"
+    interests: list[str], contact_pref: str, updated_at: str, visibility: str = "link"
 ) -> JsxElement {
     updated: str = short_date(updated_at);
     caption: str = "Exactly what opens for someone you handed this card to. Nobody else can read it." if visibility == "handshake_only" else "Exactly what opens when someone with your handle or link looks you up.";
@@ -56,6 +56,16 @@ def:pub CardPreview(
                         <div className="flex flex-wrap gap-1.5">
                             {for (i, item) in enumerate(can_offer) {
                                 <Badge key={str(i)} variant="outline">{item}</Badge>
+                            }}
+                        </div>
+                    </div>}
+
+                {len(interests) > 0 and
+                    <div className="flex flex-col gap-1.5">
+                        <span className="text-caption font-medium text-ink-muted">Interests</span>
+                        <div className="flex flex-wrap gap-1.5">
+                            {for (i, item) in enumerate(interests) {
+                                <Badge key={str(i)} variant="secondary">{item}</Badge>
                             }}
                         </div>
                     </div>}

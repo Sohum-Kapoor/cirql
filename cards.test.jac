@@ -106,7 +106,7 @@ test "cards 1: publish link, anonymous get_card finds it, no visibility/_jac_id 
         assert "_jac_id" not in found, f"_jac_id leaked: {found}";
         assert set(found.keys()) == {
             "found", "name", "handle", "headline", "about",
-            "looking_for", "can_offer", "links", "contact_pref", "updated_at"
+            "looking_for", "can_offer", "links", "interests", "contact_pref", "updated_at"
         }, f"unexpected keys: {sorted(found.keys())}";
     } finally {
         if client is not None { client.close(); }
@@ -212,11 +212,12 @@ test "cards 5: MyCard before any PublishCard reports found:false with empty fiel
         card = dict(out["card"]);
         assert set(card.keys()) == {
             "name", "handle", "headline", "about", "looking_for",
-            "can_offer", "links", "contact_pref", "updated_at", "visibility"
+            "can_offer", "links", "interests", "contact_pref", "updated_at", "visibility"
         }, f"unexpected card keys: {sorted(card.keys())}";
         assert str(card["headline"]) == "";
         assert str(card["visibility"]) == "";
         assert list(card["looking_for"]) == [];
+        assert list(card["interests"]) == [];
     } finally {
         if client is not None { client.close(); }
         shutil.rmtree(tmp_dir, ignore_errors=True);
@@ -269,6 +270,60 @@ test "cards 7: MyCard still returns a handshake_only card to its own owner" {
         card = dict(out["card"]);
         assert str(card["visibility"]) == "handshake_only";
         assert str(card["headline"]) == "h";
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "cards 9: interests (SOH-179) — publish with interests, get_card and MyCard return them; empty republish keeps them; no-interests card returns []" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_cards_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "cards_a9@example.com");
+        b = _reg(cl, "cards_b9@example.com");
+
+        card = _publish(cl, a, {
+            "headline": "Robotics @ UMich",
+            "visibility": "link",
+            "name": "Ada",
+            "interests": ["climate", "robotics"]
+        });
+        assert list(card["interests"]) == ["climate", "robotics"], f"unexpected interests: {card}";
+        handle = str(card["handle"]);
+
+        found = _get_card_anon(cl, handle);
+        print(f"[cards 9] anonymous get_card({handle}) -> {found}");
+        assert found["found"], f"expected found: {found}";
+        assert list(found["interests"]) == ["climate", "robotics"];
+
+        mine = _my_card(cl, a);
+        assert mine["found"], f"expected found: {mine}";
+        assert list(dict(mine["card"])["interests"]) == ["climate", "robotics"];
+
+        # republish with an empty interests list keeps the old values (same
+        # non-empty-overwrite rule as headline/looking_for/etc).
+        card2 = _publish(cl, a, {"visibility": "link", "interests": []});
+        assert list(card2["interests"]) == ["climate", "robotics"], f"empty list should not overwrite: {card2}";
+
+        found2 = _get_card_anon(cl, handle);
+        assert list(found2["interests"]) == ["climate", "robotics"], f"empty republish erased interests: {found2}";
+
+        mine2 = _my_card(cl, a);
+        assert list(dict(mine2["card"])["interests"]) == ["climate", "robotics"];
+
+        # a card published without interests at all returns [].
+        b_card = _publish(cl, b, {"headline": "B's card", "visibility": "link", "name": "Bo"});
+        assert list(b_card["interests"]) == [], f"expected no interests: {b_card}";
+        b_handle = str(b_card["handle"]);
+
+        b_found = _get_card_anon(cl, b_handle);
+        assert list(b_found["interests"]) == [], f"expected [] from get_card: {b_found}";
+
+        b_mine = _my_card(cl, b);
+        assert list(dict(b_mine["card"])["interests"]) == [], f"expected [] from MyCard: {b_mine}";
     } finally {
         if client is not None { client.close(); }
         shutil.rmtree(tmp_dir, ignore_errors=True);
