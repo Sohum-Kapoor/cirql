@@ -42,10 +42,64 @@ test "gather_follow_up_evidence + fallback_draft: an open promise is the top evi
     fb = fallback_draft(p, evidence);
     draft = fb["draft"] as str;
     based_on = fb["based_on"] as list[dict[str, str]];
-    assert "send the demo" in draft, f"fallback draft must mention the promise text, got: {draft}";
+    # SOH-212: rendered as a noun phrase ("the demo I said I'd send"), never
+    # the old verb-form clash ("following up on send the demo").
+    assert "the demo" in draft and "I said I'd send" in draft, f"fallback draft must mention the promise as a noun phrase, got: {draft}";
+    assert "following up on send" not in draft, f"must not read as a verb-form clash, got: {draft}";
     assert len(based_on) == 1;
     assert based_on[0]["kind"] == "promise";
     assert based_on[0]["id"] == jid(promise);
+}
+
+test "SOH-212 fallback_draft: promise noun-phrase template, no verb-form clash, no doubled period (judge repro)" {
+    p = (root ++> Person(name="Sarah Kim", status="confirmed"))[0];
+    note = (root ++> Note(
+        text="Drafts-test: told Sarah Kim I'd send company's intern posting.",
+        kind="debrief", captured_at="2026-09-20T10:00:00"
+    ))[0];
+    promise = (note +>:AssertsPromise(span="send company's intern posting"):+> Promise(
+        text="send company's intern posting", done=False
+    ))[0];
+    promise +>:PromiseTo:+> p;
+
+    fact = (root ++> Fact(
+        text="Leads team Graphwalk, who built the winning bot after the hackathon.",
+        observed_at="2026-09-18"
+    ))[0];
+    fact +>:FactAbout:+> p;
+
+    now = datetime.now();
+    evidence = gather_follow_up_evidence(p, now);
+    fb = fallback_draft(p, evidence);
+    draft = fb["draft"] as str;
+
+    assert "following up on send" not in draft, f"verb-form clash must be gone, got: {draft}";
+    assert "I said I'd send" in draft and "company's intern posting" in draft, f"got: {draft}";
+    assert ".." not in draft, f"must never emit a doubled period, got: {draft}";
+    based_on = fb["based_on"] as list[dict[str, str]];
+    assert len(based_on) == 2, f"a short (<80 char) fact is used as the context clause, got: {based_on}";
+}
+
+test "SOH-212 fallback_draft: a long fact (>= 80 chars) is never used as the context clause" {
+    p = (root ++> Person(name="Drafts-test Long Fact P", status="confirmed"))[0];
+    note = (root ++> Note(text="Drafts-test filler note 2", kind="debrief", captured_at="2026-09-20T10:00:00"))[0];
+    promise = (note +>:AssertsPromise(span="send the deck"):+> Promise(text="send the deck", done=False))[0];
+    promise +>:PromiseTo:+> p;
+
+    long_fact = (root ++> Fact(
+        text="A very long fact indeed, one that runs well past eighty characters in total length here.",
+        observed_at="2026-09-18"
+    ))[0];
+    long_fact +>:FactAbout:+> p;
+
+    now = datetime.now();
+    evidence = gather_follow_up_evidence(p, now);
+    fb = fallback_draft(p, evidence);
+    draft = fb["draft"] as str;
+
+    assert "past eighty characters" not in draft, f"a long fact must not be used as the context clause, got: {draft}";
+    based_on = fb["based_on"] as list[dict[str, str]];
+    assert len(based_on) == 1 and based_on[0]["kind"] == "promise";
 }
 
 test "gather_follow_up_evidence + fallback_draft: a done promise is excluded, an unrelated fact wins instead" {

@@ -6,9 +6,11 @@ user's own graph, never about a person: this file's report never names a
 person, only a kind of person.
 """
 
+import re;
 import from llm { llm }
 import from datetime { datetime }
 import from schema { Me, Person, Goal, HasGoal, Knows, Reported, RelevantTo, FactAbout, IntentAbout }
+import from scoring { fallback_tokens }
 
 
 obj NeededKind {
@@ -18,8 +20,8 @@ obj NeededKind {
     has covered_by: list[int];
 }
 sem NeededKind.kind = "A kind of person this goal needs, as a short noun phrase such as 'climate-tech VC' or 'wheelchair user willing to test a prototype'; never a specific person.";
-sem NeededKind.why_needed = "One sentence on why the goal needs this kind of person.";
-sem NeededKind.suggested_need = "The request a friend's agent could act on, in plain words a non-native English speaker understands: one short sentence, everyday words, no jargon, 14 words or fewer, e.g. 'someone who invests in young climate companies and reads student emails'; no names.";
+sem NeededKind.why_needed = "One sentence on why the goal needs this kind of person. Never use the words 'score', 'scores', or 'scoring'.";
+sem NeededKind.suggested_need = "The request a friend's agent could act on, in plain words a non-native English speaker understands: one short sentence, everyday words, no jargon, 14 words or fewer, e.g. 'someone who invests in young climate companies and reads student emails'; no names. Never use the words 'score', 'scores', or 'scoring'.";
 sem NeededKind.covered_by = "The # numbers of listed warm people who already are this kind of person or can directly provide it; empty if none.";
 
 obj GapExtraction {
@@ -30,13 +32,126 @@ sem GapExtraction.kinds = "Two to four kinds of people the goal needs, most impo
 def find_gaps(goal: str, warm_people: str) -> GapExtraction by llm(temperature=0.2);
 sem find_gaps = "Given a goal and an anonymized summary of the warm people already available for it, list the kinds of people the goal still needs that none of those warm people already are or provide.";
 sem find_gaps.goal = "The user's goal, verbatim.";
-sem find_gaps.warm_people = "One line per warm person already available for this goal - role, label, strength, reason, and short evidence snippets, with NO names - or the literal string 'none' if there are no warm people yet.";
+sem find_gaps.warm_people = "One line per warm person already available for this goal - role, label, strength, reason, and short evidence snippets, with NO names - or the literal string 'none' if there are no warm people yet. Never use the words 'score', 'scores', or 'scoring' in a suggested need or why_needed.";
+
+# SOH-212 (judge pass): the LLM's own covered_by indices only ever see the
+# WARM (known/route, strong/medium) people it was shown - never the rest of
+# the user's active network. A person who is already exactly the proposed
+# kind (e.g. Lena Fischer, title "organizer" at org "JacHacks", covering a
+# proposed "JacHacks event organizer" gap) but who has no strong/medium
+# RelevantTo tie to THIS goal yet never appears in `warm_people`, so the
+# model has no way to know she covers the gap. `kind_covered_by_person`
+# below is a second, deterministic check against every active known person
+# in the graph (not just the warm ones), independent of the LLM.
+glob SCORE_WORD_RE: str = r"(?i)\bscor(e|es|ing)\b";
+
+"""Replace 'score'/'scores'/'scoring' (any case, word-boundary) with
+'results' - the product rule bans the word 'score' from anything shown to
+the user, and the LLM is not perfectly reliable about the sem instruction
+alone."""
+def strip_score_words(text: str) -> str {
+    return re.sub(SCORE_WORD_RE, "results", text);
+}
+
+"""True when `kind_tokens` (>=4-char, non-stopword tokens of a proposed gap
+role, via scoring.fallback_tokens - the same tokenizer/stopword list SOH-211
+uses for its own deterministic fallback) meaningfully overlaps a known
+person's fields. Rule (deliberately asymmetric): title+org is a short,
+on-topic field, so ONE shared token is already a real signal ("organizer"
+shared with a role of "JacHacks event organizer"); free-text Facts are
+noisier, so we require TWO shared tokens before treating a fact as covering
+a role, to avoid a single generic word (e.g. "climate") false-covering a
+gap."""
+def kind_covered_by_person(kind_tokens: list[str], person_text: dict[str, str]) -> bool {
+    role_hits = 0;
+    for t in fallback_tokens(person_text["role"]) {
+        if t in kind_tokens {
+            role_hits += 1;
+        }
+    }
+    if role_hits >= 1 {
+        return True;
+    }
+    fact_hits = 0;
+    for t in fallback_tokens(person_text["facts"]) {
+        if t in kind_tokens {
+            fact_hits += 1;
+        }
+    }
+    return fact_hits >= 2;
+}
+
+"""Any active known person (own root; see `known_people_texts`) already
+covers this kind."""
+def kind_covered_by_any_person(kind: str, known_people: list[dict[str, str]]) -> bool {
+    kind_tokens = fallback_tokens(kind);
+    if not kind_tokens {
+        return False;
+    }
+    for person_text in known_people {
+        if kind_covered_by_person(kind_tokens, person_text) {
+            return True;
+        }
+    }
+    return False;
+}
+
+"""Active known people (own root only) for the deterministic post-filter:
+`role` = "title at org" (or just title), `facts` = that person's own Fact
+texts joined with spaces. Same candidate set as `warm_lines_for` (directly
+Known + their Reported ties, deduped) but NOT filtered by RelevantTo - the
+whole point is to catch a person who covers a gap kind but has no
+(yet-scored) tie to this particular goal. 'active' = Person.status
+'confirmed' (not still awaiting an import swipe-confirm) and not archived -
+the same test `scoring.collect_candidates` uses for SOH-220."""
+def known_people_texts(me: Me) -> list[dict[str, str]] {
+    known: list[Person] = [me ->:Knows:->];
+    candidates: list[Person] = [];
+    seen_ids: list[str] = [];
+    for p in known {
+        pid = jid(p);
+        if pid not in seen_ids {
+            seen_ids.append(pid);
+            candidates.append(p);
+        }
+    }
+    for p in known {
+        for rp in [p ->:Reported:->] {
+            rid = jid(rp);
+            if rid not in seen_ids {
+                seen_ids.append(rid);
+                candidates.append(rp);
+            }
+        }
+    }
+
+    out: list[dict[str, str]] = [];
+    for p in candidates {
+        if p.status != "confirmed" or p.archived {
+            continue;
+        }
+        role = f"{p.title} at {p.org}" if p.org else p.title;
+        facts: list[str] = [];
+        for fact in [p <-:FactAbout:<-] {
+            facts.append(fact.text);
+        }
+        out.append({"role": role, "facts": " ".join(facts)});
+    }
+    return out;
+}
 
 """Deterministic filter over the LLM's raw extraction: a kind is a gap iff
-none of its covered_by indices fall within [0, warm_count) (i.e. no listed
-warm person already covers it). Cleans strings, drops entries with any
-empty field, dedupes by lowercase kind (first occurrence wins), caps at 4."""
-def compute_gaps(x: GapExtraction, warm_count: int) -> list[dict[str, str]] {
+(a) none of its covered_by indices fall within [0, warm_count) (i.e. no
+listed warm person already covers it) AND (b) no active known person's
+title/org/facts meaningfully overlaps the kind (`kind_covered_by_any_person`
+- SOH-212, catches a person the LLM never saw because they aren't warm YET
+for this goal). Cleans strings (also stripping the banned word 'score' /
+'scores' / 'scoring' from the free-text fields), drops entries with any
+empty field, dedupes by lowercase kind (first occurrence wins), caps at 4.
+`known_people` defaults to `[]` so existing callers/tests that only cared
+about the covered_by check are unaffected."""
+def compute_gaps(x: GapExtraction, warm_count: int, known_people: list[dict[str, str]] | None = None) -> list[dict[str, str]] {
+    people: list[dict[str, str]] = known_people if known_people is not None else [];
     out: list[dict[str, str]] = [];
     seen: list[str] = [];
     for k in x.kinds {
@@ -46,12 +161,15 @@ def compute_gaps(x: GapExtraction, warm_count: int) -> list[dict[str, str]] {
                 covered = True;
             }
         }
+        kind = k.kind.strip();
+        if not covered and kind and kind_covered_by_any_person(kind, people) {
+            covered = True;
+        }
         if covered {
             continue;
         }
-        kind = k.kind.strip();
-        why = k.why_needed.strip();
-        need = k.suggested_need.strip();
+        why = strip_score_words(k.why_needed.strip());
+        need = strip_score_words(k.suggested_need.strip());
         if not kind or not why or not need {
             continue;
         }
@@ -161,7 +279,8 @@ walker:priv GapFinder {
             disengage;
         }
 
-        for gap in compute_gaps(extraction, warm_count) {
+        known_people = known_people_texts(me);
+        for gap in compute_gaps(extraction, warm_count, known_people) {
             report gap;
         }
     }

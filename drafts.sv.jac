@@ -174,6 +174,61 @@ def map_evidence_indices(evidence: list[EvidenceItem], indices: list[int]) -> li
     return out;
 }
 
+"""SOH-212 (judge pass): the old template glued the promise's raw, verb-first
+text straight after "following up on" ("following up on send company's
+intern posting"), which reads as a verb-form clash whenever the stored
+Promise text starts with a commitment verb (`capture.sv.jac` stores promises
+that way on purpose — see its `XPromise.text` sem, e.g. "send the ROI
+deck")."""
+glob PROMISE_VERBS: list[str] = ["send", "intro", "introduce", "share", "forward", "connect"];
+glob PROMISE_ARTICLE_PREFIXES: list[str] = [
+    "the ", "a ", "an ", "your ", "my ", "our ", "his ", "her ", "their ", "its "
+];
+
+"""Strip one trailing run of '.'/'!'/'?'/whitespace - never anything in the
+middle - so composing this text into a new sentence never produces a
+doubled ".."."""
+def _strip_trailing_stop(text: str) -> str {
+    t = (text or "").strip();
+    while len(t) > 0 and t[-1] in ".!? \t\r\n" {
+        t = t[:-1];
+    }
+    return t;
+}
+
+def _needs_article(rest: str) -> bool {
+    low = rest.lower();
+    for pfx in PROMISE_ARTICLE_PREFIXES {
+        if low.startswith(pfx) {
+            return False;
+        }
+    }
+    return True;
+}
+
+"""Render a promise's concrete-deliverable text as a noun phrase instead of
+a raw verb-first clause. When the text starts with one of a short list of
+common commitment verbs, everything after the verb reads naturally as "the
+X" ("send company's intern posting" -> "the company's intern posting I said
+I'd send"; "send the ROI deck" -> already has its own article, so it is not
+doubled). Anything else (no recognized verb, or nothing after it) has no
+clean noun phrase to extract, so the whole text is quoted plainly instead."""
+def promise_noun_phrase(text: str) -> str {
+    t = _strip_trailing_stop(text);
+    words = t.split();
+    if len(words) > 1 {
+        verb = words[0].lower();
+        if verb in PROMISE_VERBS {
+            rest = " ".join(words[1:]).strip();
+            if _needs_article(rest) {
+                rest = "the " + rest;
+            }
+            return f"About {rest} I said I'd {verb}: here it is.";
+        }
+    }
+    return f"About what I said I'd do: {t}.";
+}
+
 """Deterministic fallback used when there is no evidence at all, or the
 batched `by llm` call fails / returns nothing usable. Picks the newest open
 Promise first, else the newest Fact/Intent, else a generic opener — exactly
@@ -198,15 +253,22 @@ def fallback_draft(p: Person, evidence: list[EvidenceItem]) -> dict[str, any] {
     if promise_item is not None {
         pi = promise_item as EvidenceItem;
         used: list[EvidenceItem] = [pi];
+        promise_sentence = promise_noun_phrase(pi.span);
+        # SOH-212: the context clause is optional and only added for a SHORT
+        # fact (< 80 chars); its own trailing stop is stripped first so the
+        # sentence we append never produces "..".
         tail = "";
         if fact_item is not None {
             fi = fact_item as EvidenceItem;
-            tail = f" Hope things are going well with {fi.span}.";
-            used.append(fi);
+            fact_text = _strip_trailing_stop(fi.span);
+            if fact_text and len(fact_text) < 80 {
+                tail = f" Hope things are going well with {fact_text}.";
+                used.append(fi);
+            }
         } elif p.org {
             tail = f" Hope things are going well with {p.org}.";
         }
-        draft = f"Hi {p.name}, following up on {pi.span}: sending it over now.{tail}";
+        draft = f"Hi {p.name}, {promise_sentence}{tail}";
         return {"draft": draft, "based_on": [item_to_dict(i) for i in used]};
     }
 
