@@ -24,10 +24,12 @@ as `Person.status == "proposed"` with `Knows.status == "proposed"`):
     status) and is NOT reachable by a Reported hop from any known person.
 """
 
+import re;
 import from datetime { datetime }
 import from jaclang { JacRuntime as Jac }
 import from schema { Me, Person, Note, Fact, Intent, Goal, Knows, Reported, HasGoal, FactAbout, IntentAbout, Mentions, AssertsIntent, RelevantTo }
 import from llm { llm }
+import from scoring { polish_reason }
 import time;
 
 # ---------------------------------------------------------------- LLM batch
@@ -41,9 +43,9 @@ obj RankedItem {
 }
 sem RankedItem.index = "The candidate's # number from the input, copied exactly.";
 sem RankedItem.strength = "strong only when a listed fact or intent directly serves the goal; medium when the person's org/role plausibly helps and one piece of evidence points that way; weak when only a job title or org is similar. A matching title alone is never more than weak.";
-sem RankedItem.reason = "One sentence citing the specific evidence, e.g. 'Her note says she wants feedback from wheelchair users, which is what your goal needs.' Never mention how long since you last spoke.";
+sem RankedItem.reason = "One sentence citing the specific evidence, e.g. 'She wants feedback from wheelchair users, which is what your goal needs.' Never mention how long since you last spoke. Speak as the product talking to the user in second person; never say 'the fact', 'the note', 'the author', 'the speaker', or 'the user'; never quote evidence in parentheses; one sentence, under 160 characters; use the person's first name only, never their full name.";
 sem RankedItem.evidence_indices = "The evidence numbers you relied on for this candidate; empty if none.";
-sem RankedItem.opener = "A two-sentence message opener to this person that mentions one specific thing from the evidence; friendly, no flattery, no mention of the goal being a 'goal'.";
+sem RankedItem.opener = "A two-sentence message opener to this person that mentions one specific thing from the evidence; friendly, no flattery, no mention of the goal being a 'goal'. Speak as a real person, never 'the fact'/'the note'/'the author'/'the user'; never quote evidence in parentheses; use the person's first name.";
 
 obj RankResult {
     has items: list[RankedItem];
@@ -478,6 +480,41 @@ def goal_texts_match(a: str, b: str) -> bool {
     return False;
 }
 
+"""SOH-226: turn a raw, first-person ask ("I am looking to find a technical
+cofounder") into a noun phrase safe to splice into a lowercase mid-sentence
+quote ("a strong match for 'a technical cofounder'") instead of the raw
+sentence ("is a strong match for I am looking to find a technical
+cofounder..."). Strips ONE leading first-person/imperative prefix (longest,
+most specific first), then lowercases the new first letter UNLESS the second
+character is already uppercase (a proper noun/acronym start, e.g. "AI
+grants" stays as-is). Applied once, at goal-creation time, so the STORED
+`Goal.text` is already a noun phrase everywhere it's read back."""
+glob GOAL_NOUN_PHRASE_PREFIXES: list[str] = [
+    "i am looking to", "i'm looking to", "i want to", "i'd like to",
+    "my goal is to", "looking to", "trying to", "find ", "to "
+];
+
+def goal_noun_phrase(text: str) -> str {
+    t: str = (text or "").strip();
+    if not t {
+        return t;
+    }
+    lower = t.lower();
+    for prefix in GOAL_NOUN_PHRASE_PREFIXES {
+        if lower.startswith(prefix) {
+            t = t[len(prefix):].lstrip();
+            break;
+        }
+    }
+    if not t {
+        return t;
+    }
+    if len(t) >= 2 and t[1].isupper() {
+        return t;   # looks like a proper noun / acronym start - keep as-is
+    }
+    return t[0].lower() + t[1:];
+}
+
 """Find-or-create + activate the caller's goal for `text` (SOH-225): reuses
 an existing goal that's a near-duplicate (`goal_texts_match`) if found —
 setting it active, creating nothing — else creates a new Goal; deactivates
@@ -499,7 +536,7 @@ def set_goal_for(me: Me, text: str, now: datetime) -> Goal {
         t = target as Goal;
         t.active = True;
     } else {
-        t = (me +>:HasGoal:+> Goal(text=text, created_at=now.isoformat()))[0];
+        t = (me +>:HasGoal:+> Goal(text=goal_noun_phrase(text), created_at=now.isoformat()))[0];
     }
 
     for g in goals {
@@ -634,6 +671,11 @@ def materialize(goal: Goal, ranked: list[RankedItem], candidates: list[Candidate
             opener = "";
             evidence_indices = [];
         }
+        # SOH-226: product copy, not model narration - polish before it's
+        # written to the edge (`materialize` is the ONE place that writes
+        # RelevantTo, so a cached `serve_cached` read never needs to redo this).
+        reason = polish_reason(reason);
+        opener = polish_reason(opener);
 
         ev_out: list[dict[str, any]] = [];
         ev_ids: list[str] = [];

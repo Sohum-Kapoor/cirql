@@ -14,7 +14,7 @@ import from schema {
     Owns, HasInterest, HasGoal, HasIntent, AssertsIntent
 }
 import from freshness { default_expiry }
-import from goals { goal_texts_match }
+import from goals { goal_texts_match, goal_noun_phrase }
 
 
 # ---------------------------------------------------------------- extraction
@@ -31,9 +31,9 @@ obj OnboardExtraction {
 }
 sem OnboardExtraction.name = "The speaker's own name if they state it (e.g. 'I'm Sam, ...' -> 'Sam'), else empty.";
 sem OnboardExtraction.interests = "5 to 10 short topic phrases the person is into (e.g. 'accessible robotics'), lowercase, no duplicates.";
-sem OnboardExtraction.goals = "1 to 3 concrete outcomes the person is trying to achieve in the coming months. A goal is any outcome the writer is working toward or wants to achieve, whether or not they call it a goal: raising a round, landing an internship or job, recruiting participants, finding a co-founder, getting feedback from a group. Phrase it as the ask (e.g. 'Raise a pre-seed from climate-tech investors', 'Land a summer 2027 VC internship'), not a description of what they build.";
-sem OnboardExtraction.needs = "What they are looking for from other people (intros, feedback, hires, funding), each one short phrase.";
-sem OnboardExtraction.offers = "What they can offer others (skills, access, resources), each one short phrase.";
+sem OnboardExtraction.goals = "1 to 3 concrete outcomes the person is trying to achieve in the coming months. A goal is any outcome the writer is working toward or wants to achieve, whether or not they call it a goal: raising a round, landing an internship or job, recruiting participants, finding a co-founder, getting feedback from a group. Phrase it as the ask (e.g. 'Raise a pre-seed from climate-tech investors', 'Land a summer 2027 VC internship'), not a description of what they build. A short noun phrase, never a first-person sentence like 'I am looking to...' or 'I want to...' — this text is later quoted inside other sentences.";
+sem OnboardExtraction.needs = "What they are looking for from other people (intros, feedback, hires, funding), each one short phrase. A short noun phrase, never 'the user'/'the author'/a first-person sentence.";
+sem OnboardExtraction.offers = "What they can offer others (skills, access, resources), each one short phrase. A short noun phrase, never 'the user'/'the author'/a first-person sentence.";
 sem OnboardExtraction.headline = "A one-line headline for a contact card, under 80 characters.";
 sem OnboardExtraction.card_about = "Two sentences about them in first person, for a card others read.";
 sem OnboardExtraction.links = "Any URLs or handles mentioned, verbatim; empty list if none.";
@@ -208,7 +208,10 @@ def collect_goals(me: Me, existing_goals: list[Goal], goal_texts: list[str], now
                 goals.append(found_g);
             }
         } else {
-            new_g = (me +>:HasGoal:+> Goal(text=gt, created_at=now))[0];
+            # SOH-226: store goals as noun phrases (never the raw first-
+            # person ask) so any template that later splices the goal's text
+            # into a sentence reads naturally.
+            new_g = (me +>:HasGoal:+> Goal(text=goal_noun_phrase(gt), created_at=now))[0];
             existing_goals.append(new_g);
             goals.append(new_g);
         }
@@ -235,7 +238,7 @@ def promote_strongest_need(me: Me, existing_goals: list[Goal], goals: list[Goal]
     if found_g {
         promoted = found_g;
     } else {
-        promoted = (me +>:HasGoal:+> Goal(text=text, created_at=now))[0];
+        promoted = (me +>:HasGoal:+> Goal(text=goal_noun_phrase(text), created_at=now))[0];
         existing_goals.append(promoted);
     }
     if promoted not in goals {

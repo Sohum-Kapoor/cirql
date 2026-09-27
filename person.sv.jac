@@ -51,6 +51,7 @@ import from drafts {
     EvidenceItem, gather_follow_up_evidence, item_to_dict,
     person_summary_text, build_evidence_text, map_evidence_indices
 }
+import from scoring { polish_reason }
 import from llm { llm }
 import base64;
 import os;
@@ -305,7 +306,7 @@ obj Recap {
     has text: str;
     has evidence_indices: list[int];
 }
-sem Recap.text = "A spoken 20-second recap (45-70 words) for the user's earbuds before meeting this person: who they are, the one thing from the last conversation, any open promise, what they wanted. Plain spoken sentences, second person ('you promised'), no bullet points, no greeting, no sign-off.";
+sem Recap.text = "A spoken 20-second recap (45-70 words) for the user's earbuds before meeting this person: who they are, the one thing from the last conversation, any open promise, what they wanted. Plain spoken sentences, second person ('you promised'), no bullet points, no greeting, no sign-off. Speak like a person talking to the user, never like a system describing its input: never say 'the fact', 'the note', 'the author', or 'the user'; never quote evidence in parentheses.";
 sem Recap.evidence_indices = "Numbers of the evidence items the recap relies on.";
 
 def spoken_brief(person_summary: str, evidence_text: str) -> Recap by llm(temperature=0.4);
@@ -501,6 +502,10 @@ walker:priv Brief {
                 fallback = True;
             }
         }
+        # SOH-226: product copy, not model narration - applied once, at the
+        # walker boundary, so `deterministic_brief`'s own unit test keeps
+        # asserting its plain (already-conformant) text unpolished.
+        text = polish_reason(text);
 
         voice_error = "";
         audio_b64 = "";
