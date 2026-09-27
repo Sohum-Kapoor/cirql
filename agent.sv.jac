@@ -39,7 +39,8 @@ import from exchange {
 
 glob AGENT_THROTTLE_MINUTES: int = 10;
 glob AGENT_RUNS_KEPT: int = 20;
-glob AGENT_MAX_REQUESTS: int = 10;
+glob AGENT_MAX_REQUESTS: int = 10;   # requests scanned per run (search-space cap)
+glob AGENT_MAX_ANSWERS: int = 5;     # answer_ask findings proposed per run (SOH-223 tune)
 glob AGENT_KINDS: list[str] = [
     "new_match", "ask_network", "route", "promise_due", "follow_up", "reconnect", "answer_ask"
 ];
@@ -176,12 +177,24 @@ def record_run(me: Me, now: datetime, reason: str, model_backed: bool, strengths
 
 # ---------------------------------------------------------------- steps (all deterministic)
 
+"""Sort key for the first-run new_match cap: strong before medium (higher
+rank first), tie-break by newest evidence (observed_at, ISO string sorts
+lexically). Used with `sorted(..., reverse=True)`."""
+def _new_match_sort_key(c: dict[str, any]) -> tuple[int, str] {
+    return (c["rank"] as int, str(c["observed_at"]));
+}
+
 """new_match: RelevantTo edges on the active goal(s). strong/medium with
-resolvable evidence. First run proposes strong only; later runs propose when
-the (person, goal) strength rose since the previous run. `current` is filled
-with every strength seen, for the next run's comparison."""
+resolvable evidence only. FIRST run ever (prior is None, i.e. no previous
+AgentRun recorded strengths): propose at most the top 3 candidates across
+every active goal, strong before medium, ties broken by newest evidence.
+Later runs: propose only when the (person, goal) strength rose since the
+previous run (SOH-223: no cap once the account has a history — a real rise
+is always worth a look). `current` is filled with every strength seen
+(including weak/below-threshold — SOH-223 tune verified this is what
+`prior_strengths` reads back next run), for the next run's comparison."""
 def step_new_match(goals: list[Goal], prior: dict[str, str] | None, current: dict[str, str]) -> list[dict[str, any]] {
-    out: list[dict[str, any]] = [];
+    raw: list[dict[str, any]] = [];
     for goal in goals {
         gid = jid(goal);
         for p in [goal <-:RelevantTo:<-] {
@@ -203,23 +216,46 @@ def step_new_match(goals: list[Goal], prior: dict[str, str] | None, current: dic
                 if prior is not None and key in prior {
                     prev = (prior as dict[str, str])[key];
                 }
-                propose = e.strength == "strong";
-                if prior is not None {
-                    propose = _rank(e.strength) > _rank(prev);
-                }
                 first = evidence_item_from_jid(ev[0]);
                 span = str(first["span"]) if first is not None else "";
+                observed_at = str(first["observed_at"]) if first is not None else "";
                 reason = e.reason or f"relevant to '{goal.text}'";
-                out.append(make_finding(
-                    "new_match",
-                    f"{p.name} is a {e.strength} match for {goal.text}",
-                    f"{reason} (evidence: \"{_clip(span, 160)}\")",
-                    ev, pid, gid, "", e.opener,
-                    {"strength": e.strength, "prev_strength": prev},
-                    "GoalRank", "", propose
-                ));
+                raw.append({
+                    "key": key, "rank": _rank(e.strength), "observed_at": observed_at,
+                    "rose": _rank(e.strength) > _rank(prev),
+                    "title": f"{p.name} is a {e.strength} match for {goal.text}",
+                    "why": f"{reason} (evidence: \"{_clip(span, 160)}\")",
+                    "evidence": ev, "person_id": pid, "goal_id": gid, "draft": e.opener,
+                    "payload": {"strength": e.strength, "prev_strength": prev}
+                });
             }
         }
+    }
+
+    if prior is None {
+        top_keys: list[str] = [];
+        for c in sorted(raw, key=_new_match_sort_key, reverse=True) {
+            if len(top_keys) >= 3 {
+                break;
+            }
+            top_keys.append(str(c["key"]));
+        }
+        for c in raw {
+            c["propose"] = str(c["key"]) in top_keys;
+        }
+    } else {
+        for c in raw {
+            c["propose"] = bool(c["rose"]);
+        }
+    }
+
+    out: list[dict[str, any]] = [];
+    for c in raw {
+        out.append(make_finding(
+            "new_match", str(c["title"]), str(c["why"]), c["evidence"] as list[str],
+            str(c["person_id"]), str(c["goal_id"]), "", str(c["draft"]),
+            c["payload"] as dict[str, any], "GoalRank", "", bool(c["propose"])
+        ));
     }
     return out;
 }
@@ -373,11 +409,88 @@ def step_tend(me: Me, now: datetime) -> list[dict[str, any]] {
     return out;
 }
 
+"""True when `a` and `b` (each already fallback_tokens: lowercased, alnum,
+>= 4 chars, not a stopword) name the same idea allowing for a simple plural/
+suffix (`nurse` <-> `nurses`): equal, or one is a prefix of the other."""
+def _tok_match(a: str, b: str) -> bool {
+    if a == b {
+        return True;
+    }
+    return a.startswith(b) or b.startswith(a);
+}
+
+"""The distinct tokens of `need` (fallback_tokens) that also name something
+in THIS ONE candidate's own facts/intents/title/org text — never anywhere
+else on the root. Order follows the need's own token order."""
+def _answer_ask_match_tokens(need: str, cand: dict[str, any]) -> list[str] {
+    p = cand["person"] as Person;
+    text = f"{p.title} {p.org}";
+    for e in cand["evidence"] as list[dict[str, str]] {
+        text = text + " " + e["text"];
+    }
+    cand_tokens = fallback_tokens(text);
+    matched: list[str] = [];
+    for nt in fallback_tokens(need) {
+        for ct in cand_tokens {
+            if _tok_match(nt, ct) {
+                if nt not in matched {
+                    matched.append(nt);
+                }
+                break;
+            }
+        }
+    }
+    return matched;
+}
+
+def _candidate_by_person_id(candidates: list[dict[str, any]], pid: str) -> dict[str, any] | None {
+    for c in candidates {
+        if jid(c["person"] as Person) == pid {
+            return c;
+        }
+    }
+    return None;
+}
+
+"""Tighter than scoring.fallback_results alone (SOH-223 tune, B's live
+feedback: "experienced nurses" was answered by an account with no nurses).
+scoring.fallback_results is used only as a cheap pre-filter (>= 1 exact
+token overlap, per-candidate already); a candidate is KEPT only when either
+(a) it carries a cached scorer strength of strong/medium already (none this
+weekend — score_need is never called from this deterministic module — but
+kept so a future cached score is honored without a second gate), or (b) at
+least 2 distinct need tokens name something in that candidate's OWN
+facts/intents/title/org text. Each kept item carries its `matched` tokens
+for `why`."""
+def _answer_ask_hits(candidates: list[dict[str, any]], need: str) -> list[dict[str, any]] {
+    raw = fallback_results(candidates, need);
+    out: list[dict[str, any]] = [];
+    for h in raw {
+        strength = str(h["strength"]);
+        if strength == "strong" or strength == "medium" {
+            out.append({"person_id": h["person_id"], "evidence_ids": h["evidence_ids"], "matched": []});
+            continue;
+        }
+        pid = str(h["person_id"]);
+        cand = _candidate_by_person_id(candidates, pid);
+        if cand is None {
+            continue;
+        }
+        matched = _answer_ask_match_tokens(need, cand as dict[str, any]);
+        if len(matched) < 2 {
+            continue;
+        }
+        out.append({"person_id": h["person_id"], "evidence_ids": h["evidence_ids"], "matched": matched});
+    }
+    return out;
+}
+
 """answer_ask: incoming Exchange requests visible to me (same filter as
-ListIncomingRequests) where ScoreAgainstNeed's DETERMINISTIC candidate
-filter (collect_candidates + fallback_results) finds >= 1 candidate. The
-title and why carry the need and my own evidence text, never the requester's
-identity beyond what the request already shows."""
+ListIncomingRequests), newest first, where `_answer_ask_hits` (the tightened
+deterministic candidate filter) finds >= 1 candidate. Capped at
+AGENT_MAX_ANSWERS proposals per run. The title and why carry the need, the
+matched tokens, and my own evidence text — never the requester's identity
+beyond what the request already shows."""
 def step_answer_ask(me: Me, now: datetime) -> list[dict[str, any]] {
     out: list[dict[str, any]] = [];
     me_root = jid(root);
@@ -385,6 +498,9 @@ def step_answer_ask(me: Me, now: datetime) -> list[dict[str, any]] {
     answered = [r.request_id for r in shared_replies() if owner_root(r) == me_root];
     seen = 0;
     for req in sorted(all_requests(), key=_req_key, reverse=True) {
+        if len(out) >= AGENT_MAX_ANSWERS {
+            break;
+        }
         if seen >= AGENT_MAX_REQUESTS {
             break;
         }
@@ -403,7 +519,7 @@ def step_answer_ask(me: Me, now: datetime) -> list[dict[str, any]] {
         }
         seen += 1;
         candidates = collect_candidates(me, [req.from_handle], now);
-        hits = fallback_results(candidates, req.need);
+        hits = _answer_ask_hits(candidates, req.need);
         if not hits {
             continue;
         }
@@ -413,12 +529,11 @@ def step_answer_ask(me: Me, now: datetime) -> list[dict[str, any]] {
                 text_by_id[e["jid"]] = e["text"];
             }
         }
+        top = hits[0];
         ev_ids: list[str] = [];
-        for h in hits {
-            for i in h["evidence_ids"] as list[str] {
-                if i not in ev_ids and len(ev_ids) < 4 {
-                    ev_ids.append(i);
-                }
+        for i in top["evidence_ids"] as list[str] {
+            if i not in ev_ids and len(ev_ids) < 4 {
+                ev_ids.append(i);
             }
         }
         ev = resolvable(ev_ids);
@@ -426,14 +541,16 @@ def step_answer_ask(me: Me, now: datetime) -> list[dict[str, any]] {
             continue;
         }
         quote = text_by_id[ev[0]] if ev[0] in text_by_id else "";
+        matched = top["matched"] as list[str];
+        matches_note = f" (matches: {', '.join(matched)})" if matched else "";
         n = len(hits);
         word = "person" if n == 1 else "people";
         af = make_finding(
             "answer_ask",
             f"Answer an ask: {_clip(req.need, 100)}",
-            f"{req.from_handle} is looking for \"{_clip(req.need, 120)}\"; {n} {word} in your graph may fit: \"{_clip(quote, 160)}\". Replying shares a count and a strength, no names.",
-            ev, str(hits[0]["person_id"]), "", rid, "",
-            {"need": req.need, "from_handle": req.from_handle, "top_person_id": str(hits[0]["person_id"])},
+            f"{req.from_handle} is looking for \"{_clip(req.need, 120)}\"; {n} {word} in your graph may fit: \"{_clip(quote, 160)}\"{matches_note}. Replying shares a count and a strength, no names.",
+            ev, str(top["person_id"]), "", rid, "",
+            {"need": req.need, "from_handle": req.from_handle, "top_person_id": str(top["person_id"]), "matched": matched},
             "ReplyToRequest", "", True
         );
         # One key per request: a dismissed ask stays dismissed even when the top candidate changes.
@@ -449,10 +566,13 @@ def _req_key(r: IntroRequest) -> str {
 
 # ---------------------------------------------------------------- upsert
 
-"""Create, refresh, reopen or skip one finding. Returns 1 when an action
-became newly visible (created, or an approved new_match whose strength
-rose), else 0. A dismissed key is never re-proposed; an open key is
-refreshed (title/why/evidence/payload), never duplicated."""
+"""Create or refresh one finding. Returns 1 when an action became newly
+visible (created), else 0. SOH-223 tune: a key already tracked by an
+AgentAction is NEVER re-proposed while that action is open, approved or
+dismissed — open is refreshed in place (title/why/evidence/payload) but
+stays the same action; approved/dismissed are left alone entirely (the
+human already decided). Only `run_agent_for`'s snoozed-reopen path and a
+fresh key create/reopen an action."""
 def upsert(me: Me, f: dict[str, any], by_key: dict[str, AgentAction], now_s: str) -> int {
     key = str(f["dedup_key"]);
     ev = f["evidence"] as list[str];
@@ -462,9 +582,6 @@ def upsert(me: Me, f: dict[str, any], by_key: dict[str, AgentAction], now_s: str
     propose = bool(f["propose"]);
     if key in by_key {
         a = by_key[key];
-        if a.status == "dismissed" {
-            return 0;
-        }
         if a.status == "open" {
             a.title = str(f["title"]);
             a.why = str(f["why"]);
@@ -473,20 +590,8 @@ def upsert(me: Me, f: dict[str, any], by_key: dict[str, AgentAction], now_s: str
             if not a.draft {
                 a.draft = str(f["draft"]);
             }
-            return 0;
         }
-        if a.status == "approved" and a.kind == "new_match" and propose {
-            a.status = "open";
-            a.resolved_at = "";
-            a.approval_source = "";
-            a.title = str(f["title"]);
-            a.why = str(f["why"]);
-            a.evidence = ev;
-            a.payload_json = str(f["payload_json"]);
-            a.created_at = now_s;
-            return 1;
-        }
-        return 0;
+        return 0;   # approved / dismissed: never re-proposed
     }
     if not propose {
         return 0;
