@@ -30,6 +30,10 @@ impl app.signup -> None {
 }
 
 impl app.login -> None {
+    if not email.strip() or not password.strip() {
+        status = "Enter your email and password.";
+        return;
+    }
     ok: bool = False;
     login_pending = True;
     status = "";
@@ -92,6 +96,7 @@ impl app.logout -> None {
     EX["claims"] = {};
     EX["claiming"] = {};
     EX["friends"] = [];
+    INCOMING_SIG = "";
     publish_ex();
     AGENT["rows"] = [];
     AGENT["loaded"] = False;
@@ -110,28 +115,82 @@ impl app.logout -> None {
     me_about = "";
     status = "";
     clear_onboard_progress();
+    clear_cache();
 }
 
 # ---------------------------------------------------------------- routing after login
+
+"""SOH-236: paint last session's people/goals/rank/gap rows from localStorage
+immediately on mount, before any network call lands, and flip straight to Home
+so a returning user never sees the full "Loading your people…" screen. `enter`
+still runs its live loads right after this and will override anything that
+turns out stale (a real GetMe answer, onboarding, or a logged-out redirect)."""
+impl app.hydrate_cache -> None {
+    cached_people: any = cache_get("people");
+    if cached_people {
+        people = cached_people as list[Person];
+        view = "home";
+    }
+    cached_goals: any = cache_get("goals");
+    if cached_goals {
+        goals_list = cached_goals as list[dict];
+    }
+    cached_rank: any = cache_get("rank");
+    if cached_rank {
+        rd: dict = cached_rank as dict;
+        for k in list(rd.keys()) {
+            RANK_ROWS[k] = rd[k];
+        }
+        publish_rank();
+    }
+    cached_gaps: any = cache_get("gaps");
+    if cached_gaps {
+        gd: dict = cached_gaps as dict;
+        for k in list(gd.keys()) {
+            GAP_ROWS[k] = gd[k];
+        }
+        publish_gaps();
+    }
+}
 
 """GetMe reports a Me -> home; no Me yet -> onboarding step 1. Either way,
 first checks for onboarding progress this tab already had in flight (SOH-232):
 `OnboardMe` (step 1) already creates the Me node, so a bare "Me exists" check
 would otherwise drop a mid-onboarding reload/re-login on Home with zero
 people. `finish` clears the saved progress once onboarding actually
-completes, so a returning, fully onboarded user still lands on Home."""
+completes, so a returning, fully onboarded user still lands on Home.
+
+SOH-236: ListPeople / ListGoals / ListPromises start alongside GetMe instead
+of waiting behind it (none of the three depend on its answer) — ListPromises'
+result is discarded here, fired only to warm the 60s reader cache PromisesDue
+reads moments later. A GetMe exception (a stale/reset session token auth
+still accepts but that resolves to nothing) is treated as logged out rather
+than "new account, needs onboarding" — a genuinely new account never throws
+here, it just reports zero people. The full-screen "Loading your people…" only
+shows when `hydrate_cache` had nothing to paint — a returning user with a
+cache already sees last session's rows instead."""
 impl app.enter -> None {
     me_list: list = [];
-    view = "loading";
+    if len(people) == 0 {
+        view = "loading";
+    }
+    refresh();
+    load_goals();
+    warm_promises();
+    ok: bool = True;
     try {
         me_result = root spawn GetMe();
         me_list = me_result.reports;
     } except Exception as e {
-        me_list = [];
+        ok = False;
+    }
+    if not ok {
+        logout();
+        return;
     }
     progress: dict = load_onboard_progress();
     saved_step: int = (progress["step"] or 0) as int;
-    resumable: bool = saved_step >= 1 and saved_step <= 4;
+    resumable: bool = saved_step >= 1 and saved_step <= 4 and owns_progress(progress);
     if len(me_list) > 0 {
         me_name = (me_list[0].name or "") as str;
         me_about = (me_list[0].about or "") as str;
@@ -141,12 +200,11 @@ impl app.enter -> None {
             about = ((progress["about"] or me_about) as str);
             card = (progress["card"] or {}) as dict;
             rows = (progress["rows"] or empty_rows()) as list[dict];
+            onboard = (progress["onboard"] or {}) as dict;
             view = "onboarding";
             return;
         }
         view = "home";
-        refresh();
-        load_goals();
         load_mine();
         load_incoming();
         load_friends();
@@ -157,6 +215,7 @@ impl app.enter -> None {
         about = ((progress["about"] or "") as str);
         card = (progress["card"] or {}) as dict;
         rows = (progress["rows"] or empty_rows()) as list[dict];
+        onboard = (progress["onboard"] or {}) as dict;
         view = "onboarding";
     } else {
         step = 1;
@@ -166,13 +225,18 @@ impl app.enter -> None {
 
 impl app.refresh -> None {
     found: list[Person] = [];
+    ok: bool = True;
     try {
         found = await list_people();
         status = "";
     } except Exception as e {
         status = "couldn't reach the server";
+        ok = False;
     }
     people = found;
+    if ok {
+        cache_set("people", found);
+    }
 }
 
 # ---------------------------------------------------------------- onboarding
@@ -516,12 +580,14 @@ impl app.capture_done -> None {
     set_tab("home");
     view = "home";
     refresh();
+    # SOH-236: mark every goal's ranking/gaps stale WITHOUT clearing the rows —
+    # the forced re-rank below already keeps stale rows on screen (dimmed via
+    # RANK_PENDING/GAP_PENDING) instead of a skeleton for two chained LLM calls.
     for k in list(RANK_ROWS.keys()) {
-        RANK_ROWS[k] = None;
         RANK_STALE[k] = True;
     }
     for k in list(GAP_ROWS.keys()) {
-        GAP_ROWS[k] = None;
+        GAP_STALE[k] = True;
     }
     publish_rank();
     publish_gaps();
@@ -578,20 +644,22 @@ impl app.load_goals -> None {
     }
     goals_list = found;
     goals_loaded = True;
+    cache_set("goals", found);
     gid: str = active_goal_id(found);
     if gid {
         ensure_rank(gid);
     }
 }
 
-"""GoalRank(goal_id) into the cache. Skips when cached (unless `force`) or
-already in flight. A forced re-rank keeps the old rows on screen (dimmed)."""
+"""GoalRank(goal_id) into the cache. Skips when cached (unless `force` or
+marked stale) or already in flight. A forced re-rank keeps the old rows on
+screen (dimmed)."""
 impl app.ensure_rank(goal_id: str, force: bool = False) -> None {
     if not goal_id {
         return;
     }
     entry: dict = (RANK_ROWS[goal_id] or {}) as dict;
-    if entry["ok"] and not force {
+    if entry["ok"] and not force and not RANK_STALE[goal_id] {
         publish_rank();
         ensure_gaps(goal_id);
         return;
@@ -616,6 +684,7 @@ impl app.ensure_rank(goal_id: str, force: bool = False) -> None {
     RANK_STALE[goal_id] = False;
     RANK_PENDING[goal_id] = False;
     publish_rank();
+    cache_set("rank", RANK_ROWS);
     # GapFinder reads the RelevantTo edges GoalRank just rebuilt.
     ensure_gaps(goal_id, force);
 }
@@ -719,13 +788,13 @@ impl app.publish_gaps -> None {
 }
 
 """GapFinder(goal_id) into the cache (an LLM call: once per goal unless forced
-by Re-rank / a new note / a claimed reveal)."""
+by Re-rank / a new note / a claimed reveal, or marked stale by a new note)."""
 impl app.ensure_gaps(goal_id: str, force: bool = False) -> None {
     if not goal_id {
         return;
     }
     entry: dict = (GAP_ROWS[goal_id] or {}) as dict;
-    if (entry["ok"] and not force) or GAP_PENDING[goal_id] {
+    if (entry["ok"] and not force and not GAP_STALE[goal_id]) or GAP_PENDING[goal_id] {
         publish_gaps();
         return;
     }
@@ -742,8 +811,10 @@ impl app.ensure_gaps(goal_id: str, force: bool = False) -> None {
         return;
     }
     GAP_ROWS[goal_id] = {"ok": True, "rows": out};
+    GAP_STALE[goal_id] = False;
     GAP_PENDING[goal_id] = False;
     publish_gaps();
+    cache_set("gaps", GAP_ROWS);
 }
 
 impl app.retry_gaps -> None {
@@ -803,6 +874,9 @@ impl app.load_friends -> None {
     publish_ex();
 }
 
+"""SOH-236: a poll tick whose ids/statuses/my_reply match the last published
+result is dropped here instead of re-publishing (which would re-render every
+people row for nothing)."""
 impl app.load_incoming -> None {
     if EX["inc_busy"] {
         return;
@@ -816,6 +890,11 @@ impl app.load_incoming -> None {
         return;
     }
     EX["inc_busy"] = False;
+    sig: str = incoming_sig(found);
+    if sig == INCOMING_SIG {
+        return;
+    }
+    INCOMING_SIG = sig;
     EX["incoming"] = found;
     publish_ex();
 }
@@ -1180,11 +1259,15 @@ impl app.start_auto_checks -> None {
     }
 }
 
-"""Sequential, one at a time (mirrors the ordering ReplyToRequest used to run
-under its own local effect, before SOH-226 moved it here)."""
+"""Concurrent (SOH-236): each `friend_check` is started without waiting on the
+one before it — up to 5 LLM-backed ReplyToRequest calls run at once instead of
+serially. `friend_check` already reads/writes `EX["friend"][rid]` fresh on
+each resolve (never a stale pre-await snapshot), so calls for different ids
+never clobber each other; the same rid is never in `ids` twice in one batch
+(`pick_unchecked` de-dupes)."""
 impl app.run_auto_checks(ids: list[str]) -> None {
     for rid in ids {
-        await friend_check(rid);
+        friend_check(rid);
     }
 }
 
@@ -1225,9 +1308,14 @@ impl app.load_actions -> None {
     publish_agent();
 }
 
-"""RunAgent(reason) then ListAgentActions. One run at a time; a trigger that
-arrives mid-run (e.g. Capture -> Done while the open-run is going) runs once more
-after it. The skeleton cards show for the whole run + reload."""
+"""ListAgentActions first (whatever's already stored renders right away), then
+RunAgent, then ListAgentActions again to pick up what it found (SOH-236: this
+used to await RunAgent before the first load, so stored suggestions stayed
+behind a full skeleton for the whole run). One run at a time; a trigger that
+arrives mid-run (e.g. Capture -> Done while the open-run is going) runs once
+more after it. `running` stays true the whole time, so the two skeleton cards
+(not a full-list skeleton, once `loaded` is true) sit on top of the real rows
+until the second load lands."""
 impl app.run_agent_now(reason: str) -> None {
     if not agent_available() {
         AGENT["loaded"] = True;
@@ -1241,6 +1329,7 @@ impl app.run_agent_now(reason: str) -> None {
     AGENT["running"] = True;
     AGENT["error"] = "";
     publish_agent();
+    await load_actions();
     out: dict = {};
     try {
         out = await run_agent(reason);

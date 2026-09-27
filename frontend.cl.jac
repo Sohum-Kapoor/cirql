@@ -53,8 +53,10 @@ import from .lib.local_edits { local_view, local_rows }
 import from react { useEffect }
 import from .lib.session { session_tab, save_tab, session_cap_kind, save_cap_kind, clear_session_ui }
 import from .lib.session { session_agent_run, save_agent_run, agent_run_age_ms, now_ms }
+import from .lib.cache { cache_get, cache_set, clear_cache }
 import from .components.api { run_agent, list_agent_actions, resolve_agent_action, agent_available, list_friends }
 import from .components.api { onboard_me, capture, goal_rank, list_people, list_goals, set_goal, close_goal, mocks_on }
+import from .components.api { list_promises }
 import from .components.api {
     gap_finder, publish_card, post_request, list_my_requests, decline_request, claim_reveal,
     list_incoming_requests, reply_to_request, approve_reply, opt_in, reveal, decline_reply
@@ -88,9 +90,13 @@ glob RANK_ROWS: dict = {},
      RANK_STALE: dict = {};
 
 # GapFinder cache, keyed by goal_id — same shape and rules as RANK_* above.
+# GAP_STALE mirrors RANK_STALE (SOH-236): a new note marks every goal's gaps
+# stale without clearing GAP_ROWS, so the old rows stay on screen (dimmed via
+# GAP_PENDING) instead of a skeleton for the chained GapFinder call.
 glob GAP_ROWS: dict = {},
      GAP_PENDING: dict = {},
-     GAP_ERRORS: dict = {};
+     GAP_ERRORS: dict = {},
+     GAP_STALE: dict = {};
 
 # Exchange state (SOH-172). Module-level for the same stale-snapshot reason;
 # `publish_ex()` copies it into the reactive `ex` mirror.
@@ -100,6 +106,37 @@ glob GAP_ROWS: dict = {},
 #   claims[reply_id]: ClaimReveal result or { error }; claiming[reply_id]: in flight
 #   friends: ListFriends rows (SOH-218) — the ask sheet's Friends audience needs >= 1
 glob EX: dict = {"mine": [], "incoming": [], "friend": {}, "claims": {}, "claiming": {}, "mine_busy": False, "inc_busy": False, "friends": []};
+
+# SOH-236: the signature (ids + statuses + my_reply) of the last
+# ListIncomingRequests poll that actually got published — `load_incoming`
+# skips `publish_ex()` when a poll tick's result matches it, so an unchanged
+# incoming list never re-renders every people row.
+glob INCOMING_SIG: str = "";
+
+"""Fires ListPromises purely to warm the 60s reader cache PromisesDue reads
+moments later (SOH-236); its own result is never used here. Wrapped so a
+fire-and-forget call from `enter()` (unauthenticated/expired session, network
+blip) never becomes an unhandled promise rejection."""
+async def warm_promises() -> None {
+    try {
+        await list_promises();
+    } except Exception as e {
+        return;
+    }
+}
+
+def incoming_sig(rows: list[dict]) -> str {
+    parts: list[str] = [];
+    for r in rows {
+        rid: str = (r["_jac_id"] or "") as str;
+        st: str = (r["status"] or "") as str;
+        my: dict = (r["my_reply"] or {}) as dict;
+        my_id: str = (my["_jac_id"] or "") as str;
+        my_st: str = (my["status"] or "") as str;
+        parts = parts + [rid + ":" + st + ":" + my_id + ":" + my_st];
+    }
+    return join_with(parts, "|");
+}
 
 def empty_ex() -> dict {
     return {"mine": [], "incoming": [], "friend": {}, "claims": {}, "claiming": {}, "mine_busy": False, "inc_busy": False, "friends": []};
@@ -343,7 +380,27 @@ def empty_rows() -> list[dict] {
 # dropping the user on Home (Me can already exist after step 1). Cleared on
 # `finish` and `logout`. `lib/session.cl.jac`'s helpers don't have an
 # onboarding key, so this is its own small guarded read/write, same idiom.
+# SOH-236: tagged with `_current_token()` at save time and checked again at
+# read time — a saved snapshot only resumes for the account that wrote it, so
+# a different (or previously logged-out) account never gets dropped mid-way
+# through someone else's onboarding.
 glob ONBOARD_KEY: str = "cirql.onboarding";
+
+"""The jac-client auth token this browser currently holds (localStorage
+"jac_token" — the same key `jacIsLoggedIn` reads). Changes on every fresh
+login/signup, so it works as a stable per-account tag without a server call."""
+def _current_token() -> str {
+    out: str = "";
+    try {
+        v: any = localStorage.getItem("jac_token");  # jac:ignore[W2001]
+        if v {
+            out = v as str;
+        }
+    } except Exception as e {
+        out = "";
+    }
+    return out;
+}
 
 def load_onboard_progress() -> dict {
     out: dict = {};
@@ -358,8 +415,20 @@ def load_onboard_progress() -> dict {
     return out or {};
 }
 
-def save_onboard_progress(step: int, name: str, about: str, card: dict, rows: list[dict]) -> None {
-    snap: dict = {"step": step, "name": name, "about": about, "card": card, "rows": rows};
+"""True only when `progress` was saved by the account currently logged in
+(an older snapshot with no "owner" tag, or one tagged for a different
+account, is never honored)."""
+def owns_progress(progress: dict) -> bool {
+    owner: str = (progress["owner"] or "") as str;
+    return bool(owner) and owner == _current_token();
+}
+
+"""`onboard` (SOH-236) carries OnboardMe's drafted `goals`/`interests` — without
+it, a reload on step 2+ showed "Set goal" and no interests, and step 4 read
+"Add a goal to see who can help" even though OnboardMe had already drafted
+one."""
+def save_onboard_progress(step: int, name: str, about: str, card: dict, rows: list[dict], onboard: dict) -> None {
+    snap: dict = {"step": step, "name": name, "about": about, "card": card, "rows": rows, "onboard": onboard, "owner": _current_token()};
     try {
         sessionStorage.setItem(ONBOARD_KEY, JSON.stringify(snap));  # jac:ignore[W2001]
     } except Exception as e {
@@ -461,6 +530,9 @@ def:pub app -> JsxElement {
 
     can with entry {
         if not public_handle and jacIsLoggedIn() {
+            # SOH-236: render last session's cached people/goals/rank/gap rows
+            # right away, before `enter()`'s network calls land.
+            hydrate_cache();
             enter();
         }
     }
@@ -469,6 +541,7 @@ def:pub app -> JsxElement {
     async def login -> None;
     def logout -> None;
     async def refresh -> None;
+    def hydrate_cache -> None;
     async def enter -> None;
     async def submit_about -> None;
     def set_card_field(field: str, value: any) -> None;
@@ -622,16 +695,17 @@ def:pub app -> JsxElement {
     # and persist the step + typed values so a reload resumes in place.
     onboard_card_key: str = JSON.stringify(card);  # jac:ignore[W2001]
     onboard_rows_key: str = JSON.stringify(rows);  # jac:ignore[W2001]
+    onboard_draft_key: str = JSON.stringify(onboard);  # jac:ignore[W2001]
     useEffect(lambda {
         if view == "onboarding" {
             window.scrollTo(0, 0);  # jac:ignore[W2001,E1053]
             document.documentElement.scrollTop = 0;  # jac:ignore[W2001,E1053]
-            save_onboard_progress(step, onboard_name, about, card, rows);
+            save_onboard_progress(step, onboard_name, about, card, rows, onboard);
         }
         return lambda { };
-    }, [view, step, onboard_name, about, onboard_card_key, onboard_rows_key]);
+    }, [view, step, onboard_name, about, onboard_card_key, onboard_rows_key, onboard_draft_key]);
     poll_home_on: bool = view == "home";
-    poll_home_ms: int = 5000 if tab == "inbox" else 15000;
+    poll_home_ms: int = 5000 if tab == "inbox" else 60000;
     poll_req_on: bool = view == "request" and mine_wants_poll(ex_mine, ex_claims);
 
     # Public card (SOH-228): every `has`/effect above has already run this
@@ -810,6 +884,7 @@ def:pub app -> JsxElement {
                         onNameChange={lambda v: str { onboard_name = v; }}
                         onAboutChange={lambda v: str { about = v; }}
                         onContinue={submit_about}
+                        onLogin={logout}
                     />
                 } elif step == 2 {
                     <CardStep

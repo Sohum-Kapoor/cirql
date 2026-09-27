@@ -1,6 +1,9 @@
 """Onboarding step 1 — tell Cirql about yourself; Continue calls OnboardMe. OWNER: Person B.
 
 Stateless: the shell owns `about`, `pending`, `error` and the OnboardMe call.
+`onLogin` (SOH-236) logs the current session out and returns to the login
+screen — for someone who already has an account and landed here by mistake
+(a stale/reset session, or a new-account slip).
 """
 
 import from "..ui.button" { Button }
@@ -15,7 +18,8 @@ def:pub AboutStep(
     error: str,
     onNameChange: Callable[[str], None],
     onAboutChange: Callable[[str], None],
-    onContinue: Callable[[], None]
+    onContinue: Callable[[], None],
+    onLogin: Callable[[], None]
 ) -> JsxElement {
     def handle_name_change(e: ChangeEvent) {
         onNameChange(e.target.value);
@@ -27,6 +31,10 @@ def:pub AboutStep(
 
     def handle_continue(e: MouseEvent) {
         onContinue();
+    }
+
+    def handle_login(e: MouseEvent) {
+        onLogin();
     }
 
     can_continue: bool = len(name.strip()) > 0 and len(about.strip()) > 0 and not pending;
@@ -70,5 +78,15 @@ def:pub AboutStep(
             <Button className="w-full" size="lg" disabled={not can_continue} onClick={handle_continue}>
                 {"Reading…" if pending else "Continue"}
             </Button>
+            <p className="text-center text-body-sm text-muted-foreground">
+                Already have an account?{" "}
+                <button
+                    type="button"
+                    className="font-medium text-foreground underline underline-offset-2"
+                    onClick={handle_login}
+                >
+                    Log in
+                </button>
+            </p>
         </div>;
 }

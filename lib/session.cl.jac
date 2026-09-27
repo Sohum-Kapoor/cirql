@@ -6,8 +6,11 @@ WKWebView configs throw); unreadable -> the default.
 
 Keys: cirql.tab (home | inbox | people; a stored "asks" from before SOH-224 reads
 as "inbox"), cirql.cap_kind (voice | guided | paste), cirql.agent_run (the last
-RunAgent report this session, JSON: { ran_at, new, total_open, ms } — `ms` is the
-client clock when it finished, so "ran N min ago" never trusts server time).
+RunAgent report, JSON: { ran_at, new, total_open, ms } — `ms` is the client clock
+when it finished, so "ran N min ago" never trusts server time). SOH-236:
+cirql.agent_run moved to localStorage (survives a reload/new tab, not just this
+one) so reopening the app right after a run still shows "ran N min ago" instead
+of re-running immediately; still cleared on logout.
 """
 
 glob:pub TAB_KEY: str = "cirql.tab",
@@ -32,6 +35,29 @@ def _get(key: str) -> str {
 def _put(key: str, value: str) -> None {
     try {
         sessionStorage.setItem(key, value);  # jac:ignore[W2001]
+    } except Exception as e {
+        return;
+    }
+}
+
+"""Same guarded shape as `_get`/`_put`, against localStorage (SOH-236: the
+agent-run timestamp needs to survive a reload/new tab, not just this one)."""
+def _get_local(key: str) -> str {
+    out: str = "";
+    try {
+        v: any = localStorage.getItem(key);  # jac:ignore[W2001]
+        if v {
+            out = v as str;
+        }
+    } except Exception as e {
+        out = "";
+    }
+    return out;
+}
+
+def _put_local(key: str, value: str) -> None {
+    try {
+        localStorage.setItem(key, value);  # jac:ignore[W2001]
     } except Exception as e {
         return;
     }
@@ -64,9 +90,10 @@ def:pub save_cap_kind(kind: str) -> None {
     }
 }
 
-"""The last agent run this session: { ran_at, new, total_open, ms } or {}."""
+"""The last agent run: { ran_at, new, total_open, ms } or {}. SOH-236:
+localStorage, not sessionStorage — a reopened tab still remembers it."""
 def:pub session_agent_run() -> dict {
-    raw: str = _get(AGENT_RUN_KEY);
+    raw: str = _get_local(AGENT_RUN_KEY);
     out: dict = {};
     if not raw {
         return out;
@@ -80,7 +107,7 @@ def:pub session_agent_run() -> dict {
 }
 
 def:pub save_agent_run(run: dict) -> None {
-    _put(AGENT_RUN_KEY, JSON.stringify(run));  # jac:ignore[W2001]
+    _put_local(AGENT_RUN_KEY, JSON.stringify(run));  # jac:ignore[W2001]
 }
 
 """The client clock in ms (what `last_run.ms` is measured in)."""
@@ -102,7 +129,11 @@ def:pub clear_session_ui() -> None {
     try {
         sessionStorage.removeItem(TAB_KEY);  # jac:ignore[W2001]
         sessionStorage.removeItem(CAP_KIND_KEY);  # jac:ignore[W2001]
-        sessionStorage.removeItem(AGENT_RUN_KEY);  # jac:ignore[W2001]
+    } except Exception as e {
+        return;
+    }
+    try {
+        localStorage.removeItem(AGENT_RUN_KEY);  # jac:ignore[W2001]
     } except Exception as e {
         return;
     }
