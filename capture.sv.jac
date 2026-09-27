@@ -461,10 +461,152 @@ def resolve_person(
     return entry;
 }
 
+"""SOH-231: an owned Person by id among `[me ->:Knows:->]` only, or None
+(empty/unknown/foreign id) - same own-root-only idiom `person.sv.jac`
+resolves `person_id` with, pulled into a plain def so a test can call it
+directly on a hand-built `me`/`p` pair (`jac-walker-patterns`: a walker's
+lookup logic doesn't reliably re-see fixtures built in the same `jac test`
+method through a chained traversal from `root`)."""
+def find_hinted_person(me: Me, person_id: str) -> Person | None {
+    if len(person_id.strip()) == 0 {
+        return None;
+    }
+    for p in [me ->:Knows:->] {
+        if jid(p) == person_id {
+            return p;
+        }
+    }
+    return None;
+}
+
+"""SOH-231: `person_id` on `Capture` names a Person the caller already
+knows; 'Name (title at org)' / 'Name (title)' / 'Name (org)' / 'Name' -
+whichever pieces are known - is how the extraction prompt is told about
+them."""
+def hint_label(p: Person) -> str {
+    title = p.title.strip();
+    org = p.org.strip();
+    if len(title) > 0 and len(org) > 0 {
+        return f"{p.name} ({title} at {org})";
+    }
+    if len(title) > 0 {
+        return f"{p.name} ({title})";
+    }
+    if len(org) > 0 {
+        return f"{p.name} ({org})";
+    }
+    return p.name;
+}
+
+"""Appended to the TEXT PASSED TO THE MODEL only - never to the stored
+Note.text (`note.text` stays exactly what the caller typed, so every span
+check in `safe_span` still runs against the real note, verbatim)."""
+def capture_hint_suffix(p: Person) -> str {
+    return f"\n\nThis note is about {hint_label(p)}; refer to them by that name.";
+}
+
+"""SOH-231: takes the plain-obj CaptureExtraction `extract_capture`
+returned (before any graph writes) and mutates it in place so every
+reference to the hinted person now reads `hinted.name` exactly:
+  - a name in `x.people` that matches `hinted.name` by `names.match_names`
+    (same or ambiguous - the hint context resolves the ambiguity);
+  - failing that, the model's ONLY extracted person, whatever it's called;
+  - a fact/intent/promise naming NOBODY at all (SOH-231c: nothing in the
+    note names them, but the note IS about the hinted person, so an
+    unattributed claim is theirs).
+`apply_extraction` then pre-seeds its `resolved` map with that exact key so
+`resolve_person` reuses the existing node instead of opening a new
+proposed one over an org/title mismatch the model guessed. Returns True
+when anything was rewritten, so the caller knows whether the hinted
+person's Knows edge should be touched at all."""
+def attach_hint(x: CaptureExtraction, hinted: Person) -> bool {
+    target_key = "";
+    for xp in x.people {
+        if len(xp.name.strip()) == 0 {
+            continue;
+        }
+        verdict = match_names(xp.name, hinted.name);
+        if verdict in ["same", "ambiguous"] {
+            target_key = " ".join(xp.name.strip().lower().split());
+            break;
+        }
+    }
+    if len(target_key) == 0 and len(x.people) == 1 {
+        target_key = " ".join(x.people[0].name.strip().lower().split());
+    }
+
+    touched = len(target_key) > 0;
+    if touched {
+        for xp in x.people {
+            if " ".join(xp.name.strip().lower().split()) == target_key {
+                xp.name = hinted.name;
+            }
+        }
+        for xf in x.facts {
+            if " ".join(xf.about_name.strip().lower().split()) == target_key {
+                xf.about_name = hinted.name;
+            }
+        }
+        for xi in x.intents {
+            if " ".join(xi.about_name.strip().lower().split()) == target_key {
+                xi.about_name = hinted.name;
+            }
+        }
+        for xpr in x.promises {
+            if " ".join(xpr.to_name.strip().lower().split()) == target_key {
+                xpr.to_name = hinted.name;
+            }
+        }
+        for xt in x.ties {
+            if " ".join(xt.from_name.strip().lower().split()) == target_key {
+                xt.from_name = hinted.name;
+            }
+            if " ".join(xt.to_name.strip().lower().split()) == target_key {
+                xt.to_name = hinted.name;
+            }
+        }
+    }
+
+    for xf in x.facts {
+        if len(xf.about_name.strip()) == 0 {
+            xf.about_name = hinted.name;
+            touched = True;
+        }
+    }
+    for xi in x.intents {
+        if len(xi.about_name.strip()) == 0 {
+            xi.about_name = hinted.name;
+            touched = True;
+        }
+    }
+    for xpr in x.promises {
+        if len(xpr.to_name.strip()) == 0 {
+            xpr.to_name = hinted.name;
+            touched = True;
+        }
+    }
+
+    return touched;
+}
+
 """Deterministic, testable: turns an already-built CaptureExtraction into graph writes.
-Returns the Capture contract dict (contracts/walkers.md)."""
-def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = "") -> dict[str, any] {
+Returns the Capture contract dict (contracts/walkers.md). SOH-231:
+`hinted_person`, when set, is pre-seeded into `resolved` so every reference
+renamed to `hinted_person.name` (by `attach_hint`) reuses that exact node;
+its Knows edge's `how_met` is overwritten only when `how_met` is non-empty
+(the explicit override, same rule SOH-166 already applies to new edges)."""
+def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = "", hinted_person: Person | None = None) -> dict[str, any] {
     resolved: dict[str, any] = {};
+    if hinted_person is not None {
+        hp = hinted_person as Person;
+        hkey = " ".join(hp.name.strip().lower().split());
+        resolved[hkey] = {"person": hp, "is_new": False, "ambiguous_with": []};
+        if len(how_met.strip()) > 0 {
+            for k in [edge me ->:Knows:-> hp] {
+                k.how_met = how_met.strip();
+            }
+        }
+    }
     now_dt = datetime.now();
     now = now_dt.isoformat();
 
@@ -674,6 +816,7 @@ walker:priv Capture {
     has audio_ref: str = "";        # from Transcribe; stored on the Note as the receipt to the audio
     has how_met: str = "";          # SOH-166: when set, every NEW Knows edge this capture creates uses it
     has event_id: str = "";         # SOH-217: when set (and the event is the caller's), every NEW person from this capture gets a MetAt tie to it
+    has person_id: str = "";        # SOH-231: when set (and the person is the caller's own), hints the extraction and maps a matching extracted person onto them
     has reports: list[dict[str, any]] = [];
 
     can go with Root entry {
@@ -698,6 +841,10 @@ walker:priv Capture {
             }
         }
 
+        # SOH-231: resolve person_id among the caller's OWN people only —
+        # a foreign/unknown person_id is silently ignored (behaves as today).
+        hinted_person = find_hinted_person(me, self.person_id);
+
         empty_shape = {
             "note_id": jid(note),
             "people": [],
@@ -708,14 +855,26 @@ walker:priv Capture {
             "skipped_people": 0
         };
 
+        capture_text = self.text;
+        if hinted_person is not None {
+            capture_text = self.text + capture_hint_suffix(hinted_person as Person);
+        }
+
         try {
-            extraction = extract_capture(self.text);
+            extraction = extract_capture(capture_text);
         } except Exception {
             report empty_shape;
             disengage;
         }
 
-        result = apply_extraction(note, me, extraction, how_met=self.how_met);
+        hint_for_apply: Person | None = None;
+        if hinted_person is not None {
+            if attach_hint(extraction, hinted_person as Person) {
+                hint_for_apply = hinted_person;
+            }
+        }
+
+        result = apply_extraction(note, me, extraction, how_met=self.how_met, hinted_person=hint_for_apply);
 
         if target_event is not None {
             attach_metat_for_new_people(note, target_event as Event, result);

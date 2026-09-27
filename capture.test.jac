@@ -6,7 +6,7 @@ carries a random per-call suffix (`_uid()`) — this guarantees a name is always
 genuinely new, whether this is the first run ever or the hundredth.
 """
 
-import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction, hedge_fact_text, fact_source_kind, specific_follow_up, promise_is_only_a_want, default_how_met, second_person, attach_metat_for_new_people, is_role_only, _human_date }
+import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction, hedge_fact_text, fact_source_kind, specific_follow_up, promise_is_only_a_want, default_how_met, second_person, attach_metat_for_new_people, is_role_only, _human_date, attach_hint, find_hinted_person, hint_label, capture_hint_suffix }
 import from schema { Event, Fact, HasEvent, Intent, Knows, Me, Mentions, MetAt, Note, Person, Promise, Reported, PromiseTo }
 import uuid;
 import from datetime { datetime }
@@ -769,4 +769,197 @@ test "apply_extraction: a description with context beyond the role word still be
     assert (people[0]["person"] as Person).name == "the tall girl from the climbing gym";
     assert len(result["facts"] as list[dict[str, any]]) == 1;
     assert result["skipped_people"] == 0;
+}
+
+# ---------------------------------------------------------------- SOH-231 Capture(person_id) hint
+
+test "find_hinted_person: empty person_id -> None; unknown person_id -> None; known id -> that Person" {
+    me = _fresh_me();
+    suffix = _uid();
+    note = _fresh_note(f"Met Priya{suffix} at the meetup.");
+    r0: dict[str, any] = {};
+    priya = resolve_person(f"Priya{suffix}", me, note, r0, org="Acme", title="Eng")["person"] as Person;
+
+    assert find_hinted_person(me, "") is None;
+    assert find_hinted_person(me, "not-a-real-id-" + suffix) is None;
+    found = find_hinted_person(me, jid(priya));
+    assert found is not None and jid(found as Person) == jid(priya);
+}
+
+test "hint_label / capture_hint_suffix: 'Name (title at org)', falling back to fewer pieces" {
+    both = (root ++> Person(name="Rosa Delgado", org="Fleetly", title="Founder"))[0];
+    title_only = (root ++> Person(name="Klaus Vogel", org="", title="Engineer"))[0];
+    org_only = (root ++> Person(name="Lena Marsh", org="Siemens", title=""))[0];
+    neither = (root ++> Person(name="Sam Lee", org="", title=""))[0];
+
+    assert hint_label(both) == "Rosa Delgado (Founder at Fleetly)";
+    assert hint_label(title_only) == "Klaus Vogel (Engineer)";
+    assert hint_label(org_only) == "Lena Marsh (Siemens)";
+    assert hint_label(neither) == "Sam Lee";
+
+    suffix = capture_hint_suffix(both);
+    assert suffix == "\n\nThis note is about Rosa Delgado (Founder at Fleetly); refer to them by that name.";
+}
+
+test "SOH-231(a): several OTHER named people and no name/single-person match to the hint - attach_hint returns False and nothing is renamed" {
+    me = _fresh_me();
+    suffix = _uid();
+    note = _fresh_note(f"Priya{suffix} Sharma");
+    hinted = resolve_person(f"Priya{suffix} Sharma", me, note, {}, org="Acme", title="Eng")["person"] as Person;
+
+    _fresh_note(f"Ran into Dana{suffix} Reyes and Sam{suffix} Okafor at the gym.");
+    x = CaptureExtraction(
+        people=[
+            XPerson(name=f"Dana{suffix} Reyes", org="", title="", span=f"Dana{suffix} Reyes"),
+            XPerson(name=f"Sam{suffix} Okafor", org="", title="", span=f"Sam{suffix} Okafor")
+        ],
+        facts=[XFact(about_name=f"Dana{suffix} Reyes", text="training for a marathon", span="training for a marathon")],
+        intents=[], promises=[], ties=[]
+    );
+    matched = attach_hint(x, hinted);
+    assert not matched;
+    assert x.people[0].name == f"Dana{suffix} Reyes";
+    assert x.people[1].name == f"Sam{suffix} Okafor";
+    assert x.facts[0].about_name == f"Dana{suffix} Reyes";
+}
+
+test "SOH-231(b): a hinted person + extraction naming them by first name maps onto the existing node, no duplicate" {
+    me = _fresh_me();
+    suffix = _uid();
+    seed_note = _fresh_note(f"Met Priya{suffix} Sharma at the demo day.");
+    hinted = resolve_person(f"Priya{suffix} Sharma", me, seed_note, {}, org="Acme", title="Eng")["person"] as Person;
+    before_count = len([p for p in [me ->:Knows:->] if p.name == hinted.name]);
+
+    note = _fresh_note(f"Coffee with Priya{suffix}. She's now leading a new team and wants intros to investors.");
+    x = CaptureExtraction(
+        people=[XPerson(name=f"Priya{suffix}", org="", title="", span=f"Priya{suffix}")],
+        facts=[XFact(about_name=f"Priya{suffix}", text="now leading a new team", span="now leading a new team")],
+        intents=[XIntent(about_name=f"Priya{suffix}", kind="need", text="wants intros to investors", span="wants intros to investors")],
+        promises=[], ties=[]
+    );
+    matched = attach_hint(x, hinted);
+    assert matched;
+    assert x.people[0].name == hinted.name;
+    assert x.facts[0].about_name == hinted.name;
+    assert x.intents[0].about_name == hinted.name;
+
+    result = apply_extraction(note, me, x, hinted_person=hinted);
+    people = result["people"] as list[dict[str, any]];
+    assert len(people) == 1;
+    p = people[0]["person"] as Person;
+    assert jid(p) == jid(hinted);
+    assert not (people[0]["is_new"] as bool);
+
+    after_count = len([p2 for p2 in [me ->:Knows:->] if p2.name == hinted.name]);
+    assert after_count == before_count, "no duplicate Person was created";
+
+    facts = result["facts"] as list[dict[str, any]];
+    intents = result["intents"] as list[dict[str, any]];
+    assert len(facts) == 1 and facts[0]["about"] == jid(hinted);
+    assert len(intents) == 1 and intents[0]["about"] == jid(hinted);
+}
+
+test "SOH-231(b): the model's single extracted person is mapped onto the hinted person even when named differently" {
+    me = _fresh_me();
+    suffix = _uid();
+    seed_note = _fresh_note(f"Met Marcus{suffix} Delgado, the accessibility consultant.");
+    hinted = resolve_person(f"Marcus{suffix} Delgado", me, seed_note, {}, org="", title="")["person"] as Person;
+
+    note = _fresh_note("He mentioned he's now consulting for the county.");
+    x = CaptureExtraction(
+        people=[XPerson(name="the accessibility consultant", org="", title="", span="the accessibility consultant", named=False)],
+        facts=[XFact(about_name="the accessibility consultant", text="now consulting for the county", span="now consulting for the county")],
+        intents=[], promises=[], ties=[]
+    );
+    matched = attach_hint(x, hinted);
+    assert matched;
+    assert x.people[0].name == hinted.name;
+
+    result = apply_extraction(note, me, x, hinted_person=hinted);
+    people = result["people"] as list[dict[str, any]];
+    assert len(people) == 1;
+    assert jid(people[0]["person"] as Person) == jid(hinted);
+}
+
+test "SOH-231(b): how_met on the hinted person's Knows edge is overwritten only when how_met was passed" {
+    me = _fresh_me();
+    suffix = _uid();
+    seed_note = _fresh_note(f"Met Amara{suffix} Okafor at orientation.");
+    hinted = resolve_person(f"Amara{suffix} Okafor", me, seed_note, {}, org="", title="")["person"] as Person;
+    old_how = ([edge me ->:Knows:-> hinted])[0].how_met;
+
+    note = _fresh_note(f"Caught up with Amara{suffix}, she's applying to grad school.");
+    x = CaptureExtraction(
+        people=[XPerson(name=f"Amara{suffix}", org="", title="", span=f"Amara{suffix}")],
+        facts=[XFact(about_name=f"Amara{suffix}", text="applying to grad school", span="applying to grad school")],
+        intents=[], promises=[], ties=[]
+    );
+    attach_hint(x, hinted);
+    apply_extraction(note, me, x, hinted_person=hinted);
+    unchanged_how = ([edge me ->:Knows:-> hinted])[0].how_met;
+    assert unchanged_how == old_how, "how_met untouched when the caller passed none";
+
+    note2 = _fresh_note(f"Caught up with Amara{suffix} again.");
+    x2 = CaptureExtraction(
+        people=[XPerson(name=f"Amara{suffix}", org="", title="", span=f"Amara{suffix}")],
+        facts=[], intents=[], promises=[], ties=[]
+    );
+    attach_hint(x2, hinted);
+    apply_extraction(note2, me, x2, how_met="coffee follow-up", hinted_person=hinted);
+    updated_how = ([edge me ->:Knows:-> hinted])[0].how_met;
+    assert updated_how == "coffee follow-up", "how_met overwritten when the caller passed it";
+}
+
+test "SOH-231(c): nothing in the note names them, but an unattributed fact/intent/promise is theirs" {
+    me = _fresh_me();
+    suffix = _uid();
+    seed_note = _fresh_note(f"Met Jordan{suffix} Reyes at the panel.");
+    hinted = resolve_person(f"Jordan{suffix} Reyes", me, seed_note, {}, org="", title="")["person"] as Person;
+
+    note = _fresh_note("Doing well, now heads up the accessibility team and wants an intro to a funder.");
+    x = CaptureExtraction(
+        people=[],
+        facts=[XFact(about_name="", text="now heads up the accessibility team", span="now heads up the accessibility team")],
+        intents=[XIntent(about_name="", kind="need", text="wants an intro to a funder", span="wants an intro to a funder")],
+        promises=[XPromise(to_name="", text="send the intro", due="", span="I said I'd send the intro")],
+        ties=[]
+    );
+    matched = attach_hint(x, hinted);
+    assert matched;
+    assert x.facts[0].about_name == hinted.name;
+    assert x.intents[0].about_name == hinted.name;
+    assert x.promises[0].to_name == hinted.name;
+
+    result = apply_extraction(note, me, x, hinted_person=hinted);
+    facts = result["facts"] as list[dict[str, any]];
+    intents = result["intents"] as list[dict[str, any]];
+    promises = result["promises"] as list[dict[str, any]];
+    assert len(facts) == 1 and facts[0]["about"] == jid(hinted);
+    assert len(intents) == 1 and intents[0]["about"] == jid(hinted);
+    assert len(promises) == 1 and promises[0]["to"] == jid(hinted);
+}
+
+test "SOH-231: no person_id (default) -> apply_extraction behaves identically with and without the hinted_person arg" {
+    me = _fresh_me();
+    suffix = _uid();
+    note = _fresh_note(f"Met Casey{suffix} Nolan at the mixer, works at Fleetly.");
+    x1 = CaptureExtraction(
+        people=[XPerson(name=f"Casey{suffix} Nolan", org="Fleetly", title="", span=f"Casey{suffix} Nolan")],
+        facts=[], intents=[], promises=[], ties=[]
+    );
+    result_default = apply_extraction(note, me, x1);
+
+    note2 = _fresh_note(f"Met Devon{suffix} Marsh at the mixer, works at Fleetly.");
+    x2 = CaptureExtraction(
+        people=[XPerson(name=f"Devon{suffix} Marsh", org="Fleetly", title="", span=f"Devon{suffix} Marsh")],
+        facts=[], intents=[], promises=[], ties=[]
+    );
+    result_explicit_none = apply_extraction(note2, me, x2, how_met="", hinted_person=None);
+
+    people1 = result_default["people"] as list[dict[str, any]];
+    people2 = result_explicit_none["people"] as list[dict[str, any]];
+    assert len(people1) == 1 and len(people2) == 1;
+    assert (people1[0]["person"] as Person).org == "Fleetly";
+    assert (people2[0]["person"] as Person).org == "Fleetly";
+    assert people1[0]["is_new"] and people2[0]["is_new"];
 }
