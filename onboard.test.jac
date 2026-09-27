@@ -8,6 +8,130 @@ deliverable), not by a test.
 import from onboard { OnboardExtraction, name_from_about, handle_from_name, clean_list, clean_text, jid_suffix, find_by_topic, find_goal_by_text, find_intent, looks_like_goal, has_outcome_keyword, strongest_need, promote_strongest_need, activate_first_goal, collect_goals, onboarding_added_how_met, month_day }
 import from schema { Me, Interest, Goal, Intent, HasGoal }
 import from datetime { datetime }
+import from jaclang.runtimelib.testing { JacTestClient }
+import os;
+import shutil;
+import tempfile;
+
+# ---------------------------------------------------------------- SOH-232
+# integration: a Card OnboardMe creates (default visibility "link") must be
+# publicly readable via cards.get_card WITHOUT the owner ever running
+# PublishCard (audit D: "Public card says 'Not shared' while Settings says
+# 'Anyone with the link' and shows a QR" -- the root cause was OnboardMe's
+# get-or-create never listing/granting the Card it made). Own harness,
+# separate temp dir/base_path per test, no `jac clean` (AGENTS.md). The temp
+# dir has no `.env`, so `extract_onboarding`'s one `by llm` call fails fast
+# and OnboardMe's own try/except falls back to the deterministic path --
+# the Card still gets created and `ensure_card_visible`'d (see onboard.sv.jac
+# step 5), same as every other test here avoiding the LLM (SOH-166/205).
+
+glob ONBOARD_REPO_ROOT = os.path.dirname(os.path.abspath(__file__));
+
+def _ob_harness(tmp_dir: str) -> str {
+    for name in ["onboard.sv.jac", "cards.sv.jac", "schema.sv.jac", "freshness.sv.jac", "goals.sv.jac", "scoring.sv.jac", "reads.sv.jac", "llm.sv.jac"] {
+        shutil.copyfile(os.path.join(ONBOARD_REPO_ROOT, name), os.path.join(tmp_dir, name));
+    }
+    harness_path = os.path.join(tmp_dir, "onbapp.jac");
+    f = open(harness_path, "w");
+    f.write("import from onboard { OnboardMe }\nimport from cards { get_card, PublishCard }\n");
+    f.close();
+    t = open(os.path.join(tmp_dir, "jac.toml"), "w");
+    t.write(
+        "[project]\n"
+        "name = \"onboard-test-harness\"\n"
+        "version = \"0.1.0\"\n"
+        "entry-point = \"onbapp.jac\"\n"
+        "\n"
+        "[plugins.scale.microservices]\n"
+        "enabled = false\n"
+    );
+    t.close();
+    return harness_path;
+}
+
+def _ob_reg(client: JacTestClient, email: str) -> str {
+    reg = client.register_user(email, "password123");
+    assert reg.ok, f"register {email} failed: {reg.status_code} {reg.text}";
+    return str((reg.data or {})["token"]);
+}
+
+def _ob_run(client: JacTestClient, token: str, wname: str, body: dict) -> list[any] {
+    client.set_auth_token(token);
+    resp = client.post(f"/walker/{wname}", json=body);
+    assert resp.ok, f"{wname} failed: {resp.status_code} {resp.text}";
+    return list(resp.data["reports"]);
+}
+
+def _ob_get_card_anon(client: JacTestClient, handle: str) -> dict[str, any] {
+    client.clear_auth();
+    resp = client.post("/function/get_card", json={"handle": handle});
+    assert resp.ok, f"get_card failed: {resp.status_code} {resp.text}";
+    return dict(resp.data["result"]);
+}
+
+test "SOH-232: OnboardMe's Card is publicly readable via get_card without ever running PublishCard" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_ob_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _ob_reg(cl, "onboard_soh232_a@example.com");
+        b = _ob_reg(cl, "onboard_soh232_b@example.com");
+
+        out = _ob_run(cl, a, "OnboardMe", {"about": "I build accessible robots in Ann Arbor.", "name": "Priya SOH232"});
+        card = dict(out[0]["card"]);
+        handle = str(card["handle"]);
+        assert handle, f"OnboardMe never created a Card: {out}";
+
+        found = _ob_get_card_anon(cl, handle);
+        print(f"[onboard 232] anonymous get_card({handle}) right after OnboardMe (no PublishCard) -> {found}");
+        assert found["found"], f"OnboardMe's Card was not publicly readable until PublishCard ran (audit D): {found}";
+        assert str(found["name"]) == "Priya SOH232";
+
+        # Same read, from a second REGISTERED account's own token (get_card
+        # is `def:pub`, but a token-holder's `root` is their own graph, not
+        # `root.shared` -- proves it reaches the shared CardDirectory either
+        # way, not only for an anonymous caller).
+        cl.set_auth_token(b);
+        resp_b = cl.post("/function/get_card", json={"handle": handle});
+        assert resp_b.ok, f"get_card as B failed: {resp_b.status_code} {resp_b.text}";
+        found_b = dict(resp_b.data["result"]);
+        print(f"[onboard 232] B's own-token get_card({handle}) -> {found_b}");
+        assert found_b["found"], f"OnboardMe's Card was not readable from a second account's own token: {found_b}";
+
+        # A handle nobody published/onboarded is still not_found (isolation).
+        missing = _ob_get_card_anon(cl, "no-such-onboard-232-handle");
+        assert not missing["found"];
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "SOH-232: an explicit handshake_only PublishCard after OnboardMe stays unreadable via get_card" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_ob_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data_hs"));
+        client = cl;
+        a = _ob_reg(cl, "onboard_soh232_hs_a@example.com");
+
+        onboarded = _ob_run(cl, a, "OnboardMe", {"about": "I run a climate fund.", "name": "Devon SOH232"});
+        handle = str(dict(onboarded[0]["card"])["handle"]);
+        visible = _ob_get_card_anon(cl, handle);
+        assert visible["found"], f"pre-condition: OnboardMe's card should start public: {visible}";
+
+        republished = _ob_run(cl, a, "PublishCard", {"visibility": "handshake_only"});
+        assert str(republished[0]["visibility"]) == "handshake_only";
+
+        hidden = _ob_get_card_anon(cl, handle);
+        print(f"[onboard 232 hs] get_card({handle}) after handshake_only republish -> {hidden}");
+        assert not hidden["found"], f"handshake_only card leaked through get_card: {hidden}";
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
 
 test "OnboardExtraction obj holds the fields the walker copies out" {
     extraction = OnboardExtraction(

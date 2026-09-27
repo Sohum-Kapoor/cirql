@@ -95,6 +95,36 @@ test "single-token name matching exactly ONE known person is ambiguous, never a 
     assert entry["ambiguous_with"] == [jid(known)];
 }
 
+test "resolve_person (SOH-232 audit D): distinct_from targeting a DIFFERENT, vaguer person still reuses an existing exact-name match" {
+    me = _fresh_me();
+    note = _fresh_note("Priya says hi. Priya Natarajan says hi too.");
+    u = _uid();
+    vague_name = "Priya" + u;
+    full_name = "Priya" + u + " Natarajan";
+
+    r0: dict[str, any] = {};
+    vague = resolve_person(vague_name, me, note, r0)["person"] as Person;
+
+    # A first mention of the full name is ambiguous with the vaguer one
+    # already known - a genuinely new proposed Person, per SOH-212.
+    r1: dict[str, any] = {};
+    e1 = resolve_person(full_name, me, note, r1);
+    natarajan_v1 = e1["person"] as Person;
+    assert e1["is_new"];
+    assert e1["ambiguous_with"] == [jid(vague)];
+
+    # A LATER capture mentions "Priya Natarajan" again, this time with the
+    # model explicitly distinguishing her from the vaguer "Priya" ("not the
+    # [vague] Priya" -> `distinct_from=vague_name`). That hint is about the
+    # VAGUE person, never a rejection of the exact "Priya Natarajan" match
+    # already on the graph - it must resolve to the SAME Person, not spin
+    # up a second near-identical proposed one.
+    r2: dict[str, any] = {};
+    e2 = resolve_person(full_name, me, note, r2, distinct_from=vague_name);
+    assert not e2["is_new"], f"a second 'Priya Natarajan' was created instead of reusing the exact match: {e2}";
+    assert jid(e2["person"] as Person) == jid(natarajan_v1);
+}
+
 test "span lookup: verbatim substring wins, else fallback, else 80-char note prefix" {
     note = _fresh_note("She works on accessible robotics and knows Arjun.");
     assert safe_span("accessible robotics", note, "fallback") == "accessible robotics";
@@ -707,6 +737,37 @@ test "is_role_only: bare role words and possessive+role phrases; distinguishing 
     assert not is_role_only("her manager Dana");
 }
 
+test "is_role_only (SOH-232 audit D): a described GROUP or a bare/lightly-modified plural role noun is not a person" {
+    # A number word, digit, or quantity phrase opens a described group, no
+    # matter how long the description that follows.
+    assert is_role_only("two senior iOS engineers who are looking to leave big tech");
+    assert is_role_only("three founders looking for a technical cofounder");
+    assert is_role_only("2 investors interested in climate tech");
+    assert is_role_only("a couple of nurses from the hospital");
+    assert is_role_only("several investors");
+    assert is_role_only("some engineers");
+
+    # A bare, or lightly modified, plural role/profession noun with no
+    # proper name is still not a person even without a leading number.
+    assert is_role_only("engineers");
+    assert is_role_only("founders");
+    assert is_role_only("nurses");
+    assert is_role_only("investors");
+    assert is_role_only("senior iOS engineers");
+
+    # Longer descriptions that mention a role word anywhere (not just as
+    # the plural head noun) are role/kind, not a name, once over 6 words.
+    assert is_role_only("the senior investor who used to run several venture funds downtown");
+
+    # A proper name anywhere still wins over a nearby role word (unless the
+    # description is a counted GROUP, which always skips regardless).
+    assert not is_role_only("the engineer named Sam who leads the robotics team");
+
+    # Distinguishing descriptions with NO role word at all still pass
+    # however long (the existing SOH-225 guarantee, unaffected).
+    assert not is_role_only("the tall girl from the climbing gym who does accessible robotics research downtown");
+}
+
 test "apply_extraction: a role-only person entry is skipped, never becomes a Person" {
     me = _fresh_me();
     suffix = _uid();
@@ -769,6 +830,26 @@ test "apply_extraction: a description with context beyond the role word still be
     assert (people[0]["person"] as Person).name == "the tall girl from the climbing gym";
     assert len(result["facts"] as list[dict[str, any]]) == 1;
     assert result["skipped_people"] == 0;
+}
+
+test "apply_extraction (SOH-232 audit D): a described group of role-only people is skipped, never a Person" {
+    me = _fresh_me();
+    note = _fresh_note("Ran into two senior iOS engineers who are looking to leave big tech.");
+
+    x = CaptureExtraction(
+        people=[XPerson(
+            name="two senior iOS engineers who are looking to leave big tech",
+            org="", title="",
+            span="two senior iOS engineers who are looking to leave big tech",
+            named=False
+        )],
+        facts=[], intents=[], promises=[], ties=[]
+    );
+    result = apply_extraction(note, me, x);
+
+    people = result["people"] as list[dict[str, any]];
+    assert people == [], f"a described group must never become a Person: {people}";
+    assert result["skipped_people"] == 1;
 }
 
 # ---------------------------------------------------------------- SOH-231 Capture(person_id) hint

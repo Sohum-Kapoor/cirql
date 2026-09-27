@@ -133,22 +133,127 @@ glob ROLE_ONLY_WORDS: list[str] = [
     "assistant", "ceo", "cto", "cfo", "founder", "investor", "professor",
     "teacher", "dad", "mom", "father", "mother", "brother", "sister", "wife",
     "husband", "girlfriend", "boyfriend", "son", "daughter", "cousin",
-    "neighbor", "neighbour"
+    "neighbor", "neighbour",
+    # SOH-232 (audit D): common professions the plural check below needs
+    # ("engineers", "nurses"); "founder"/"investor" above already cover
+    # "founders"/"investors".
+    "engineer", "nurse"
+];
+# SOH-232 (audit D): a description opening with a number word, a bare
+# digit, or a quantity phrase ("two senior iOS engineers who are looking to
+# leave big tech", "a couple of nurses", "3 investors") names a GROUP, never
+# one specific person, however long the description that follows.
+glob NUMBER_WORDS: list[str] = [
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+    "nine", "ten", "eleven", "twelve", "several", "some", "many", "few", "couple"
 ];
 
-"""SOH-225: a plain relation/role phrase ('her manager', 'a friend', 'the
-CEO', 'my roommate') or a bare role word alone ('manager') is not a person -
-it names a relation to someone, not someone. A name with a distinguishing
-description beyond the role word ('the tall girl from the climbing gym',
-'the young man from the robotics thing who built the wheelchair sensor')
-still passes."""
+def _looks_like_quantity(n: str) -> bool {
+    if not n {
+        return False;
+    }
+    first = n.split(" ")[0];
+    if first in NUMBER_WORDS or first.isdigit() {
+        return True;
+    }
+    if n.startswith("a couple") or n.startswith("a few") {
+        return True;
+    }
+    return False;
+}
+
+"""True when `word` (already lowercased) is a role/profession word, either
+singular (`ROLE_ONLY_WORDS` itself) or its simple plural (trailing 's')."""
+def _is_role_word_or_plural(word: str) -> bool {
+    if word in ROLE_ONLY_WORDS {
+        return True;
+    }
+    if len(word) > 1 and word.endswith("s") and word[:-1] in ROLE_ONLY_WORDS {
+        return True;
+    }
+    return False;
+}
+
+def _contains_role_word(n: str) -> bool {
+    for w in n.split(" ") {
+        if _is_role_word_or_plural(w) {
+            return True;
+        }
+    }
+    return False;
+}
+
+"""True when the LAST word of the (already normalized) name is a plural
+role/profession noun ('engineers', 'founders', 'nurses', 'investors') --
+the plural counterpart of the exact-word check `is_role_only` already does
+for the singular."""
+def _is_plural_role_phrase(n: str) -> bool {
+    parts = n.split(" ");
+    if not parts {
+        return False;
+    }
+    return _is_role_word_or_plural(parts[-1]);
+}
+
+"""SOH-232 (audit D): a rough 'is there a proper name in here' check - any
+word, other than the first (sentence-initial capitals are never a signal),
+that starts with an uppercase letter and isn't itself all-caps (an acronym
+like 'CEO' or a lowercase-first token like 'iOS' never counts). Used so a
+plural role phrase or an over-long description is only skipped when it
+truly names no one in particular ('the young man from the robotics thing
+who built the wheelchair sensor' passes because it names no role at all;
+'the engineer named Sam who leads the robotics team' passes because of
+'Sam')."""
+def _has_probable_proper_name(name: str) -> bool {
+    words = (name or "").strip().split();
+    for idx in range(len(words)) {
+        if idx == 0 {
+            continue;
+        }
+        w = words[idx].strip(",.;:!?");
+        if len(w) < 2 or w.isupper() {
+            continue;
+        }
+        if w[0].isupper() and w[1:].islower() {
+            return True;
+        }
+    }
+    return False;
+}
+
+"""SOH-225/SOH-232: a plain relation/role phrase ('her manager', 'a friend',
+'the CEO', 'my roommate'), a bare role word alone ('manager'), a described
+GROUP rather than one person ('two senior iOS engineers who are looking to
+leave big tech', 'a couple of nurses', 'several investors'), or a bare/
+lightly-modified PLURAL role noun with no proper name attached ('engineers',
+'founders', 'senior iOS engineers') is not a person - it names a relation,
+a kind, or a count, never someone specific. A name with a genuinely
+distinguishing description, or one that actually names someone, still
+passes ('the tall girl from the climbing gym', 'the young man from the
+robotics thing who built the wheelchair sensor', 'her manager Dana') -
+neither contains a role word at all, so the plural/length checks below
+never touch them. Also skips anything longer than 6 words THAT ALSO
+contains a role word anywhere (never a name/description with no role word
+in it at all, however long) - a long sentence padding a role word with
+extra description ('the senior investor who used to run several venture
+funds downtown') is still a role/kind, not a name."""
 def is_role_only(name: str) -> bool {
-    n = " ".join((name or "").strip().lower().split());
+    raw = (name or "").strip();
+    n = " ".join(raw.lower().split());
     if n in ROLE_ONLY_WORDS {
         return True;
     }
     parts = n.split(" ");
     if len(parts) == 2 and parts[0] in ROLE_ONLY_POSSESSIVES and parts[1] in ROLE_ONLY_WORDS {
+        return True;
+    }
+    if _looks_like_quantity(n) {
+        return True;
+    }
+    if _has_probable_proper_name(raw) {
+        return False;
+    }
+    if _contains_role_word(n) and (_is_plural_role_phrase(n) or len(parts) > 6) {
         return True;
     }
     return False;
@@ -407,10 +512,25 @@ def resolve_person(
     }
 
     forced = False;
+    distinct_targets: list[Person] = [];
     if len(distinct_from.strip()) > 0 {
         for p in known {
+            # SOH-232 (audit D): `distinct_from` is a hint about a DIFFERENT
+            # interpretation of the incoming name ("not the vague 'Priya'
+            # one") - it must never exclude a person who is ALSO an exact
+            # clean-name match for THIS incoming name (`p in same`), or a
+            # bare first-name `distinct_from` ends up matching the very
+            # "Priya Natarajan" it's supposed to distinguish FROM, since a
+            # first-name-only reference is "ambiguous" (never "distinct")
+            # against anyone sharing that first name, per `match_names`.
+            if p in same {
+                continue;
+            }
             if match_names(distinct_from, p.name) != "distinct" {
                 forced = True;
+                if p not in distinct_targets {
+                    distinct_targets.append(p);
+                }
                 if p not in ambiguous {
                     ambiguous.append(p);
                 }
@@ -433,6 +553,19 @@ def resolve_person(
                 ambiguous.append(p);
             }
         }
+    }
+    # SOH-232 (audit D): an exact clean-name match wins even when `forced`
+    # came from `distinct_from` targeting a DIFFERENT, vaguer known person
+    # ("not the [other] Priya" is a hint about THAT person, never a
+    # rejection of the "Priya Natarajan" already on the graph) - otherwise
+    # every later mention of an already-disambiguated exact name creates
+    # another near-identical proposed Person. Still creates a new one when
+    # the sole exact match is itself what `distinct_from` excluded, or
+    # there is more than one exact match (never pick one silently, above).
+    if len(same) == 1 and same[0] not in distinct_targets {
+        entry = {"person": same[0], "is_new": False, "ambiguous_with": []};
+        resolved[key] = entry;
+        return entry;
     }
     if not forced and len(same) > 0 {
         entry = {"person": same[0], "is_new": False, "ambiguous_with": []};
