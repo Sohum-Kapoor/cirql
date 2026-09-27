@@ -415,7 +415,11 @@ def step_tend(me: Me, now: datetime) -> list[dict[str, any]] {
         payload: dict[str, any] = {"evidence_kind": str(evd["kind"])};
         if kind == "promise_due" {
             title = f"Keep your promise to {p.name}: {_clip(span, 80)}";
-            payload = {"promise_id": eid, "complete": False};
+            payload = {"promise_id": eid, "complete": False, "due": ""};
+            pn = my_node(eid);
+            if pn is not None and isinstance(pn, Promise) {
+                payload["due"] = (pn as Promise).due;
+            }
         } elif kind == "follow_up" {
             title = f"Follow up with {p.name} before \"{_clip(span, 60)}\" lapses";
         } else {
