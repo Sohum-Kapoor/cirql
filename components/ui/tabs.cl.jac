@@ -57,11 +57,15 @@ def:pub TabsTrigger(props: any) -> JsxElement {
 }
 
 def:pub TabsContent(props: any) -> JsxElement {
+    # SOH-226: Radix only mounts the active TabsContent (no forceMount here),
+    # so switching tabs always mounts a fresh DOM node - `animate-tab-in`
+    # (assets/main.css, a 150ms fade; no data-state gate needed) plays on
+    # every mount without needing to track a "just switched" flag.
     return
         <TabsPrimitive.Content
             {**props}
             data-slot="tabs-content"
-            className={cn("flex-1 text-body-sm outline-none", props["className"])}
+            className={cn("flex-1 text-body-sm outline-none animate-tab-in", props["className"])}
         />;
 }
 

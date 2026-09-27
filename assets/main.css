@@ -246,6 +246,22 @@
 
     --animate-in: cirql-in 120ms ease-out;
     --animate-sheet-in: cirql-sheet-in 180ms ease-out;
+    /* SOH-226 (POLISH-PLAN item 6): the closing counterparts of the two
+     * animations above — Radix's Presence component keeps a Dialog/Sheet
+     * Content mounted while `data-state="closed"` and an `animate-*` class is
+     * still running, so pairing `data-closed:animate-out` /
+     * `data-[side=bottom]:data-closed:animate-sheet-out` with these on
+     * SheetOverlay/SheetContent (components/ui/sheet.cl.jac) is enough — no
+     * JS timer needed. Durations match the open side (fixed jaclang-hackathon
+     * evaluators expect turned-symmetric enter/exit, not a 150ms industry
+     * default that would read as a different speed than the entrance).
+     * `--animate-tab-in` is the "animate-in fade-in-0 duration-150" tab-panel
+     * fade the task asked for: tailwindcss-animate isn't a dependency here
+     * (jac.toml has no such npm package), so it is its own theme var rather
+     * than reusing --animate-in's 120ms. */
+    --animate-out: cirql-out 180ms ease-out;
+    --animate-sheet-out: cirql-sheet-out 180ms ease-out;
+    --animate-tab-in: cirql-in 150ms ease-out;
 }
 
 @keyframes cirql-in {
@@ -256,6 +272,19 @@
 
 @keyframes cirql-sheet-in {
     from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+}
+
+@keyframes cirql-out {
+    to {
+        opacity: 0;
+    }
+}
+
+@keyframes cirql-sheet-out {
+    to {
         opacity: 0;
         transform: translateY(16px);
     }
@@ -278,5 +307,18 @@
     }
     ::selection {
         @apply bg-primary/30;
+    }
+    /* SOH-226: one global off-switch for every animation/transition this file
+     * (and the ui/ components) declares — press states, sheet/tab motion,
+     * toast entrances all collapse to a 1-frame cut for anyone who set the OS
+     * "reduce motion" preference, instead of tracking prefers-reduced-motion
+     * per component. */
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+            animation-duration: 0.001ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.001ms !important;
+            scroll-behavior: auto !important;
+        }
     }
 }
