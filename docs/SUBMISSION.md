@@ -70,11 +70,12 @@ We do not say "private", "secure", or "encrypted". Roots and grants do not encry
 - No automated fetching from LinkedIn or any platform whose terms forbid it. Your own data export, your contacts, a pasted note, or a consented card exchange.
 - Web enrichment only with a source: `Enrich` uses Gemini with Google Search grounding and attaches a fact only when a grounding chunk gives it a URL and the model says the identity matched your captured context; a made-up name returns nothing. LinkedIn pages are never fetched, even when search points there.
 - Users can correct the system: `Forget` deletes a person or fact and retracts only what depended on it.
-- Your data comes back out: `ExportGraph` returns everything on your root as one JSON file (people, facts, intents, promises, notes, ties, with every span and source).
+- Your data comes back out: `ExportGraph` returns everything on your root as one JSON file (people, facts, intents, promises, notes, ties, with every span and source) and `ImportGraph` takes it back; `ExportContacts` writes your people as a vCard file any phone imports. `DeleteAccount` removes the graph and the login.
+- The privacy page (`/static/privacy.html`) says all of this in plain sentences and is linked from Settings; the graph view has a text list of every tie for screen readers and keyboards.
 
 ## Verified, not intended
 
-- 42 server modules, 105 `:priv` walkers, 40 test suites with 329 test blocks (each suite also runs the suites it imports), all green on main (`jac test <module>.sv.jac` for each), including negative tests: account A never sees B's nodes; a bystander cannot read, approve, or claim in the Exchange; an ungranted card read is denied; a handshake-only card is refused by the public read.
+- 43 server modules, 107 `:priv` walkers, 41 test suites with 363 test blocks (each suite also runs the suites it imports), all green on main (`jac test <module>.sv.jac` for each), including negative tests: account A never sees B's nodes; a bystander cannot read, approve, or claim in the Exchange; an ungranted card read is denied; a handshake-only card is refused by the public read.
 - The cross-user grant primitives were proven with three real accounts and across a server restart before the Exchange was built on them.
 - `scripts/demo_check.jac` runs the whole two-account demo path against the hosted server in about a minute: 22 PASS, 0 FAIL. Five written personas (`docs/personas.md`) were played by agents against a local server; every bug they found is on the board, and the ones that mattered were fixed the same evening.
 - Two bugs that only appear on a persistent multi-request server were caught and fixed the same afternoon: typed traversals drop edges attached by other users after a restart, and a denied cross-root edge write is a silent no-op. Both are now rules in the working agreement.
