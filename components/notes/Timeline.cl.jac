@@ -23,6 +23,7 @@ import from ..capture.guided { local_date }
 import from ..api { list_notes, delete_note }
 import from ...lib.text { join_with, short_date }
 import from ...lib.utils { cn }
+import from ...lib.toast { toast }
 
 glob _FILTER_CHIPS: list[dict[str, str]] = [
          {"label": "All", "kind": ""},
@@ -309,6 +310,8 @@ def:pub Timeline(on_open_person: Callable[[str], None]) -> JsxElement {
             } else {
                 rows = [r for r in rows if _s(r["note"], "_jac_id") != gone_id];
                 confirm_id = "";
+                facts_gone: int = ((reply["deleted"] or {}) as dict)["facts"] as int;
+                toast("Note deleted · " + str(facts_gone) + " facts retracted", "success");
             }
         } except Exception as err {
             delete_error = "Couldn't delete right now. " + str(err);

@@ -17,6 +17,7 @@ import from ..ui.sheet { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDesc
 import from ..api { create_event, update_event, list_events, add_to_event, remove_from_event, event_people, list_people }
 import from ...lib.text { join_with, short_date }
 import from ...lib.utils { cn }
+import from ...lib.toast { toast }
 sv import from ...schema { Person }
 
 def _s(d: any, key: str) -> str {
@@ -264,6 +265,7 @@ def:pub Events(on_open_person: Callable[[str], None]) -> JsxElement {
                 create_date = "";
                 create_location = "";
                 await refresh();
+                toast("\"" + name + "\" added", "success");
             }
         } except Exception as err {
             create_error = "Couldn't create that event. " + str(err);

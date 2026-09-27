@@ -22,6 +22,7 @@ import from ..ui.alert_dialog {
 import from ..api { create_circle, rename_circle, delete_circle, add_to_circle, remove_from_circle, list_circles, list_people_scoped, list_people }
 import from ...lib.text { join_with }
 import from ...lib.utils { cn }
+import from ...lib.toast { toast }
 sv import from ...schema { Person }
 
 def _s(d: any, key: str) -> str {
@@ -29,6 +30,18 @@ def _s(d: any, key: str) -> str {
         return "";
     }
     return (d[key] or "") as str;
+}
+
+"""The circle's own name, looked up by id from the `circles` rows (`{circle,
+count}` each) — used for a toast after delete, which only has the id."""
+def _circle_name(rows: list[dict], circle_id: str) -> str {
+    for row in rows {
+        circle: dict = (row["circle"] or {}) as dict;
+        if _s(circle, "_jac_id") == circle_id {
+            return _s(circle, "name");
+        }
+    }
+    return "";
 }
 
 """One circle row: name + count, tap to open; overflow menu for rename/delete;
@@ -251,6 +264,7 @@ def:pub Circles(on_open_person: Callable[[str], None]) -> JsxElement {
             } else {
                 create_name = "";
                 await refresh();
+                toast("\"" + name + "\" created", "success");
             }
         } except Exception as err {
             create_error = "Couldn't create that circle. " + str(err);
@@ -314,6 +328,7 @@ def:pub Circles(on_open_person: Callable[[str], None]) -> JsxElement {
         delete_busy = True;
         delete_error = "";
         gone_id: str = confirm_delete_id;
+        gone_name: str = _circle_name(circles, gone_id);
         reply: dict = {};
         try {
             reply = await delete_circle(gone_id);
@@ -326,6 +341,7 @@ def:pub Circles(on_open_person: Callable[[str], None]) -> JsxElement {
                     detail_name = "";
                 }
                 await refresh();
+                toast((gone_name if gone_name else "Circle") + " deleted");
             }
         } except Exception as err {
             delete_error = "Couldn't delete right now. " + str(err);

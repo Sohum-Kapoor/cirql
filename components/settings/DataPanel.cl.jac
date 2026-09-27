@@ -30,6 +30,7 @@ import from ..ui.alert_dialog {
 import from ..api { export_graph, export_contacts, list_archived, restore_person, delete_my_data, delete_account }
 import from ...lib.text { join_with }
 import from ...lib.utils { cn }
+import from ...lib.toast { toast }
 
 def _s(d: any, key: str) -> str {
     if not d {
@@ -202,6 +203,7 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
             export_counts = counts;
             stamp: str = _date_prefix((data["exported_at"] or "") as str) or _today_str();
             _download_json(data, "cirql-export-" + stamp + ".json");
+            toast("Export ready", "success");
         } except Exception as err {
             export_error = "Couldn't export right now. " + str(err);
         }
@@ -217,6 +219,7 @@ def:pub DataPanel(onDeleted: Callable[[], None]) -> JsxElement {
             count: int = _n(data, "count");
             contacts_count = count;
             _download_text(vcf, "cirql-contacts.vcf", "text/vcard");
+            toast(str(count) + " contacts exported", "success");
         } except Exception as err {
             contacts_error = "Couldn't export contacts right now. " + str(err);
         }

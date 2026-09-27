@@ -26,6 +26,7 @@ import from ..ui.badge { Badge }
 import from ..ui.icons { CheckIcon, XIcon, ChevronLeftIcon }
 import from ..api_import { import_people, confirm_person, skip_person }
 import from ...lib.text { join_with }
+import from ...lib.toast { toast }
 
 glob _NL: str = chr(10),
      _QUOTE: str = chr(34),
@@ -281,6 +282,18 @@ def _pid_of(row_entry: dict) -> str {
     return (person["_jac_id"] or "") as str;
 }
 
+"""The imported person's display name, looked up by id (for a toast after
+confirm/skip, which only gets the id back)."""
+def _name_for(entries: list[dict], person_id: str) -> str {
+    for entry in entries {
+        if _pid_of(entry) == person_id {
+            person: dict = (entry["person"] or {}) as dict;
+            return (person["name"] or "") as str;
+        }
+    }
+    return "";
+}
+
 def _drop_str_key(d: dict, key: str) -> dict {
     out: dict = {};
     for k in list(d.keys()) {
@@ -531,6 +544,8 @@ def:pub ImportPeople(
         decisions = {};
         row_error = {};
         step = "sort";
+        imported_count: int = len((out["imported"] or []) as list[dict]);
+        toast(str(imported_count) + " people imported", "success");
     }
 
     def handle_import_click(e: MouseEvent) {
@@ -564,6 +579,8 @@ def:pub ImportPeople(
         next_dec: dict = {**decisions};
         next_dec[person_id] = "confirmed";
         decisions = next_dec;
+        confirmed_name: str = _name_for((result["imported"] or []) as list[dict], person_id);
+        toast((confirmed_name if confirmed_name else "Person") + " confirmed", "success");
         if onChanged {
             onChanged();
         }
@@ -593,6 +610,8 @@ def:pub ImportPeople(
         next_dec: dict = {**decisions};
         next_dec[person_id] = "skipped";
         decisions = next_dec;
+        skipped_name: str = _name_for((result["imported"] or []) as list[dict], person_id);
+        toast((skipped_name if skipped_name else "Person") + " skipped");
         if onChanged {
             onChanged();
         }

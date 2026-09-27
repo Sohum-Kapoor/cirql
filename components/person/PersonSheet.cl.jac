@@ -27,9 +27,10 @@ import from ..ui.avatar { Avatar }
 import from ..capture.Review { ReviewRow }
 import from ..capture.ReviewEditors { EditorField, EditorFooter }
 import from ..goals.RankList { strength_variant }
-import from ..api { person_detail, brief, complete_promise, draft_follow_up, forget, update_person_contact, archive_person }
+import from ..api { person_detail, brief, complete_promise, draft_follow_up, forget, update_person_contact, archive_person, restore_person }
 import from ...lib.text { join_with, short_date, ics_for_promise }
 import from ...lib.utils { cn }
+import from ...lib.toast { toast }
 
 glob _INTENT_LABEL: dict[str, str] = {"need": "wants", "offer": "offers", "open_to": "open to"};
 
@@ -508,6 +509,7 @@ def:pub PersonSheet(
         forget_error = "";
         reply: dict = {};
         gone_id: str = person_id;
+        gone_name: str = _s((detail["person"] or {}) as dict, "name");
         try {
             reply = await forget(gone_id);
             if reply["error"] {
@@ -515,6 +517,7 @@ def:pub PersonSheet(
             } else {
                 confirm_open = False;
                 on_close();
+                toast((gone_name if gone_name else "Person") + " removed");
                 if on_forgotten {
                     on_forgotten(gone_id);
                 }
@@ -600,6 +603,15 @@ def:pub PersonSheet(
         archive_confirm_open = v;
     }
 
+    """Undo for the archive toast: RestorePerson(person_id). Best-effort — if it
+    fails the person just stays archived, same as never tapping Undo."""
+    async def undo_archive() -> None {
+        try {
+            await restore_person(person_id);
+        } except Exception {
+        }
+    }
+
     """ArchivePerson: hides them from lists/rankings (restorable), never touches
     facts/intents/promises/edges — unlike Forget. Same close-and-refresh
     callback (`on_forgotten`) as Forget uses, so the caller's list drops the row
@@ -610,6 +622,7 @@ def:pub PersonSheet(
         archive_error = "";
         reply: dict = {};
         gone_id: str = person_id;
+        gone_name: str = _s((detail["person"] or {}) as dict, "name");
         try {
             reply = await archive_person(gone_id);
             if reply["error"] {
@@ -617,6 +630,7 @@ def:pub PersonSheet(
             } else {
                 archive_confirm_open = False;
                 on_close();
+                toast((gone_name if gone_name else "Person") + " archived", "success", undo_archive);
                 if on_forgotten {
                     on_forgotten(gone_id);
                 }
