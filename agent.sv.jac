@@ -301,12 +301,16 @@ def step_ask_network(me: Me, gaps: list[Goal]) -> list[dict[str, any]] {
         # a noun phrase (the common case, going forward) - defense-in-depth
         # for goals stored before this fix landed.
         need = _clip(goal_noun_phrase(goal.text), 140);
+        # SOH-229: the goal's own noun phrase rides on the payload as-is
+        # (never clipped like `need`), so approve() posts the same goal_text
+        # even after `edited_draft` replaces the need.
+        goal_text = goal_noun_phrase(goal.text);
         out.append(make_finding(
             "ask_network",
             f"Ask the network: {need}",
             f"Your goal '{need}' has no warm path in your graph yet. No strong or medium match you know or can reach.",
             [jid(goal)], "", jid(goal), "", need,
-            {"need": need, "about_line": about},
+            {"need": need, "about_line": about, "goal_text": goal_text},
             "GapFinder", "", True
         ));
     }
@@ -868,10 +872,12 @@ def approve(a: AgentAction, edited_draft: str, complete: bool) -> dict[str, any]
             need = edited_draft.strip();
         }
         about = str(pl["about_line"]) if "about_line" in pl else "";
-        # SOH-229: an ask_network action's own goal is exactly the requester's
-        # goal for this ask; carry its text through as-is (already a noun phrase).
-        goal_text = "";
-        if a.goal_id {
+        # SOH-229: goal_text comes from the finding's own payload (the noun
+        # phrase captured when the ask was proposed) so editing `need` never
+        # changes which goal the posted ask carries. Falls back to the live
+        # Goal for an action created before this payload field landed.
+        goal_text = str(pl["goal_text"]) if "goal_text" in pl else "";
+        if not goal_text and a.goal_id {
             gn = my_node(a.goal_id);
             if isinstance(gn, Goal) {
                 goal_text = (gn as Goal).text;
