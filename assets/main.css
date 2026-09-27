@@ -65,6 +65,14 @@
     --destructive: #d1343c;
     --overlay: rgb(0 0 0 / 0.35);
     --edge: rgb(255 255 255 / 0.9);
+    /* initials avatar palette (SOH-226): keyed by a name's first letter, never
+       by identity — 6 hues, deep enough for AA text on --card in light mode. */
+    --avatar-1: #e11d48;
+    --avatar-2: #b45309;
+    --avatar-3: #047857;
+    --avatar-4: #0e7490;
+    --avatar-5: #6d28d9;
+    --avatar-6: #a21caf;
     /* shadcn aliases */
     --card-foreground: var(--foreground);
     --popover-foreground: var(--foreground);
@@ -102,6 +110,13 @@
         --destructive: #eb5757;
         --overlay: rgb(0 0 0 / 0.7);
         --edge: rgb(255 255 255 / 0.04);
+        /* initials avatar palette (SOH-226) — brighter than light mode's, AA on --card */
+        --avatar-1: #fb7185;
+        --avatar-2: #fbbf24;
+        --avatar-3: #34d399;
+        --avatar-4: #22d3ee;
+        --avatar-5: #a78bfa;
+        --avatar-6: #e879f9;
     }
 }
 
@@ -132,6 +147,13 @@
     --destructive: #eb5757;
     --overlay: rgb(0 0 0 / 0.7);
     --edge: rgb(255 255 255 / 0.04);
+    /* initials avatar palette (SOH-226) — same as the OS-dark block above */
+    --avatar-1: #fb7185;
+    --avatar-2: #fbbf24;
+    --avatar-3: #34d399;
+    --avatar-4: #22d3ee;
+    --avatar-5: #a78bfa;
+    --avatar-6: #e879f9;
 }
 
 @theme inline {
@@ -166,6 +188,12 @@
     --color-border-tertiary: var(--border-tertiary);
     --color-input: var(--input);
     --color-ring: var(--ring);
+    --color-avatar-1: var(--avatar-1);
+    --color-avatar-2: var(--avatar-2);
+    --color-avatar-3: var(--avatar-3);
+    --color-avatar-4: var(--avatar-4);
+    --color-avatar-5: var(--avatar-5);
+    --color-avatar-6: var(--avatar-6);
 
     /* lifted panels: DESIGN "subtle white edge highlight on the top edge" */
     --shadow-edge: inset 0 1px 0 0 var(--edge);
