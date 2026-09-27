@@ -8,7 +8,7 @@ ever or the hundredth, and that two tests never collide on the same
 lowercase name.
 """
 
-import from imports { ImportPeople, ConfirmPerson, SkipPerson, row_str }
+import from imports { ImportPeople, ConfirmPerson, SkipPerson, row_str, source_display }
 import from schema { Me, Person, Note, Knows, Mentions }
 import from datetime { datetime }
 import uuid;
@@ -22,6 +22,31 @@ test "row_str: present, missing, and None-valued keys" {
     assert row_str(row, "name") == "Maya";
     assert row_str(row, "org") == "";
     assert row_str(row, "title") == "";
+}
+
+test "SOH-232 source_display: known sources get a display form, unknown sources pass through unchanged" {
+    assert source_display("csv") == "CSV";
+    assert source_display("CSV") == "CSV";
+    assert source_display("linkedin") == "LinkedIn";
+    assert source_display("LinkedIn") == "LinkedIn";
+    assert source_display("paste") == "a pasted list";
+    assert source_display("vcard") == "a vCard file";
+    assert source_display("something_else") == "something_else";
+    assert source_display("") == "";
+}
+
+test "SOH-232 ImportPeople: the import Note's text uses the display form of the source, not the raw value" {
+    suffix = _uid();
+    person_name = f"Source-test {suffix} Nguyen";
+
+    r_csv = (root spawn ImportPeople(rows=[{"name": person_name}], source="csv")).reports[0] as dict[str, any];
+    note_csv = jobj(r_csv["note_id"] as str) as Note;
+    assert note_csv.text == "Imported 1 people from CSV", f"got: {note_csv.text}";
+
+    person_name2 = f"Source-test {suffix} Osei";
+    r_li = (root spawn ImportPeople(rows=[{"name": person_name2}], source="linkedin")).reports[0] as dict[str, any];
+    note_li = jobj(r_li["note_id"] as str) as Note;
+    assert note_li.text == "Imported 1 people from LinkedIn", f"got: {note_li.text}";
 }
 
 test "ImportPeople -> ConfirmPerson -> SkipPerson: the full swipe flow" {

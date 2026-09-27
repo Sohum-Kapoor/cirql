@@ -40,6 +40,45 @@ import from schema {
     AssertsPromise, AssertsIntent, PromiseTo, IntentAbout, HasEvent
 }
 
+# ---------------------------------------------------------------- promise display
+
+"""SOH-232: capitalizes a stored Promise's raw fragment text ("send her the
+intro deck") for DISPLAY only - storage is untouched (`capture.sv.jac`
+stores it as a lowercase fragment on purpose, matching its own
+`XPromise.text` sem, so the sheet's provenance quote still matches the
+source span exactly). NOT currently wired into any report: every
+promise-bearing report in this codebase (`UpcomingDates.promises`,
+`PersonDetail.promises`) reports the raw `Promise` node itself (no separate
+display-text field alongside it) - per contracts/walkers.md the client
+already capitalizes what it renders from `promise.text`. Kept here, exported,
+for the day a report gains its own display-text field."""
+def promise_display(text: str) -> str {
+    t = text or "";
+    if not t {
+        return t;
+    }
+    return t[0].upper() + t[1:];
+}
+
+"""SOH-232: "Oct 3" style display label for a promise's resolved ISO `due`
+date - never the raw captured span ("due October 3rd") the audit flagged.
+Same hand-written month/day idiom `onboard.sv.jac`'s `month_day`/
+`capture.sv.jac`'s `_human_date` use (duplicated rather than imported, same
+ownership-boundary reasoning `capture.sv.jac` gives for its own copy: this
+module's own thing, and importing across every direction would tangle the
+import graph). Empty/unparsable `due_iso` -> ""."""
+def due_label(due_iso: str) -> str {
+    dt = _parse_naive_utc(due_iso);
+    if dt is None {
+        return "";
+    }
+    month_day_str = dt.strftime("%b ") + str(dt.day);
+    if dt.year == datetime.now().year {
+        return month_day_str;
+    }
+    return f"{month_day_str}, {dt.year}";
+}
+
 # ---------------------------------------------------------------- parse_due
 
 glob _WEEKDAYS: dict[str, int] = {
@@ -228,7 +267,10 @@ def _gather_promises_due(notes: list[Note], now: datetime, days: int) -> list[di
         }
     }
     ordered = sorted(out, key=_promise_due_sort_key);
-    return [{"promise": it["promise"], "to": it["to"], "due": it["due"]} for it in ordered];
+    return [
+        {"promise": it["promise"], "to": it["to"], "due": it["due"], "due_label": due_label(it["due"] as str)}
+        for it in ordered
+    ];
 }
 
 def _intent_expiring_sort_key(item: dict[str, any]) -> int {

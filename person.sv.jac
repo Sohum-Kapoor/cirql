@@ -47,6 +47,7 @@ import from schema {
     FactAbout, IntentAbout, PromiseTo, HasGoal, RelevantTo, FromCard
 }
 import from goals { _parse_naive_utc }
+import from dates { parse_due, due_label }
 import from drafts {
     EvidenceItem, gather_follow_up_evidence, item_to_dict,
     person_summary_text, build_evidence_text, map_evidence_indices
@@ -123,7 +124,13 @@ def _intent_observed_dt(i: Intent) -> datetime {
     return datetime.min;
 }
 
-def _promise_view(pr: Promise) -> dict[str, any] {
+"""SOH-232: `due_label` is additive - an "Oct 3" style display label resolved
+from `pr.due` (still whatever raw/ISO text `pr.due` itself holds; re-parsed
+through `dates.parse_due` the same way `dates._normalize_promises` does, so
+an un-normalized raw span like "October 3rd" still resolves) so clients
+never need to show the raw captured span. `""` when `pr.due` is empty or
+unparsable."""
+def _promise_view(pr: Promise, now: datetime) -> dict[str, any] {
     source_note_id = "";
     span = "";
     notes: list[Note] = [pr <-:AssertsPromise:<-];
@@ -135,7 +142,14 @@ def _promise_view(pr: Promise) -> dict[str, any] {
             span = spans[0];
         }
     }
-    return {"promise": pr, "source_note_id": source_note_id, "span": span};
+    due_lbl = "";
+    if pr.due {
+        due_iso = parse_due(pr.due, now.isoformat());
+        if due_iso {
+            due_lbl = due_label(due_iso);
+        }
+    }
+    return {"promise": pr, "source_note_id": source_note_id, "span": span, "due_label": due_lbl};
 }
 
 """Open (`done == False`) first, then done; within each group, `due`
@@ -228,7 +242,7 @@ def person_detail_for(me: Me, person: Person) -> dict[str, any] {
 
     promises_raw: list[Promise] = [person <-:PromiseTo:<-];
     promises_raw = sorted(promises_raw, key=_promise_sort_key);
-    promises_views = [_promise_view(pr) for pr in promises_raw];
+    promises_views = [_promise_view(pr, now) for pr in promises_raw];
     if len(promises_views) > 50 {
         promises_views = promises_views[:50];
     }
@@ -326,6 +340,55 @@ def _first_of_kind(evidence: list[EvidenceItem], kind: str) -> EvidenceItem | No
     return None;
 }
 
+"""SOH-232: the Brief's "Last time" line must describe an actual captured
+conversation - never an ImportPeople/OnboardMe housekeeping note (the
+audit's "Last time: Imported 3 people from linkedin." bug). `evidence`'s
+"note" items are already newest-first (`gather_follow_up_evidence`); this
+walks them and returns the first whose underlying Note is a real
+conversation kind, else None."""
+glob CONVERSATION_NOTE_KINDS: list[str] = ["debrief", "paste", "voice"];
+
+def _last_conversation_note_item(evidence: list[EvidenceItem]) -> EvidenceItem | None {
+    for it in evidence {
+        if it.kind != "note" {
+            continue;
+        }
+        try {
+            n = jobj(it.id);
+        } except Exception {
+            continue;   # not a real node id (e.g. a hand-built test fixture)
+        }
+        if n is None {
+            continue;
+        }
+        note = n as Note;
+        if note.kind in CONVERSATION_NOTE_KINDS {
+            return it;
+        }
+    }
+    return None;
+}
+
+"""SOH-232: the label for the newest intent evidence item depends on the
+underlying Intent's own kind - 'They wanted:' for a need (or anything not
+recognized as an offer), 'They offered:' for an offer (the audit's
+"They wanted: Offered to review your pitch deck" template mismatch)."""
+def _intent_label(it: EvidenceItem) -> str {
+    try {
+        n = jobj(it.id);
+    } except Exception {
+        return "They wanted:";   # not a real node id (e.g. a hand-built test fixture)
+    }
+    if n is None {
+        return "They wanted:";
+    }
+    intent = n as Intent;
+    if intent.kind == "offer" {
+        return "They offered:";
+    }
+    return "They wanted:";
+}
+
 """Deterministic fallback recap: `"{name}, {title} at {org}. Last time: ...
 You promised: ... They wanted: ..."` with any empty clause dropped cleanly
 (no dangling "at" / "Last time: ." etc)."""
@@ -346,13 +409,12 @@ def deterministic_brief(person: Person, evidence: list[EvidenceItem]) -> str {
         parts.append(f"{person.name}.");
     }
 
-    last_item = _first_of_kind(evidence, "note");
-    if last_item is None {
-        last_item = _first_of_kind(evidence, "fact");
-    }
+    last_item = _last_conversation_note_item(evidence);
     if last_item is not None {
         li = last_item as EvidenceItem;
         parts.append(f"Last time: {li.span}.");
+    } else {
+        parts.append("You haven't captured a conversation with them yet.");
     }
 
     promise_item = _first_of_kind(evidence, "promise");
@@ -366,7 +428,8 @@ def deterministic_brief(person: Person, evidence: list[EvidenceItem]) -> str {
     intent_item = _first_of_kind(evidence, "intent");
     if intent_item is not None {
         ii = intent_item as EvidenceItem;
-        parts.append(f"They wanted: {ii.span}.");
+        label = _intent_label(ii);
+        parts.append(f"{label} {ii.span}.");
     } else {
         parts.append("They wanted: nothing on record.");
     }

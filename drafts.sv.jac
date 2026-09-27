@@ -28,6 +28,7 @@ resolving *arbitrary* ids (e.g. `Receipt`), which this walker never needs to
 do since it only ever starts from the caller's own `Me`.
 """
 
+import re;
 import from datetime { datetime }
 import from schema {
     Me, Person, Note, Fact, Intent, Promise,
@@ -285,6 +286,76 @@ def promise_noun_phrase(text: str) -> str {
     return f"About what I said I'd do: {t}.";
 }
 
+"""SOH-232: `scoring.polish_reason`'s author->your substitutions, applied
+here WITHOUT its capitalize-first-letter/forced-terminal-period side
+effects (those are wrong for text about to be spliced mid-sentence, not
+written as its own standalone sentence)."""
+def _author_to_your(text: str) -> str {
+    t = text or "";
+    t = re.sub(r"(?i)\bauthor's\b", "your", t);
+    t = re.sub(r"(?i)\bthe author\b", "you", t);
+    t = re.sub(r"(?i)\bauthor\b", "you", t);
+    return t;
+}
+
+"""SOH-232: a stored Fact/Intent/Promise clause with its subject elided
+often opens with a bare commitment/want verb ("Offered to review...",
+"Wanted an intro...", "Needed feedback...") - the shape `capture.sv.jac`'s
+XIntent/XPromise sems produce when the speaker (or the person themselves)
+is the implied subject. Spliced after "what you said about" these read as
+a dangling clause ("what you said about Offered to review..."); detected
+here so the fallback can phrase them as a full sentence instead ("what you
+mentioned: you offered to review...")."""
+glob INTENT_LEAD_VERBS: list[str] = [
+    "offered", "offers", "offer",
+    "wanted", "wants", "want",
+    "needed", "needs", "need",
+    "asked", "asks", "ask",
+    "promised", "promises", "promise",
+    "mentioned", "mentions", "mention",
+    "hoped", "hopes", "hoping",
+    "looking", "looked", "looks",
+];
+
+def _starts_with_lead_verb(text: str) -> bool {
+    words = (text or "").split();
+    if not words {
+        return False;
+    }
+    first = words[0].lower().strip(".,!?;:\"'");
+    return first in INTENT_LEAD_VERBS;
+}
+
+"""SOH-232: words that commonly OPEN a Fact/Intent clause about a person
+(never a name) - safe to lowercase when the clause is spliced mid-sentence.
+Anything else that starts with a capital letter is treated as proper-noun
+led (a name, a company, a place) and left alone, e.g. "Stripe is hiring
+backend engineers" keeps its capital "S" when spliced after "about"."""
+glob LOWERABLE_LEAD_WORDS: list[str] = (
+    ["the", "a", "an", "your", "her", "his", "their", "its", "our", "my"]
+    + ["just", "still", "also", "recently", "currently", "possibly", "probably", "maybe", "now", "already", "not"]
+    + ["she", "he", "they", "it", "is", "was", "has", "had", "will", "would", "can", "could"]
+    + ["works", "worked", "working", "moved", "moving", "leads", "leading", "lives", "living", "runs", "running", "met"]
+    + INTENT_LEAD_VERBS
+);
+
+"""Lowercase `text`'s first letter, unless its first word reads as a proper
+noun (not in `LOWERABLE_LEAD_WORDS`) - see module docstring above."""
+def _lowercase_unless_proper_noun(text: str) -> str {
+    if not text {
+        return text;
+    }
+    words = text.split();
+    if not words {
+        return text;
+    }
+    first_bare = words[0].strip(".,!?;:\"'").lower();
+    if first_bare in LOWERABLE_LEAD_WORDS {
+        return text[0].lower() + text[1:];
+    }
+    return text;
+}
+
 """Deterministic fallback used when there is no evidence at all, or the
 batched `by llm` call fails / returns nothing usable. Picks the newest open
 Promise first, else the newest Fact/Intent, else a generic opener — exactly
@@ -337,7 +408,16 @@ def fallback_draft(p: Person, evidence: list[EvidenceItem]) -> dict[str, any] {
 
     if fact_or_intent_item is not None {
         fi2 = fact_or_intent_item as EvidenceItem;
-        draft = f"Hi {greeting_name}, I was thinking about what you said about {fi2.span}. How is that going?";
+        # SOH-232: apply the author->your replacement first, then strip a
+        # trailing period, before deciding how to splice the clause.
+        clean = _strip_trailing_stop(_author_to_your(fi2.span));
+        if clean and _starts_with_lead_verb(clean) {
+            clause = "you " + clean[0].lower() + clean[1:];
+            draft = f"Hi {greeting_name}, what you mentioned: {clause}. How is that going?";
+        } else {
+            polished = _lowercase_unless_proper_noun(clean);
+            draft = f"Hi {greeting_name}, I was thinking about what you said about {polished}. How is that going?";
+        }
         return {"draft": draft, "based_on": [item_to_dict(fi2)]};
     }
 

@@ -32,7 +32,7 @@ root (`jac-testing`). Two consequences, same reasoning `reads.test.jac` and
 
 import from person {
     PersonDetail, Brief, person_detail_for, deterministic_brief,
-    fallback_recap, synthesize_voice
+    fallback_recap, synthesize_voice, _promise_view
 }
 import from drafts { EvidenceItem }
 import from schema {
@@ -144,6 +144,7 @@ test "person_detail_for: every section present, right age_days, expired, and rel
     assert (promises[0]["promise"] as Promise).text == "send the deck";
     assert promises[0]["source_note_id"] == jid(promise_note);
     assert promises[0]["span"] == "send the deck by Friday";
+    assert promises[0]["due_label"] == "Oct 10", f"SOH-232: got {promises[0]['due_label']}";
 
     notes = view["notes"] as list[dict[str, any]];
     assert len(notes) == 1;
@@ -201,7 +202,10 @@ test "PersonDetail: an unresolvable person_id reports not_found" {
 test "deterministic_brief: names the person, drops empty clauses cleanly when there's no evidence" {
     p = Person(name="Person-test Bare", status="confirmed");
     text = deterministic_brief(p, []);
-    assert text == "Person-test Bare. You promised: nothing open. They wanted: nothing on record.";
+    assert text == (
+        "Person-test Bare. You haven't captured a conversation with them yet. "
+        "You promised: nothing open. They wanted: nothing on record."
+    );
 }
 
 test "fallback_recap: text carries the name, the open promise, and the need; based_on carries every evidence item" {
@@ -222,6 +226,64 @@ test "fallback_recap: text carries the name, the open promise, and the need; bas
     assert len(based_on) == 2, "based_on must carry every evidence item when there's no LLM-picked subset";
     ids = [it["id"] for it in based_on];
     assert "ev-promise" in ids and "ev-intent" in ids;
+}
+
+test "SOH-232 deterministic_brief: 'Last time' skips an import note and picks the newest debrief/paste/voice note instead" {
+    import_note = (root ++> Note(
+        text="Imported 3 people from LinkedIn", kind="import", captured_at="2026-09-20T09:00:00"
+    ))[0];
+    debrief_note = (root ++> Note(
+        text="Grabbed coffee, talked about the sensor demo", kind="debrief", captured_at="2026-09-25T09:00:00"
+    ))[0];
+    ev = [
+        EvidenceItem(id=jid(import_note), kind="note", observed_at="2026-09-20T09:00:00", span="Imported 3 people from LinkedIn"),
+        EvidenceItem(id=jid(debrief_note), kind="note", observed_at="2026-09-25T09:00:00", span="Grabbed coffee, talked about the sensor demo")
+    ];
+    p = Person(name="Person-test LastTime", status="confirmed");
+    text = deterministic_brief(p, ev);
+    assert "Last time: Grabbed coffee, talked about the sensor demo." in text, f"got: {text}";
+    assert "Imported 3 people from LinkedIn" not in text, f"an import note must never be the 'Last time' line, got: {text}";
+}
+
+test "SOH-232 deterministic_brief: no debrief/paste/voice note at all reports the have-not-captured line, never an about_me/onboarding note" {
+    about_me_note = (root ++> Note(text="Casey Audit: cofounder search", kind="about_me", captured_at="2026-09-20T09:00:00"))[0];
+    ev = [EvidenceItem(id=jid(about_me_note), kind="note", observed_at="2026-09-20T09:00:00", span="Casey Audit: cofounder search")];
+    p = Person(name="Person-test NoConversation", status="confirmed");
+    text = deterministic_brief(p, ev);
+    assert "You haven't captured a conversation with them yet." in text, f"got: {text}";
+    assert "Casey Audit: cofounder search" not in text, f"an about_me note must never be the 'Last time' line, got: {text}";
+}
+
+test "SOH-232 deterministic_brief: the intent label is 'They offered:' for an offer, 'They wanted:' for a need" {
+    offer_intent = (root ++> Intent(kind="offer", text="Offered to review your pitch deck next week", expires_at=""))[0];
+    ev_offer = [EvidenceItem(id=jid(offer_intent), kind="intent", observed_at="2026-09-20T09:00:00", span="Offered to review your pitch deck next week")];
+    p_offer = Person(name="Person-test OfferLabel", status="confirmed");
+    text_offer = deterministic_brief(p_offer, ev_offer);
+    assert "They offered: Offered to review your pitch deck next week." in text_offer, f"got: {text_offer}";
+    assert "They wanted:" not in text_offer, f"got: {text_offer}";
+
+    need_intent = (root ++> Intent(kind="need", text="wants an intro to a recruiter", expires_at=""))[0];
+    ev_need = [EvidenceItem(id=jid(need_intent), kind="intent", observed_at="2026-09-20T09:00:00", span="wants an intro to a recruiter")];
+    p_need = Person(name="Person-test NeedLabel", status="confirmed");
+    text_need = deterministic_brief(p_need, ev_need);
+    assert "They wanted: wants an intro to a recruiter." in text_need, f"got: {text_need}";
+}
+
+test "SOH-232 _promise_view: due_label resolves even from an un-normalized raw due span, is '' when due is empty or unparsable" {
+    now = datetime.now();
+
+    pr_raw_span = Promise(text="send the intro deck", due="October 15", done=False);
+    view_raw = _promise_view(pr_raw_span, now);
+    assert view_raw["due_label"] != "", f"a resolvable raw span must still get a due_label, got: {view_raw}";
+    assert view_raw["due_label"] == "Oct 15", f"due_label must never be the raw un-normalized span, got: {view_raw['due_label']}";
+
+    pr_empty = Promise(text="send the notes", due="", done=False);
+    view_empty = _promise_view(pr_empty, now);
+    assert view_empty["due_label"] == "";
+
+    pr_unparsable = Promise(text="send the thing", due="whenever works", done=False);
+    view_unparsable = _promise_view(pr_unparsable, now);
+    assert view_unparsable["due_label"] == "";
 }
 
 test "synthesize_voice: no ElevenLabs key reports no_key with empty audio" {
