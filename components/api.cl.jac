@@ -10,6 +10,7 @@ Dev-only override: `?mock=1` in the page URL routes every call here through the
 mocks (no Gemini budget spent) even though `USE_MOCKS` ships False.
 """
 
+import from .mocks.search { mock_search, mock_recall }
 import from .mocks.onboard { mock_onboardme }
 import from .mocks.capture { mock_capture, mock_list_people }
 import from .mocks.edits { mock_transcribe, mock_apply_correction }
@@ -872,4 +873,38 @@ async def:pub list_people_scoped(circle_id: str = "", event_id: str = "", includ
     data = await jacSpawn("ListPeople", "", {"circle_id": circle_id, "event_id": event_id, "include_archived": include_archived});
     rows = (data["reports"] if data else []) as list[dict];
     return rows;
+}
+
+# ---------------------------------------------------------------- Search + Recall (SOH-222 A5)
+# Both live on main: `search.sv.jac` (SOH-216) and `recall.sv.jac` (SOH-189).
+sv import from ..search { Search }
+sv import from ..recall { Recall }
+
+"""Search(query, limit=25, kinds=[]) -> { query, results: [{ kind, id, text,
+person_id, person_name, span, score, observed_at }], total }."""
+async def:pub search(query: str, limit: int = 25, kinds: list[str] | None = None) -> dict {
+    out: dict = {};
+    eff_kinds: list[str] = kinds if kinds is not None else [];
+    if mocks_on() {
+        await fake_delay(MOCK_FAST_MS);
+        out = _first_or_error(mock_search(query, limit));
+        return out;
+    }
+    result = root spawn Search(query=query, limit=limit, kinds=eff_kinds);
+    out = _first(result, "Search") as dict;
+    return out;
+}
+
+"""Recall(question, max_items=40) -> { answer, citations: [{ id, kind,
+observed_at, span, person }], insufficient, fallback }."""
+async def:pub recall(question: str, max_items: int = 40) -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay(MOCK_DELAY_MS);
+        out = _first_or_error(mock_recall(question));
+        return out;
+    }
+    result = root spawn Recall(question=question, max_items=max_items);
+    out = _first_or_error(result.reports);
+    return out;
 }
