@@ -6,8 +6,8 @@ carries a random per-call suffix (`_uid()`) — this guarantees a name is always
 genuinely new, whether this is the first run ever or the hundredth.
 """
 
-import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction, hedge_fact_text, fact_source_kind, specific_follow_up, promise_is_only_a_want, default_how_met, second_person }
-import from schema { Fact, Intent, Knows, Me, Mentions, Note, Person, Promise, Reported, PromiseTo }
+import from capture { CaptureExtraction, XPerson, XFact, XIntent, XPromise, XTie, safe_span, resolve_person, apply_extraction, hedge_fact_text, fact_source_kind, specific_follow_up, promise_is_only_a_want, default_how_met, second_person, attach_metat_for_new_people }
+import from schema { Event, Fact, HasEvent, Intent, Knows, Me, Mentions, MetAt, Note, Person, Promise, Reported, PromiseTo }
 import uuid;
 import from datetime { datetime }
 
@@ -632,4 +632,58 @@ test "SOH-214 second_person: 'the author/speaker/user/writer' becomes 'you' at w
     r = apply_extraction(note, me, x);
     f = (r["facts"] as list[dict[str, any]])[0]["fact"] as Fact;
     assert f.text == "Gave you her card.", f.text;
+}
+
+# ---------------------------------------------------------------- SOH-217: Capture(event_id) -> MetAt for new people only
+
+test "attach_metat_for_new_people: only NEW people get a MetAt tie to the event, existing people don't" {
+    me = _fresh_me();
+    suffix = _uid();
+    note = _fresh_note(f"Met Priya{suffix} and caught up with Arjun{suffix}.");
+    event = (me +>:HasEvent:+> Event(name="JacHacks " + suffix, created_at=""))[0];
+
+    new_name = f"Priya{suffix}";
+    existing_name = f"Arjun{suffix}";
+
+    # `existing` is already known BEFORE this capture (simulates a person from an earlier Capture).
+    r0: dict[str, any] = {};
+    existing_entry = resolve_person(existing_name, me, note, r0);
+    existing = existing_entry["person"] as Person;
+
+    x = CaptureExtraction(
+        people=[
+            XPerson(name=new_name, org="", title="", span=new_name),
+            XPerson(name=existing_name, org="", title="", span=existing_name)
+        ],
+        facts=[], intents=[], promises=[], ties=[]
+    );
+    r = apply_extraction(note, me, x);
+
+    attach_metat_for_new_people(note, event, r);
+
+    people_report = r["people"] as list[dict[str, any]];
+    new_entry = [e for e in people_report if (e["person"] as Person).name == new_name][0];
+    existing_entry2 = [e for e in people_report if jid(e["person"] as Person) == jid(existing)][0];
+    assert new_entry["is_new"] as bool;
+    assert not (existing_entry2["is_new"] as bool);
+
+    new_person = new_entry["person"] as Person;
+    new_metat = [edge new_person ->:MetAt:-> event];
+    assert len(new_metat) == 1;
+    assert new_metat[0].source_note == jid(note);
+
+    existing_metat = [edge existing ->:MetAt:-> event];
+    assert len(existing_metat) == 0, "an already-known person is never auto-attached to the event";
+}
+
+test "attach_metat_for_new_people: no-op when result[\"people\"] is empty" {
+    me = _fresh_me();
+    suffix = _uid();
+    note = _fresh_note("Nothing notable happened.");
+    event = (me +>:HasEvent:+> Event(name="Empty Event " + suffix, created_at=""))[0];
+
+    empty_result = {"note_id": jid(note), "people": [], "facts": [], "intents": [], "promises": [], "ties": []};
+    attach_metat_for_new_people(note, event, empty_result);
+
+    assert len([event <-:MetAt:<-]) == 0;
 }

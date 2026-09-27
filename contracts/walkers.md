@@ -579,3 +579,40 @@ Bounded traversal over the caller's own root: every Note (text capped at 300 cha
     `confirm="DELETE"` (button is disabled client-side until the user types it exactly), so the server-side
     check is defense in depth, not the only gate. Once `A`'s branch lands, flip these three to `sv import` +
     `root spawn` in `components/api.cl.jac` (comment there marks the swap point).
+- 2026-09-26 — SOH-217, `circles.sv.jac` and `events.sv.jac` land: named groups the user puts people into, and where-we-met. Both `:priv`, own-root only, no `by llm`. Schema: no changes (`Circle`/`Event`/`HasCircle`/`InCircle`/`HasEvent`/`MetAt` already existed, SOH-215). `circle_id`/`event_id`/`person_id` are resolved directly among the caller's own `[me ->:HasCircle:->]` / `[me ->:HasEvent:->]` / `[me ->:Knows:->]` — isolated by construction, no `jobj` lookup of a foreign id, no grant ever given.
+
+  ### `CreateCircle(name: str)` — SOH-217
+  Get-or-create Me; create a named `Circle` via `HasCircle`. Reports `[Circle]`, or `[{ error: "exists" }]` when `name` (case-insensitively, stripped of surrounding/repeated whitespace) matches a circle this user already has.
+
+  ### `RenameCircle(circle_id: str, name: str)` — SOH-217
+  Reports `[Circle]` (the renamed node), `[{ error: "not_found" }]` when `circle_id` isn't one of the caller's own circles, or `[{ error: "exists" }]` when `name` collides (case-insensitively) with another circle this user already has (renaming a circle to its own current name is fine — the collision check excludes the circle being renamed).
+
+  ### `DeleteCircle(circle_id: str)` — SOH-217
+  Deletes the `Circle` node; the node-delete cascade removes its `HasCircle` edge from Me and every `InCircle` edge from a Person, but never the Person nodes themselves. Reports `[{ ok: true }]`, or `[{ error: "not_found" }]`.
+
+  ### `AddToCircle(person_id: str, circle_id: str)` / `RemoveFromCircle(person_id: str, circle_id: str)` — SOH-217
+  Attach/detach `InCircle` (Person -> Circle); `AddToCircle` is idempotent (attaching twice creates one edge). Reports `[{ ok: true }]`, or `[{ error: "not_found" }]` when `person_id`/`circle_id` don't resolve to the caller's own graph.
+
+  ### `ListCircles()` — SOH-217
+  Reports `[{ circle: Circle, count: int }]` for every circle the caller has; `count` = how many people are `InCircle` it. Empty list when there's no `Me` yet.
+
+  ### `CreateEvent(name: str, date: str = "", location: str = "")` — SOH-217
+  Get-or-create Me; create an `Event` via `HasEvent`. Reports `[Event]`.
+
+  ### `ListEvents()` — SOH-217
+  Reports `[{ event: Event, count: int }]`, newest `date` first (an event with no `date` sorts last); `count` = how many people `MetAt` this event. Empty list when there's no `Me` yet.
+
+  ### `AddToEvent(person_id: str, event_id: str, source_note: str = "")` / `RemoveFromEvent(person_id: str, event_id: str)` — SOH-217
+  Attach/detach `MetAt` (Person -> Event, carries `source_note`); `AddToEvent` is idempotent (attaching twice never overwrites `source_note`). Reports `[{ ok: true }]`, or `[{ error: "not_found" }]`.
+
+  ### `EventPeople(event_id: str)` — SOH-217
+  Reports `[Person]`, every person `MetAt` this event, or `[{ error: "not_found" }]` when `event_id` isn't one of the caller's own events.
+
+  ### `UpdateEvent(event_id: str, name: str = "", date: str = "", location: str = "")` — SOH-217
+  Only NON-EMPTY (stripped) args overwrite a field, same idiom `edits.sv.jac`'s `UpdatePerson` uses. Reports `[Event]`, or `[{ error: "not_found" }]`.
+
+  ### `walkers.sv.jac`'s `ListPeople(circle_id: str = "", event_id: str = "", include_archived: bool = False)` — SOH-217
+  Shape unchanged (`list[Person]`, no wrapper). Archived people (`Person.archived`) are excluded unless `include_archived=True`; a non-empty `circle_id`/`event_id` narrows to people with a matching `InCircle`/`MetAt` edge.
+
+  ### `capture.sv.jac`'s `Capture(text, kind, audio_ref, how_met, event_id: str = "")` — SOH-217
+  Shape unchanged. `event_id` non-empty and resolving among the caller's own `[me ->:HasEvent:->]` -> every NEW person this capture creates (`is_new: true` in the `people` report) gets a `MetAt(source_note=jid(note))` tie to that event; people the capture only re-mentioned are untouched. An unknown/foreign `event_id` is silently ignored (no MetAt attached, no error).

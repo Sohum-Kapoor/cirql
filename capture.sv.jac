@@ -7,9 +7,9 @@ tested without the LLM in capture.test.jac.
 """
 
 import from schema {
-    Me, Person, Note, Fact, Intent, Promise,
+    Me, Person, Note, Fact, Intent, Promise, Event,
     Knows, Reported, Asserts, AssertsIntent, AssertsPromise, Mentions,
-    FactAbout, IntentAbout, PromiseTo
+    FactAbout, IntentAbout, PromiseTo, HasEvent, MetAt
 }
 import from llm { llm }
 import from datetime { datetime }
@@ -559,6 +559,22 @@ def apply_extraction(note: Note, me: Me, x: CaptureExtraction, how_met: str = ""
     };
 }
 
+# ---------------------------------------------------------------- SOH-217 event attach
+
+"""Deterministic, testable on its own (`capture.test.jac`): every entry in
+`result["people"]` (the dict `apply_extraction` returns) whose `is_new` is
+True gets a `MetAt(source_note=jid(note))` tie to `event`. Existing people
+this capture only re-mentioned are left untouched."""
+def attach_metat_for_new_people(note: Note, event: Event, result: dict[str, any]) {
+    people_list = result["people"] as list[dict[str, any]];
+    for entry in people_list {
+        if entry["is_new"] as bool {
+            p = entry["person"] as Person;
+            p +>:MetAt(source_note=jid(note)):+> event;
+        }
+    }
+}
+
 # ---------------------------------------------------------------- walker
 
 walker:priv Capture {
@@ -566,6 +582,7 @@ walker:priv Capture {
     has kind: str = "debrief";
     has audio_ref: str = "";        # from Transcribe; stored on the Note as the receipt to the audio
     has how_met: str = "";          # SOH-166: when set, every NEW Knows edge this capture creates uses it
+    has event_id: str = "";         # SOH-217: when set (and the event is the caller's), every NEW person from this capture gets a MetAt tie to it
     has reports: list[dict[str, any]] = [];
 
     can go with Root entry {
@@ -576,6 +593,18 @@ walker:priv Capture {
             me = existing_me[0];
         } else {
             me = (root ++> Me(name="me"))[0];
+        }
+
+        # SOH-217: resolve event_id among the caller's OWN events only —
+        # a foreign/unknown event_id is silently ignored (no MetAt attached).
+        target_event: Event | None = None;
+        if len(self.event_id.strip()) > 0 {
+            for ev in [me ->:HasEvent:->] {
+                if jid(ev) == self.event_id {
+                    target_event = ev;
+                    break;
+                }
+            }
         }
 
         empty_shape = {
@@ -595,6 +624,11 @@ walker:priv Capture {
         }
 
         result = apply_extraction(note, me, extraction, how_met=self.how_met);
+
+        if target_event is not None {
+            attach_metat_for_new_people(note, target_event as Event, result);
+        }
+
         report result;
     }
 }
