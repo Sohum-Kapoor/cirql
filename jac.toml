@@ -45,8 +45,13 @@ lib_imports = ["import tailwindcss from '@tailwindcss/vite'"]
 
 [plugins.client.app_meta_data]
 # Served <head> (SOH-206): tab title (color-scheme lives in assets/main.css;
-# jac-client writes meta content unquoted, so any value with a space breaks — title only).
+# jac-client writes meta content unquoted, so any value with a space breaks — no spaces).
 title = "Cirql"
+# SOH-226: files in assets/ are served at /static/<path> (jaclang server.impl static branch).
+theme_color = "#0E1018"
+icon = "/static/icon/icon-32.png"
+apple_touch_icon = "/static/icon/icon-180.png"
+manifest = "/static/manifest.webmanifest"
 
 [plugins.client.mobile]
 # Capacitor iOS shell (SOH-174). Set app_id BEFORE `jac setup mobile` (it is baked
