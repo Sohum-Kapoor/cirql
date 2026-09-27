@@ -24,7 +24,7 @@ import from ..ui.input { Input }
 import from ..ui.label { Label }
 import from ..ui.badge { Badge }
 import from ..ui.icons { CheckIcon, XIcon, ChevronLeftIcon }
-import from ..api_import { import_people, confirm_person, skip_person }
+import from ..api_import { import_people, confirm_person, confirm_people, skip_person }
 import from .Deck { Deck }
 import from ...lib.text { join_with, linkedin_how_met }
 import from ...lib.toast { toast }
@@ -579,6 +579,7 @@ def:pub ImportPeople(
         row_busy: dict = {},
         row_error: dict = {},
         confirm_all_busy: bool = False,
+        confirm_all_total: int = 0,
         # SOH-232: Confirm/Skip never resolved on screen (row stuck
         # "Confirming…", "N left" never decrementing) even though the server
         # had already confirmed — `has` fields compile to `useState`, and a
@@ -827,12 +828,58 @@ def:pub ImportPeople(
         }
     }
 
+    """SOH-235: one `ConfirmPeople` round trip for the whole pending batch
+    instead of one `ConfirmPerson` per row. Applies the result to
+    `decisions_ref`/`row_error_ref` (never the stale `has` snapshot, same
+    rule as `_set_decision`/`_set_row_error`) in a single merged update. If
+    the bulk call errors (network error, or the walker isn't live yet) falls
+    back to the old sequential per-row loop so nothing regresses."""
     async def confirm_all(e: MouseEvent) -> None {
-        confirm_all_busy = True;
         imported: list[dict] = (result["imported"] or []) as list[dict];
+        ids: list[str] = [];
         for entry in imported {
             pid: str = _pid_of(entry);
-            if not pid or pid in decisions_ref.current {
+            if pid and pid not in decisions_ref.current {
+                ids.append(pid);
+            }
+        }
+        if len(ids) == 0 {
+            return;
+        }
+        confirm_all_busy = True;
+        confirm_all_total = len(ids);
+        out: dict = {};
+        bulk_ok: bool = True;
+        try {
+            out = await confirm_people(ids, "");
+        } except Exception as err {
+            bulk_ok = False;
+        }
+        if bulk_ok and not out["error"] {
+            confirmed_ids: list[str] = (out["confirmed"] or []) as list[str];
+            not_found_ids: list[str] = (out["not_found"] or []) as list[str];
+            next_dec: dict = {**decisions_ref.current};
+            next_err: dict = {**row_error_ref.current};
+            for pid in confirmed_ids {
+                next_dec[pid] = "confirmed";
+            }
+            for pid in not_found_ids {
+                next_err[pid] = "Couldn't confirm that person.";
+            }
+            decisions_ref.current = next_dec;
+            decisions = next_dec;
+            row_error_ref.current = next_err;
+            row_error = next_err;
+            confirm_all_busy = False;
+            count: int = len(confirmed_ids);
+            toast("1 person confirmed" if count == 1 else str(count) + " people confirmed", "success");
+            if onChanged {
+                onChanged();
+            }
+            return;
+        }
+        for pid in ids {
+            if pid in decisions_ref.current {
                 continue;
             }
             await confirm_row(pid);
@@ -1020,7 +1067,7 @@ def:pub ImportPeople(
                                     disabled={confirm_all_busy}
                                     onClick={confirm_all}
                                 >
-                                    {"Confirming…" if confirm_all_busy else "Confirm all (" + str(pending_count) + ")"}
+                                    {("Confirming " + str(confirm_all_total) + "…") if confirm_all_busy else "Confirm all (" + str(pending_count) + ")"}
                                 </Button>}
                             <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border bg-card shadow-edge">
                                 {for (idx, entry) in enumerate(imported_rows) {

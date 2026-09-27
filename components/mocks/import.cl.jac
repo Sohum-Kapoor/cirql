@@ -136,6 +136,29 @@ def:pub mock_confirm_person(person_id: str, how_met: str = "") -> list[any] {
     return [p];
 }
 
+"""ConfirmPeople(person_ids, how_met) -> { confirmed: [id], not_found: [id],
+count: int } — mock always confirms every id it knows about (SOH-235)."""
+def:pub mock_confirm_people(person_ids: list[str], how_met: str = "") -> dict[str, any] {
+    people: dict[str, any] = MOCK_IMPORT_STATE["people"] as dict[str, any];
+    confirmed: list[str] = [];
+    not_found: list[str] = [];
+    for pid in person_ids {
+        if pid in people {
+            p: dict[str, any] = people[pid] as dict[str, any];
+            p["status"] = "confirmed";
+            if len(how_met.strip()) > 0 {
+                p["how_met"] = how_met;
+            }
+            people[pid] = p;
+            confirmed.append(pid);
+        } else {
+            not_found.append(pid);
+        }
+    }
+    MOCK_IMPORT_STATE["people"] = people;
+    return {"confirmed": confirmed, "not_found": not_found, "count": len(confirmed)};
+}
+
 """SkipPerson(person_id) -> ["skipped"] | [{error: "not_proposed"|"not_found"}]."""
 def:pub mock_skip_person(person_id: str) -> list[any] {
     people: dict[str, any] = MOCK_IMPORT_STATE["people"] as dict[str, any];

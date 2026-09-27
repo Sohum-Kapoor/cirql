@@ -7,9 +7,9 @@ swap point, same `mocks_on()` idiom as the rest of `api.cl.jac`. Live path:
 `sv import` + `root spawn`, matching `capture`/`onboard_me`/`goal_rank`.
 """
 
-import from .mocks.import { mock_import_people, mock_confirm_person, mock_skip_person }
+import from .mocks.import { mock_import_people, mock_confirm_person, mock_skip_person, mock_confirm_people }
 import from .api { mocks_on }
-sv import from ..imports { ImportPeople, ConfirmPerson, SkipPerson }
+sv import from ..imports { ImportPeople, ConfirmPerson, SkipPerson, ConfirmPeople }
 
 glob IMPORT_DELAY_MS: int = 500;
 
@@ -64,6 +64,27 @@ async def:pub confirm_person(person_id: str, how_met: str = "") -> dict {
     }
     result = root spawn ConfirmPerson(person_id=person_id, how_met=how_met);
     out = _first_import_or_error(result.reports);
+    return out;
+}
+
+"""ConfirmPeople(person_ids, how_met) -> { confirmed: [id], not_found: [id],
+count: int, optional skipped_over_limit: int } (SOH-235; server half in
+`imports.sv.jac`) — one round trip for the whole "Confirm all" batch instead
+of one `ConfirmPerson` per row. Errors come back as `{ "error": ... }` so
+`ImportPeople.cl.jac`'s `confirm_all` can fall back to the sequential loop."""
+async def:pub confirm_people(person_ids: list[str], how_met: str = "") -> dict {
+    out: dict = {};
+    if mocks_on() {
+        await fake_delay_import(IMPORT_DELAY_MS);
+        out = mock_confirm_people(person_ids, how_met);
+        return out;
+    }
+    result = root spawn ConfirmPeople(person_ids=person_ids, how_met=how_met);
+    first: any = _first_import_any(result.reports);
+    if first is None {
+        return {"error": "no_report"};
+    }
+    out = first as dict;
     return out;
 }
 
