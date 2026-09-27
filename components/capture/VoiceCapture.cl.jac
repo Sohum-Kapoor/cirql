@@ -25,6 +25,7 @@ import from ..api { transcribe, mocks_on }
 import from ...lib.utils { cn }
 
 glob:pub MAX_MS: int = 180000;
+glob:pub MIC_TIMEOUT_MS: int = 6000;
 glob _REC: dict = {"rec": None, "stream": None, "chunks": [], "mime": "", "t0": 0, "fake": False, "stopping": False};
 
 def _now() -> int {
@@ -50,6 +51,23 @@ def:pub pick_mime() -> str {
         mime = "";
     }
     return mime;
+}
+
+"""`getUserMedia` raced against a timeout (SOH-232): some browsers neither
+resolve nor reject the permission prompt (a dismissed system dialog, a stuck
+policy check), which used to leave "Starting the mic…" on screen forever with
+every control disabled. Whichever settles first wins; the timeout branch
+rejects so the caller's single catch handles both cases the same way."""
+async def get_mic(timeout_ms: int) -> any {
+    stream: any = None;
+    stream = await new(Promise, lambda(resolve: any, reject: any) {  # jac:ignore[W2001]
+        timer: any = setTimeout(lambda { reject.call(None, new(Error, "mic_timeout")); }, timeout_ms);  # jac:ignore[W2001,E1053]
+        navigator.mediaDevices.getUserMedia({"audio": True}).then(  # jac:ignore[W2001,E1030]
+            lambda(s: any) { clearTimeout(timer); resolve.call(None, s); },  # jac:ignore[W2001,E1053]
+            lambda(err: any) { clearTimeout(timer); reject.call(None, err); }  # jac:ignore[W2001,E1053]
+        );
+    });
+    return stream;
 }
 
 def:pub voice_supported() -> bool {
@@ -233,7 +251,6 @@ def:pub VoiceCapture(
         stream: any = None;
         rec: any = None;
         mime: str = "";
-        denied_flag: bool = False;
         if mocks_on() {
             search: str = String(window.location.search);  # jac:ignore[W2001]
             if "mic=denied" in search {
@@ -256,13 +273,12 @@ def:pub VoiceCapture(
         phase = "starting";
         onBusy(True);
         try {
-            stream = await navigator.mediaDevices.getUserMedia({"audio": True});  # jac:ignore[W2001,E1030]
+            stream = await get_mic(MIC_TIMEOUT_MS);
         } except Exception as e {
-            ex: any = e;
-            err_name: str = String(ex.name or ex);  # jac:ignore[W2001]
-            denied_flag = "NotAllowed" in err_name or "Permission" in err_name or "Security" in err_name;
+            # Rejected, denied, no device, or timed out (SOH-232): one message,
+            # one recovery path — never leave the disabled/"starting" state.
             onBusy(False);
-            phase = "denied" if denied_flag else "nomic";
+            phase = "denied";
             return;
         }
         mime = pick_mime();
@@ -346,12 +362,13 @@ def:pub VoiceCapture(
             </div>;
     }
 
-    # ---- no mic / no permission
-    if phase == "denied" or phase == "unsupported" or phase == "nomic" {
+    # ---- no mic / no permission / timed out (SOH-232: one message, tabs and
+    # Back re-enabled the moment onBusy(False) ran above; nothing stays locked).
+    if phase == "denied" or phase == "unsupported" {
         msg: str = (
-            "Microphone access is off. Allow microphone access in Settings → Cirql, then try again."
-            if phase == "denied"
-            else ("This browser can't record audio here." if phase == "unsupported" else "No microphone found.")
+            "This browser can't record audio here."
+            if phase == "unsupported"
+            else "Couldn't start the microphone. Check permissions, or type your note instead."
         );
         return
             <div className="flex flex-col gap-3">
@@ -366,10 +383,13 @@ def:pub VoiceCapture(
 
     recording: bool = phase == "recording";
     busy: bool = phase == "starting" or phase == "transcribing";
+    # One name for the action (SOH-232): the button's aria-label and this
+    # visible status agree ("Start recording" / "Stop recording"); "Tap to
+    # record" stays as the helper caption below instead of standing in for it.
     status: str = (
         mmss(elapsed) + " / " + mmss(MAX_MS)
         if recording
-        else ("Transcribing…" if phase == "transcribing" else ("Starting the mic…" if phase == "starting" else "Tap to record"))
+        else ("Transcribing…" if phase == "transcribing" else ("Starting the mic…" if phase == "starting" else "Start recording"))
     );
 
     return
@@ -396,7 +416,11 @@ def:pub VoiceCapture(
             </div>
             <p aria-live="polite" className="text-body font-medium tabular-nums">{status}</p>
             <p className="text-center text-caption text-muted-foreground">
-                {"Tap stop when you're done. Up to 3 minutes." if recording else "Say who you met, how, what you talked about, and anything you promised. Up to 3 minutes."}
+                {
+                    "Tap stop when you're done. Up to 3 minutes."
+                    if recording
+                    else "Tap to record. Say who you met, how, what you talked about, and anything you promised. Up to 3 minutes."
+                }
             </p>
         </div>;
 }

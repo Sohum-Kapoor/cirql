@@ -38,26 +38,66 @@ import from ...lib.local_edits { local_drop, local_how_met }
 import from ...lib.text { join_with }
 sv import from ...schema { Person }
 
-glob _CTX: int = 70,
-     _INTENT_LABEL: dict[str, str] = {"need": "need", "offer": "offer", "open_to": "open to"};
+glob _MAX_QUOTE: int = 140,
+     _INTENT_LABEL: dict[str, str] = {"need": "Need", "offer": "Offer", "open_to": "Open to"};
 
-glob:pub LOCAL_NOTE: str = "Saved on this device until the server update lands.";
+glob:pub LOCAL_NOTE: str = "Saved on this device; syncs with your next capture.";
 
-"""[before, span, after, found] — `found` is "1" when span is a literal substring."""
+"""A quote clipped to `n` chars at a word boundary, with a trailing "…"."""
+def:pub clip_quote(text: str, n: int) -> str {
+    if len(text) <= n {
+        return text;
+    }
+    cut: int = n;
+    while cut > 0 and text[cut] != " " {
+        cut = cut - 1;
+    }
+    if cut == 0 {
+        cut = n;
+    }
+    return text[:cut].strip() + "…";
+}
+
+"""[before, span, after, found] — `found` is "1" when span is a literal
+substring. The excerpt is the sentence containing the span (split on . ! ? or
+a newline), clamped to `_MAX_QUOTE` chars around the span and snapped to word
+boundaries so it never cuts mid-word — a sentence boundary when the sentence
+fits, else a clean 140-char clip with "…"."""
 def:pub span_excerpt(note: str, span: str) -> list[str] {
     if not span or not note or span not in note {
         return ["", span, "", ""];
     }
     idx: int = note.index(span);
     end: int = idx + len(span);
-    start: int = (idx - _CTX) if idx > _CTX else 0;
-    stop: int = (end + _CTX) if end + _CTX < len(note) else len(note);
-    # Snap the context to word boundaries so the excerpt never cuts mid-word.
-    while start > 0 and start < idx and note[start - 1] != " " {
-        start = start + 1;
+    stops: str = ".!?" + chr(10);
+    start: int = idx;
+    while start > 0 and note[start - 1] not in stops {
+        start = start - 1;
     }
-    while stop < len(note) and stop > end and note[stop] != " " {
-        stop = stop - 1;
+    stop: int = end;
+    while stop < len(note) and note[stop] not in stops {
+        stop = stop + 1;
+    }
+    if stop < len(note) and note[stop] != chr(10) {
+        stop = stop + 1;
+    }
+    if stop - start > _MAX_QUOTE {
+        room: int = _MAX_QUOTE - len(span);
+        if room < 0 {
+            room = 0;
+        }
+        before_room: int = int(room / 2);
+        after_room: int = room - before_room;
+        cand_start: int = (idx - before_room) if (idx - before_room) > start else start;
+        cand_stop: int = (end + after_room) if (end + after_room) < stop else stop;
+        while cand_start > start and note[cand_start] != " " {
+            cand_start = cand_start + 1;
+        }
+        while cand_stop < stop and cand_stop > end and note[cand_stop - 1] != " " {
+            cand_stop = cand_stop - 1;
+        }
+        start = cand_start;
+        stop = cand_stop;
     }
     before: str = ("…" if start > 0 else "") + note[start:idx];
     after: str = note[end:stop] + ("…" if stop < len(note) else "");
@@ -78,7 +118,7 @@ def:pub SourceQuote(span: str, note_text: str, corrected: bool = False) -> JsxEl
                     {parts[2]}
                 </p>
             } else {
-                <p className="text-body-sm">{"“" + (span or "No quote recorded for this item.") + "”"}</p>
+                <p className="text-body-sm">{"“" + clip_quote(span or "No quote recorded for this item.", _MAX_QUOTE) + "”"}</p>
             }}
         </blockquote>;
 }
@@ -127,13 +167,14 @@ def:pub ReviewRow(
                         size="chip"
                         aria-expanded={is_open}
                         aria-label={"Show source" if not is_open else "Hide source"}
+                        className="h-11 px-3"
                         onClick={handle_toggle}
                     >
                         <QuoteIcon className="size-3" />
-                        <span>{"fixed" if corrected else "source"}</span>
+                        <span>{"Fixed" if corrected else "Source"}</span>
                     </Button>
                     {onEdit and
-                        <Button size="icon-sm" variant="ghost" aria-label={edit_label or "Edit"} className="text-muted-foreground" onClick={handle_edit}>
+                        <Button size="icon-sm" variant="ghost" aria-label={edit_label or "Edit"} className="size-11 text-muted-foreground" onClick={handle_edit}>
                             <PencilIcon className="size-3.5" />
                         </Button>}
                 </div>
@@ -241,7 +282,7 @@ def:pub PersonItem(
                 how_met={how_met}
                 busy={st["busy"] as bool}
                 error={st["error"] as str}
-                note="Name, org, title and how you met are kept on this device until the server update lands."
+                note={LOCAL_NOTE}
                 onSave={save}
                 onCancel={onCancel}
                 onRemove={remove}
@@ -255,7 +296,7 @@ def:pub PersonItem(
                 } else {
                     <span className="truncate text-body font-medium">{person["name"]}</span>
                 }}
-                <Badge variant={"success" if row["is_new"] else "outline"}>{"new" if row["is_new"] else "known"}</Badge>
+                <Badge variant={"success" if row["is_new"] else "outline"}>{"New" if row["is_new"] else "Known"}</Badge>
             </div>
             {sub and <span className="break-words text-caption text-muted-foreground">{sub}</span>}
             {row["local"] and how_met and <span className="text-caption text-muted-foreground">{"Met: " + how_met}</span>}
@@ -414,7 +455,7 @@ def:pub PromiseItem(
                 promise={promise}
                 busy={st["busy"] as bool}
                 error={st["error"] as str}
-                note="Kept on this device until the server update lands."
+                note={LOCAL_NOTE}
                 onSave={save}
                 onCancel={onCancel}
                 onRemove={remove}

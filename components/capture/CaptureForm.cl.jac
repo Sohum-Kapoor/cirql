@@ -42,15 +42,28 @@ def:pub is_capture_failure(msg: str) -> bool {
     return bool(msg) and msg.startswith("Couldn't capture that");
 }
 
-"""Can this mode submit? "" when yes, else a short reason."""
+"""Can this mode submit? "" when yes, else a short reason.
+
+One phrasing for the empty state across modes (SOH-232): "Add a note to
+capture." (Paste), "Record a note to capture." (Voice), "Add who you met to
+capture." (Guided). `guided_missing`'s more specific "Pick how you met." stays
+as-is; only its "no one yet" message is remapped here (guided.cl.jac's copy
+isn't ours to edit)."""
 def:pub capture_blocker(mode: str, text: str, guided: dict, voice: dict) -> str {
     if mode == "guided" {
-        return guided_missing(guided) or ("" if guided_text(guided).strip() else "Add who you met.");
+        missing: str = guided_missing(guided);
+        if missing == "Add who you met." {
+            return "Add who you met to capture.";
+        }
+        if missing {
+            return missing;
+        }
+        return "" if guided_text(guided).strip() else "Add who you met to capture.";
     }
     if mode == "voice" {
-        return "" if ((voice["text"] or "") as str).strip() else "Record a note first.";
+        return "" if ((voice["text"] or "") as str).strip() else "Record a note to capture.";
     }
-    return "" if text.strip() else "Write something first.";
+    return "" if text.strip() else "Add a note to capture.";
 }
 
 def:pub CaptureForm(
@@ -111,15 +124,18 @@ def:pub CaptureForm(
     blocker: str = capture_blocker(mode, text, guided, voice);
     can_submit: bool = not blocker and not locked;
 
-    # Fixed-height footer (SOH-226): pinned to the viewport bottom so the
-    # Capture button's on-screen position never moves — not while the
-    # textarea above grows, not between the idle / pending states. The wait /
-    # blocker narrative sits ABOVE the button, in its own reserved-height
-    # slot, so its own appearing/disappearing can't shift the button either.
+    # Fixed-height footer (SOH-226 / SOH-232): pinned to the viewport bottom
+    # so the Capture button's on-screen position never moves. Opaque (not
+    # translucent) and sized to its content only — a one-line helper (or, once
+    # `pending`, a same-height skeleton in its place) above the button row —
+    # so it never grows past button + one caption line and never ghosts the
+    # form behind it. The inner column mirrors TabBar's own centered max-w-md
+    # + 16px gutters (components/nav/TabBar.cl.jac, read-only) instead of
+    # padding the full-width bar, so the button lines up with the page content.
     return
-        <div className="flex flex-col gap-5 pb-[calc(9rem+env(safe-area-inset-bottom))]">
+        <div className="flex flex-col gap-5 pb-[calc(6.5rem+env(safe-area-inset-bottom))]">
             <header className="-ml-2 flex items-center gap-1">
-                <Button size="icon" variant="ghost" disabled={locked} onClick={handle_back} aria-label="Back to home">
+                <Button size="icon-lg" variant="ghost" disabled={locked} onClick={handle_back} aria-label="Back to home">
                     <ChevronLeftIcon className="size-5" />
                 </Button>
                 <h1 className="text-card-title">Capture</h1>
@@ -138,7 +154,7 @@ def:pub CaptureForm(
                 </TabsContent>
                 <TabsContent value="paste">
                     <Field>
-                        <FieldLabel htmlFor="capture-text" className="sr-only">Your note</FieldLabel>
+                        <FieldLabel htmlFor="capture-text">Your note</FieldLabel>
                         <Textarea
                             id="capture-text"
                             rows={9}
@@ -146,7 +162,7 @@ def:pub CaptureForm(
                             onChange={handle_change}
                             disabled={pending}
                             placeholder="What happened? Who did you meet, what did they say, what did you promise?"
-                            className="max-h-[40vh] overflow-y-auto"
+                            className="min-h-[140px] max-h-[40vh] overflow-y-auto"
                         />
                         <FieldDescription>
                             Write it the way you'd tell a friend, or paste notes or an email. Cirql keeps the original text.
@@ -165,19 +181,12 @@ def:pub CaptureForm(
                         <Button variant="secondary" size="sm" onClick={handle_submit}>Retry</Button>}
                 </div>
             }}
-            <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-background/95 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pl-4 pr-4 backdrop-blur">
-                <div className="mx-auto flex w-full max-w-md flex-col gap-2">
-                    <div className="flex min-h-[4.5rem] flex-col justify-end gap-2">
+            <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-background pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+                <div className="mx-auto flex w-full max-w-md flex-col gap-2 pl-4 pr-4">
+                    <div className="flex h-5 items-center justify-center">
                         {if pending {
-                            <div className="flex flex-col items-center gap-2">
-                                <p role="status" aria-live="polite" className="text-center text-caption text-muted-foreground">
-                                    {wait_copy(wait_stage)}
-                                </p>
-                                <div className="flex w-full flex-col gap-1.5">
-                                    <Skeleton className="h-3.5 w-full" />
-                                    <Skeleton className="h-3.5 w-2/3" />
-                                </div>
-                            </div>
+                            <span role="status" aria-live="polite" className="sr-only">{wait_copy(wait_stage)}</span>
+                            <Skeleton className="h-3.5 w-2/3" />
                         } elif blocker and not voice_busy {
                             <p className="text-center text-caption text-muted-foreground">{blocker}</p>
                         }}

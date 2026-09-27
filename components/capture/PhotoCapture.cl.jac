@@ -110,14 +110,14 @@ def:pub PhotoCapture(
                 size="sm"
                 disabled={disabled or busy}
                 onClick={open_picker}
-                aria-label="Scan a badge or business card"
-                className="h-10"
+                aria-label="Scan a badge or card"
+                className="h-11"
             >
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-3.5">
                     <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" />
                     <circle cx="12" cy="13" r="3" />
                 </svg>
-                <span className="text-caption">{"Reading…" if busy else "Scan a badge"}</span>
+                <span className="text-caption">{"Reading…" if busy else "Scan a badge or card"}</span>
             </Button>
             {busy and <p aria-live="polite" className="absolute top-full right-0 z-10 mt-1 w-max rounded-md border bg-popover pt-1.5 pb-1.5 pl-2.5 pr-2.5 text-caption text-muted-foreground shadow-edge">Reading the badge…</p>}
             {message and <p role="alert" className="absolute top-full right-0 z-10 mt-1 w-64 max-w-[calc(100vw_-_32px)] rounded-md border bg-popover pt-1.5 pb-1.5 pl-2.5 pr-2.5 text-caption text-destructive shadow-edge">{message}</p>}
