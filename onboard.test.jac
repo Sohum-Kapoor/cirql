@@ -5,7 +5,7 @@ here. The LLM extraction path itself is proven live via curl (see the SOH-164
 deliverable), not by a test.
 """
 
-import from onboard { OnboardExtraction, name_from_about, handle_from_name, clean_list, jid_suffix, find_by_topic, find_goal_by_text, find_intent, looks_like_goal, activate_first_goal, collect_goals }
+import from onboard { OnboardExtraction, name_from_about, handle_from_name, clean_list, jid_suffix, find_by_topic, find_goal_by_text, find_intent, looks_like_goal, has_outcome_keyword, strongest_need, promote_strongest_need, activate_first_goal, collect_goals }
 import from schema { Me, Interest, Goal, Intent, HasGoal }
 
 test "OnboardExtraction obj holds the fields the walker copies out" {
@@ -70,6 +70,64 @@ test "looks_like_goal accepts asks, rejects descriptions of what they do/build" 
     assert not looks_like_goal("We build a robotics startup");
     assert not looks_like_goal("We are a climate tech company");
     assert not looks_like_goal("i am case-insensitive too");
+}
+
+test "SOH-164 looks_like_goal: an 'I'm ...' phrasing still counts as a goal when it names an outcome" {
+    assert looks_like_goal("I'm raising a pre-seed round from climate-tech investors");
+    assert looks_like_goal("We are looking to hire our first co-founder this fall");
+    assert not looks_like_goal("I'm building an accessible robot");
+}
+
+test "SOH-164 has_outcome_keyword / strongest_need" {
+    assert has_outcome_keyword("pre-seed funding");
+    assert has_outcome_keyword("intros to climate-tech investors");
+    assert not has_outcome_keyword("a nice conversation");
+
+    assert strongest_need([]) == "";
+    assert strongest_need(["a nice conversation"]) == "a nice conversation";
+    assert strongest_need(["pre-seed funding", "intros to climate-tech investors"]) == "intros to climate-tech investors";
+}
+
+test "SOH-164 promote_strongest_need: no goal stated, two needs -> one active Goal with the promoted text" {
+    me = (root ++> Me(name="promote-empty-goals-test-me"))[0];
+    existing_goals: list[Goal] = [me ->:HasGoal:->];
+    goals: list[Goal] = [];
+    needs = ["pre-seed funding", "intros to climate-tech investors"];
+
+    goals = promote_strongest_need(me, existing_goals, goals, needs, "2026-01-01T00:00:00");
+
+    assert len(goals) == 1, f"expected one promoted goal, got {len(goals)}";
+    assert goals[0].text == "intros to climate-tech investors";
+    assert goals[0].active;
+    on_root = [me ->:HasGoal:->];
+    assert len(on_root) == 1;
+}
+
+test "SOH-164 promote_strongest_need: goals already present -> no promotion" {
+    me = (root ++> Me(name="promote-goals-present-test-me"))[0];
+    stated = (me +>:HasGoal:+> Goal(text="Raise a pre-seed round", created_at="2026-01-01T00:00:00"))[0];
+    existing_goals: list[Goal] = [me ->:HasGoal:->];
+    goals: list[Goal] = [stated];
+    needs = ["intros to climate-tech investors"];
+
+    goals = promote_strongest_need(me, existing_goals, goals, needs, "2026-01-01T00:00:00");
+
+    assert len(goals) == 1;
+    assert goals[0].text == "Raise a pre-seed round";
+    on_root = [me ->:HasGoal:->];
+    assert len(on_root) == 1, "no need should have been promoted to a second Goal";
+}
+
+test "SOH-164 promote_strongest_need: no needs -> no goal" {
+    me = (root ++> Me(name="promote-no-needs-test-me"))[0];
+    existing_goals: list[Goal] = [me ->:HasGoal:->];
+    goals: list[Goal] = [];
+
+    goals = promote_strongest_need(me, existing_goals, goals, [], "2026-01-01T00:00:00");
+
+    assert len(goals) == 0;
+    on_root = [me ->:HasGoal:->];
+    assert len(on_root) == 0;
 }
 
 test "activate_first_goal: exactly one active goal, first extracted wins, pre-existing goals deactivated" {
