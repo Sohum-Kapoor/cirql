@@ -590,6 +590,12 @@ def:pub PersonSheet(
     missing: bool = ready and bool(detail["error"]);
     person: dict = (detail["person"] or {}) as dict;
     rel: dict = (detail["relevance"] or {}) as dict;
+    # Strings, not the dict, in JSX: `{rel and <X/>}` hands React the empty dict
+    # itself when relevance is null (Python `and` returns the falsy operand) and
+    # React throws "Objects are not valid as a React child" (judge re-score, SOH-212).
+    rel_label: str = _s(rel, "label");
+    rel_strength: str = _s(rel, "strength");
+    rel_reason: str = _s(rel, "reason");
     facts: list[dict] = (detail["facts"] or []) as list[dict];
     intents: list[dict] = (detail["intents"] or []) as list[dict];
     promises: list[dict] = (detail["promises"] or []) as list[dict];
@@ -634,9 +640,9 @@ def:pub PersonSheet(
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex flex-wrap items-center gap-2">
                                 <SheetTitle>{_s(person, "name")}</SheetTitle>
-                                {rel and _s(rel, "label") and <Badge variant="outline">{_s(rel, "label")}</Badge>}
-                                {rel and _s(rel, "strength") and
-                                    <Badge variant={strength_variant(_s(rel, "strength"))}>{_s(rel, "strength")}</Badge>}
+                                {rel_label and <Badge variant="outline">{rel_label}</Badge>}
+                                {rel_strength and
+                                    <Badge variant={strength_variant(rel_strength)}>{rel_strength}</Badge>}
                             </div>
                             {not editing and
                                 <Button
@@ -654,8 +660,8 @@ def:pub PersonSheet(
                         </SheetDescription>
                     </SheetHeader>
                     <SheetBody className="gap-4">
-                        {rel and _s(rel, "reason") and
-                            <p className="text-body-sm text-muted-foreground">{_s(rel, "reason")}</p>}
+                        {rel_reason and
+                            <p className="text-body-sm text-muted-foreground">{rel_reason}</p>}
                         {(
                             <PersonContactEditor
                                 person={person}
