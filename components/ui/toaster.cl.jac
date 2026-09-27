@@ -134,7 +134,7 @@ def:pub Toaster() -> JsxElement {
             data-slot="toaster"
             role="status"
             aria-live="polite"
-            className="pointer-events-none fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+12px)] z-30 mx-auto flex w-full max-w-md flex-col-reverse gap-2 pl-4 pr-4"
+            className="pointer-events-none fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+12px)] z-[60] mx-auto flex w-full max-w-md flex-col-reverse gap-2 pl-4 pr-4"
         >
             {for t in items {
                 <ToastRow key={(t["id"] or "") as str} item={t} onDismiss={handle_dismiss} onUndo={handle_undo} />
