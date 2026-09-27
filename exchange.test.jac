@@ -24,14 +24,14 @@ import tempfile;
 import time;
 import requests;
 import sys;
-import from exchange { request_closed, friend_handles, friend_entries, request_visible, norm_audience }
+import from exchange { request_closed, friend_handles, friend_entries, request_visible, norm_audience, need_key, requester_first_name }
 import from schema { IntroRequest, Me, Person, Knows, Card, FromCard }
 import from scoring { NeedMatch, NeedMatches }
 
 glob EX_REPO_ROOT = os.path.dirname(os.path.abspath(__file__));
 
 def _ex_harness(tmp_dir: str) -> str {
-    for name in ["exchange.sv.jac", "schema.sv.jac", "scoring.sv.jac", "onboard.sv.jac", "walkers.sv.jac", "cards.sv.jac", "llm.sv.jac", "freshness.sv.jac", "goals.sv.jac", "reads.sv.jac", "handshake.sv.jac", "identity.sv.jac", "names.sv.jac"] {
+    for name in ["exchange.sv.jac", "schema.sv.jac", "scoring.sv.jac", "onboard.sv.jac", "walkers.sv.jac", "cards.sv.jac", "llm.sv.jac", "freshness.sv.jac", "goals.sv.jac", "reads.sv.jac", "handshake.sv.jac", "identity.sv.jac", "names.sv.jac", "drafts.sv.jac"] {
         shutil.copyfile(os.path.join(EX_REPO_ROOT, name), os.path.join(tmp_dir, name));
     }
     harness_path = os.path.join(tmp_dir, "exapp.jac");
@@ -767,6 +767,94 @@ test "exchange SOH-218: friends-only requests reach friends only; blocks hide bo
         assert [str(x["reply"]["_jac_id"]) for x in _run(cl, b, "ListMyReplies", {})] == [b_reply];
         assert _err(_run(cl, b, "BlockHandle", {"handle": "  "})) == "bad_handle";
         assert _run(cl, a, "UnblockHandle", {"handle": "nobody"}) == [{"blocked": [c_handle]}];
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "exchange SOH-229: need_key collapses invest/intern stems across two differently-worded asks; a nurse ask shares none of them" {
+    a = need_key("An investor in climate companies who hires summer interns.");
+    b = need_key("Someone who invests in climate startups and hires university interns.");
+    nurse = need_key("Experienced nurses in Detroit");
+    print(f"[ex needkey] a={a!r} b={b!r} nurse={nurse!r}");
+    # Exact, deterministic output (lowercase, punctuation stripped, stopwords
+    # dropped, each token light-stemmed, deduped, sorted).
+    assert a == "climate compani hir intern invest summer", a;
+    assert b == "climate hir intern invest startup university", b;
+    assert nurse == "detroit experienced nurs", nurse;
+    # "investor" and "invests" both stem to "invest"; "interns" (both) to
+    # "intern" -- these two asks share every stem EXCEPT the genuinely
+    # different modifier nouns ("companies" vs "startups", "summer" vs
+    # "university"), which correctly do NOT collapse.
+    shared = set(a.split()) & set(b.split());
+    assert {"climate", "invest", "intern"}.issubset(shared), (a, b, shared);
+    assert set(nurse.split()) & set(a.split()) == set(), (nurse, a, shared);
+    assert set(nurse.split()) & set(b.split()) == set(), (nurse, b);
+}
+
+test "exchange SOH-229: goal_text round trips through PostRequest, ListIncomingRequests and ListMyRequests, via goal_noun_phrase" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_ex_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "ex_a229g@example.com");
+        b = _reg(cl, "ex_b229g@example.com");
+        _run(cl, a, "DevMakeCard", {"handle": "alice-229g", "name": "Alice Growth"});
+        _run(cl, b, "DevMakeCard", {"handle": "bob-229g", "name": "Bob"});
+
+        posted = _run(cl, a, "PostRequest", {
+            "need": "a technical cofounder", "about_line": "",
+            "goal_text": "I want to close three enterprise deals this quarter"
+        })[0];
+        req_id = str(posted["_jac_id"]);
+        # goal_noun_phrase strips the leading first-person prefix and lowercases
+        # (a no-op here since the remainder already starts lowercase).
+        assert str(posted["goal_text"]) == "close three enterprise deals this quarter", posted;
+
+        incoming = [r for r in _run(cl, b, "ListIncomingRequests", {}) if str(r["_jac_id"]) == req_id];
+        assert len(incoming) == 1, incoming;
+        assert str(incoming[0]["goal_text"]) == "close three enterprise deals this quarter", incoming;
+
+        mine = [x for x in _run(cl, a, "ListMyRequests", {}) if str(x["request"]["_jac_id"]) == req_id];
+        assert len(mine) == 1, mine;
+        assert str(mine[0]["request"]["goal_text"]) == "close three enterprise deals this quarter", mine;
+
+        # No goal_text given -> stored empty, never a KeyError anywhere it's read.
+        posted2 = _run(cl, a, "PostRequest", {"need": "a designer", "about_line": ""})[0];
+        assert str(posted2["goal_text"]) == "", posted2;
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "exchange SOH-229: from_name is the requester's own first name when their Card is link-visible, empty when handshake_only" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_ex_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "ex_a229n@example.com");
+        b = _reg(cl, "ex_b229n@example.com");
+        _run(cl, b, "DevMakeCard", {"handle": "bob-229n", "name": "Bob"});
+
+        _run(cl, a, "PublishCard", {
+            "headline": "Founder", "about": "Battery recycling.",
+            "visibility": "link", "name": "Alice Smith"
+        });
+        req1 = str(_run(cl, a, "PostRequest", {"need": "a seed investor", "about_line": ""})[0]["_jac_id"]);
+        row1 = [r for r in _run(cl, b, "ListIncomingRequests", {}) if str(r["_jac_id"]) == req1][0];
+        assert str(row1["from_name"]) == "Alice", row1;
+
+        # Same handle, same underlying person -- switch to handshake_only and
+        # post a NEW request: the requester chose not to publish, so no name,
+        # never a name read off their graph instead.
+        _run(cl, a, "PublishCard", {"visibility": "handshake_only"});
+        req2 = str(_run(cl, a, "PostRequest", {"need": "a mentor", "about_line": ""})[0]["_jac_id"]);
+        row2 = [r for r in _run(cl, b, "ListIncomingRequests", {}) if str(r["_jac_id"]) == req2][0];
+        assert str(row2["from_name"]) == "", row2;
     } finally {
         if client is not None { client.close(); }
         shutil.rmtree(tmp_dir, ignore_errors=True);

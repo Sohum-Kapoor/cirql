@@ -40,6 +40,7 @@ def _ag_harness(tmp_dir: str) -> str {
     f.write(
         "import from agent { RunAgent, ListAgentActions, ResolveAgentAction, DevSeedAgent }\n"
         "import from exchange { PostRequest, ListMyRequests, ListIncomingRequests, DevMakeCard, DevSeedMatch }\n"
+        "import from cards { PublishCard }\n"
         "import from walkers { DevAddPerson }\n"
     );
     f.close();
@@ -504,4 +505,58 @@ test "SOH-212 (judge3) run_agent_for: an open ask_network action goes stale once
     an3 = [a for a in [me ->:HasAction:->] if a.kind == "ask_network" and a.goal_id == jid(goal)];
     assert len(an3) == 1, "a third run must not re-propose ask_network while the warm path exists";
     assert an3[0].status == "stale";
+}
+
+test "agent SOH-229: answer_ask title is '<from_name> is looking for <need>.' when the requester's Card is link-visible, '@<handle>' otherwise; payload_json carries from_name/need_key/goal_text" {
+    tmp_dir = tempfile.mkdtemp();
+    try {
+        cl = JacTestClient.from_file(_ag_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data_title"));
+        a = _ag_reg(cl, "agent_title_a@example.com");
+        b = _ag_reg(cl, "agent_title_b@example.com");
+        c = _ag_reg(cl, "agent_title_c@example.com");
+
+        _ag_run(cl, a, "DevMakeCard", {"handle": "title-alice", "name": "Alice"});
+        # B publishes a link-visible Card -> resolvable via cards.get_card.
+        _ag_run(cl, b, "PublishCard", {"visibility": "link", "name": "Bob Jones"});
+        # C never publishes (DevMakeCard only lists nothing) -> falls back to "@handle".
+        c_handle = str(_ag_run(cl, c, "DevMakeCard", {"handle": "title-carol", "name": "Carol"})[0]["handle"]);
+        seed = dict(_ag_run(cl, a, "DevSeedAgent", {"tag": "title1"})[0]);
+        print(f"[agent-title] seed {seed}");
+
+        posted_b = _ag_run(cl, b, "PostRequest", {
+            "need": "a climate battery investor", "about_line": "", "audience": "everyone",
+            "goal_text": "I am looking to raise a climate seed round"
+        });
+        req_b = str(posted_b[0]["_jac_id"]);
+
+        posted_c = _ag_run(cl, c, "PostRequest", {
+            "need": "a climate battery investor", "about_line": "", "audience": "everyone"
+        });
+        req_c = str(posted_c[0]["_jac_id"]);
+
+        run1 = dict(_ag_run(cl, a, "RunAgent", {"reason": "title-run"})[0]);
+        print(f"[agent-title] run1 {run1}");
+        rows = _ag_actions(cl, a, "open");
+        aa = _ag_by_kind(rows, "answer_ask");
+        assert len(aa) == 2, rows;
+
+        by_req = {str(r["action"]["request_id"]): r["action"] for r in aa};
+        act_b = by_req[req_b];
+        act_c = by_req[req_c];
+
+        assert str(act_b["title"]) == "Bob is looking for a climate battery investor.", act_b;
+        assert str(act_c["title"]) == f"@{c_handle} is looking for a climate battery investor.", act_c;
+
+        pl_b = json.loads(str(act_b["payload_json"]));
+        assert str(pl_b["from_name"]) == "Bob", pl_b;
+        assert str(pl_b["need_key"]) == "battery climate invest", pl_b;
+        assert str(pl_b["goal_text"]) == "raise a climate seed round", pl_b;
+
+        pl_c = json.loads(str(act_c["payload_json"]));
+        assert str(pl_c["from_name"]) == "", pl_c;
+        assert str(pl_c["need_key"]) == "battery climate invest", pl_c;
+        assert str(pl_c["goal_text"]) == "", pl_c;
+    } finally {
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
 }
