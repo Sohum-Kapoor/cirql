@@ -38,6 +38,7 @@ import from edits { UpdatePerson, UpdatePromise }
 import from identity { RefreshIdentityTokens }
 import from search { Search }
 import from notes { ListNotes, DeleteNote, ConfirmFact, Digest }
+import from notes { ListNotes, DeleteNote, ConfirmFact, Digest, DevSeedNote }
 import from dates { NormalizeDates, UpcomingDates }
 
 # Client-side UI
