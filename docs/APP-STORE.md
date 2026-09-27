@@ -11,7 +11,7 @@ Written 2026-09-26 22:00, after the product wave. Status words: **done** (on mai
 | Purpose strings for microphone, camera, photo library | done (SOH-226 plist) | voice capture, badge photo |
 | Export-compliance flag | done | `ITSAppUsesNonExemptEncryption = false` |
 | Sign in works without a third-party account | done | username + password on our own server |
-| Account deletion from inside the app (Guideline 5.1.1(v)) | done (SOH-226) | `DeleteAccount` wipes the graph, card listing and uploads, then rotates the caller's users row so the login stops working. |
+| Account deletion from inside the app (Guideline 5.1.1(v)) | done (SOH-226) | Settings → Data → Delete account (type DELETE): `DeleteAccount` wipes the graph, card listing and uploads, then rotates the caller's users row so the login stops working; `ok` only when both happened. |
 | Works without network | missing | every screen needs the server; an offline capture queue is roadmap |
 | No crashes on first launch, no placeholder content | done | the "For your goal: —" first screen was fixed by B (PR #77); the final Amara pass hit none |
 | Privacy policy URL | done | `assets/privacy.html`, served unauthenticated at `/static/privacy.html`, linked from "How Cirql works" |
