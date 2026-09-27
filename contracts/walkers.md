@@ -562,3 +562,20 @@ Bounded traversal over the caller's own root: every Note (text capped at 300 cha
     suggestions: [...same shape as Tend...], lines: [str] }
   ```
   `week_of` = the ISO date of the Monday starting the current week. `promises_due`/`intents_expiring` = `UpcomingDates`' own gathering with a fixed 14-day window. `new_people` = people the caller met (`Knows`) whose `source_note` resolves to a Note captured in the last 7 days (inclusive), newest first. `stale_ranking` = `true` when the active Goal's `ranked_at` predates a Note's `captured_at` (reuses `goals.sv.jac`'s own `ranking_is_stale` rule verbatim), `false` with no active Goal. `suggestions` = the top 3 items from `tend.sv.jac`'s `tend_for` (same shape as `Tend`'s report). `lines` = exactly five plain-English sentences (week-of, promise count, intent count, new-people count, ranking freshness) a phone can show as-is.
+- 2026-09-26 — SOH-222 A1 (Settings data panel, client). `components/settings/DataPanel.cl.jac` +
+  `components/mocks/data.cl.jac` + `components/api.cl.jac` wrappers `export_graph`, `list_archived`,
+  `restore_person`, `delete_my_data`. `export_graph()` is live (`sv import from ..export { ExportGraph }`,
+  SOH-210) — the panel downloads the report as `cirql-export-<YYYY-MM-DD>.json` via a Blob + object URL and
+  shows `counts`. `ListArchived`, `RestorePerson`, `DeleteMyData` are **not yet on main** (parallel branch);
+  the client calls them by name through `jacSpawn` (same pattern as `PersonDetail`/`Brief`) against these
+  exact shapes, gated under `?mock=1`/`USE_MOCKS`:
+  - `ListArchived()` -> `[Person]` (every `Person` with `archived == True`, restorable).
+  - `RestorePerson(person_id: str)` -> `[Person]`, the caller's remaining archived people after clearing
+    `archived` on `person_id` (own-root only; `person_id` not one of the caller's archived people -> no-op,
+    same list returned unchanged).
+  - `DeleteMyData(confirm: str)` -> `{ deleted: { people, facts, intents, promises, notes, goals, cards,
+    circles, events }, ok: true }` when `confirm == "DELETE"` (counts of everything actually deleted off the
+    caller's own root), or `{ error: "confirm_mismatch" }` otherwise — the client only ever sends
+    `confirm="DELETE"` (button is disabled client-side until the user types it exactly), so the server-side
+    check is defense in depth, not the only gate. Once `A`'s branch lands, flip these three to `sv import` +
+    `root spawn` in `components/api.cl.jac` (comment there marks the swap point).
