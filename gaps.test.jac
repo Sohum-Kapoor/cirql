@@ -6,7 +6,7 @@ Annex to gaps.sv.jac — run with `jac test gaps.sv.jac`. Covers only
 warm person is dropped and an uncovered kind is reported.
 """
 
-import from gaps { compute_gaps, GapExtraction, NeededKind }
+import from gaps { compute_gaps, GapExtraction, NeededKind, known_people_texts, strip_score_words }
 import from schema { Me, Goal, Person, HasGoal, Knows, RelevantTo }
 
 test "compute_gaps drops the covered kind, keeps the uncovered kind" {
@@ -106,6 +106,54 @@ test "compute_gaps dedupes case-insensitively and caps at 4" {
     assert len(gaps) == 4, f"expected the cap of 4, got {len(gaps)}: {gaps}";
     kinds = [g["kind"].lower() for g in gaps];
     assert kinds.count("climate-tech vc") == 1, f"expected the duplicate kind deduped, got {kinds}";
+}
+
+test "compute_gaps drops a kind already covered by an active known person (SOH-212)" {
+    # Reproduces the judge finding: the Home gap card said 'No warm path to
+    # JacHacks event organizer' while Lena Fischer (title 'organizer', org
+    # 'JacHacks') was in the graph. She has no RelevantTo tie to this goal
+    # yet (so the LLM's covered_by/warm_count check alone can't see her) -
+    # the deterministic post-filter over known_people_texts must catch her.
+    me = (root ++> Me(name="Test3"))[0];
+    # goal exists (a real gap must be about a goal in the graph) but Lena is
+    # deliberately never tied to it via RelevantTo - the post-filter must
+    # catch her without needing that tie.
+    (me +>:HasGoal:+> Goal(text="Find a warm path to JacHacks", created_at="2026-09-26T00:00:00Z"))[0];
+    (me +>:Knows(how_met="test"):+> Person(
+        name="Lena Fischer", org="JacHacks", title="organizer"
+    ))[0];
+
+    known_people = known_people_texts(me);
+    assert len(known_people) == 1;
+
+    proposed = NeededKind(
+        kind="JacHacks event organizer",
+        why_needed="The goal needs someone organizing JacHacks to open a warm path.",
+        suggested_need="an intro to whoever is organizing JacHacks this year",
+        covered_by=[]
+    );
+    extraction = GapExtraction(kinds=[proposed]);
+
+    gaps = compute_gaps(extraction, 0, known_people);
+
+    assert len(gaps) == 0, f"Lena Fischer (organizer at JacHacks) should have covered this gap, got {gaps}";
+}
+
+test "compute_gaps never emits the banned word 'score'/'scores'/'scoring'" {
+    dirty = NeededKind(
+        kind="climate-tech VC",
+        why_needed="Scoring your network found no strong match for this Score.",
+        suggested_need="someone to boost your scores with climate investors",
+        covered_by=[]
+    );
+    extraction = GapExtraction(kinds=[dirty]);
+
+    gaps = compute_gaps(extraction, 0);
+
+    assert len(gaps) == 1;
+    text = (gaps[0]["why_needed"] + " " + gaps[0]["suggested_need"]).lower();
+    assert "score" not in text, f"banned word 'score' leaked into gap text: {gaps}";
+    assert strip_score_words("Scoring the Score and scores.") == "results the results and results.";
 }
 
 test "compute_gaps drops entries with any empty field" {

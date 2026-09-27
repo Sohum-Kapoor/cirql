@@ -5,8 +5,9 @@ here. The LLM extraction path itself is proven live via curl (see the SOH-164
 deliverable), not by a test.
 """
 
-import from onboard { OnboardExtraction, name_from_about, handle_from_name, clean_list, jid_suffix, find_by_topic, find_goal_by_text, find_intent, looks_like_goal, has_outcome_keyword, strongest_need, promote_strongest_need, activate_first_goal, collect_goals }
+import from onboard { OnboardExtraction, name_from_about, handle_from_name, clean_list, clean_text, jid_suffix, find_by_topic, find_goal_by_text, find_intent, looks_like_goal, has_outcome_keyword, strongest_need, promote_strongest_need, activate_first_goal, collect_goals, onboarding_added_how_met, month_day }
 import from schema { Me, Interest, Goal, Intent, HasGoal }
+import from datetime { datetime }
 
 test "OnboardExtraction obj holds the fields the walker copies out" {
     extraction = OnboardExtraction(
@@ -188,6 +189,44 @@ test "SOH-225 collect_goals: dedupes against a goal already on the root, and sti
     assert goals[1].text == "Find a mentor in accessible robotics";
     on_root = [me ->:HasGoal:->];
     assert len(on_root) == 2;
+}
+
+test "SOH-212 clean_text strips only trailing sentence punctuation/whitespace, never internal text" {
+    assert clean_text("Identify promising Jac teams to follow after JacHacks. ") == "Identify promising Jac teams to follow after JacHacks";
+    assert clean_text("Land an internship!") == "Land an internship";
+    assert clean_text("Find a co-founder??") == "Find a co-founder";
+    assert clean_text("  Multiple   spaces kept internally  ") == "Multiple   spaces kept internally";
+    assert clean_text("Mr. Fixit.") == "Mr. Fixit";
+    assert clean_text("") == "";
+    assert clean_text("!!!") == "";
+}
+
+test "SOH-212 clean_list also strips trailing punctuation (goal/intent/interest storage)" {
+    out = clean_list([
+        "Identify promising Jac teams to follow after JacHacks. ",
+        "Land an internship!",
+        "  Robotics  "
+    ]);
+    assert out == ["Identify promising Jac teams to follow after JacHacks", "Land an internship", "Robotics"];
+}
+
+test "SOH-212 collect_goals stores a goal with its trailing punctuation stripped" {
+    me = (root ++> Me(name="collect-goals-clean-test-me"))[0];
+    existing_goals: list[Goal] = [me ->:HasGoal:->];
+
+    goals = collect_goals(me, existing_goals, ["Identify promising Jac teams to follow after JacHacks. "], "2026-01-01T00:00:00");
+
+    assert len(goals) == 1;
+    assert goals[0].text == "Identify promising Jac teams to follow after JacHacks", f"trailing '. ' leaked into the stored goal text: {goals[0].text!r}";
+}
+
+test "SOH-212 month_day / onboarding_added_how_met: hand-written-style date, no leading zero" {
+    dt = datetime(2026, 9, 26);
+    assert month_day(dt) == "Sep 26";
+    assert onboarding_added_how_met(dt) == "added when you set up Cirql (Sep 26)";
+
+    dt2 = datetime(2026, 1, 5);
+    assert month_day(dt2) == "Jan 5", f"expected no leading zero on the day, got {month_day(dt2)!r}";
 }
 
 test "SOH-212 name_from_about: the speaker's own name when stated, else empty" {

@@ -82,6 +82,29 @@ def name_from_about(about: str) -> str {
     return "";
 }
 
+"""SOH-212: 'Sep 26' style, hand-written month-day - this compiler's
+`datetime.strftime` has no `%-d` (no-leading-zero day), so `strftime("%b ")`
+(which already includes the trailing space) plus the plain `str(dt.day)`
+gets the same result without a leading zero."""
+def month_day(dt: datetime) -> str {
+    return dt.strftime("%b ") + str(dt.day);
+}
+
+"""SOH-212: the `how_met` the onboarding "bring five people" step should use
+for people it adds, instead of capture.sv.jac's generic
+`default_how_met("paste", ...)` ("from a pasted note on 2026-09-26") - a
+human sentence with a hand-written-style date: "added when you set up Cirql
+(Sep 26)". `capture.sv.jac`'s own default is untouched (AGENTS.md ownership:
+that default serves every OTHER capture, not just onboarding); Capture
+already accepts an explicit `how_met` override for exactly this purpose
+(SOH-166: "an explicit how_met... wins for NEW edges"). NEEDS B (contracts/
+walkers.md, 2026-09-26 SOH-212 note): the onboarding paste call must pass
+`how_met=onboard.onboarding_added_how_met()`."""
+def onboarding_added_how_met(now: datetime | None = None) -> str {
+    dt = now if now is not None else datetime.now();
+    return f"added when you set up Cirql ({month_day(dt)})";
+}
+
 def handle_from_name(name: str) -> str {
     slug = "";
     prev_dash = False;
@@ -101,11 +124,25 @@ def handle_from_name(name: str) -> str {
     return slug;
 }
 
+"""SOH-212 (judge pass): a goal came back as "Identify promising Jac teams to
+follow after JacHacks." and the client's own template ("For your goal: {text},
+here's...") then rendered a double stop: "...JacHacks., here's". Strip a
+trailing run of sentence-ending punctuation ('.', '!', '?') and whitespace
+from the END of the text - never anything in the middle - at the point a
+goal/intent/interest is stored, so no downstream template can double it up."""
+def clean_text(text: str) -> str {
+    t = (text or "").strip();
+    while len(t) > 0 and t[-1] in ".!? \t\r\n" {
+        t = t[:-1];
+    }
+    return t;
+}
+
 def clean_list(xs: list[str]) -> list[str] {
     seen: list[str] = [];
     out: list[str] = [];
     for x in xs {
-        t = x.strip();
+        t = clean_text(x);
         if t == "" {
             continue;
         }
@@ -161,7 +198,7 @@ matched group. Kept as a plain def, testable directly on hand-built nodes."""
 def collect_goals(me: Me, existing_goals: list[Goal], goal_texts: list[str], now: str) -> list[Goal] {
     goals: list[Goal] = [];
     for g_text in goal_texts {
-        gt = g_text.strip();
+        gt = clean_text(g_text);
         if gt == "" {
             continue;
         }
@@ -190,7 +227,7 @@ def promote_strongest_need(me: Me, existing_goals: list[Goal], goals: list[Goal]
     if goals or not needs {
         return goals;
     }
-    text = strongest_need(needs);
+    text = clean_text(strongest_need(needs));
     if text == "" {
         return goals;
     }
@@ -372,7 +409,7 @@ walker:priv OnboardMe {
 
         existing_interests = [me ->:HasInterest:->];
         for topic in interest_topics {
-            t = topic.strip().lower();
+            t = clean_text(topic).lower();
             if t == "" {
                 continue;
             }
@@ -393,7 +430,7 @@ walker:priv OnboardMe {
 
         existing_intents = [me ->:HasIntent:->];
         for n_text in needs {
-            nt = n_text.strip();
+            nt = clean_text(n_text);
             if nt == "" {
                 continue;
             }
@@ -411,7 +448,7 @@ walker:priv OnboardMe {
             }
         }
         for o_text in offers {
-            ot = o_text.strip();
+            ot = clean_text(o_text);
             if ot == "" {
                 continue;
             }
