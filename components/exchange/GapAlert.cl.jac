@@ -52,7 +52,11 @@ def:pub GapSkeleton() -> JsxElement {
         </div>;
 }
 
-"""The "Ask my network" bottom sheet: need + one line about you, both editable."""
+"""The "Ask your network" bottom sheet: need + one line about you, both
+editable. SOH-232 item 5: one name for this action everywhere — the Home
+button, this sheet's title, the agent's action label, and the submit button
+("Post this ask") all read the same; the sheet keeps only the X close (no
+duplicate Cancel)."""
 def:pub AskSheet(
     open: bool,
     kind: str,
@@ -105,22 +109,18 @@ def:pub AskSheet(
         onPost();
     }
 
-    def handle_cancel(e: MouseEvent) {
-        onOpenChange(False);
-    }
-
     return
         <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent aria-label="Ask my network">
+            <SheetContent aria-label="Ask your network">
                 <SheetHeader>
-                    <SheetTitle>Ask my network</SheetTitle>
-                    <SheetDescription>{"No warm path to " + kind + "."}</SheetDescription>
+                    <SheetTitle>Ask your network</SheetTitle>
+                    <SheetDescription>{"No warm path to " + _a_or_an(kind) + "."}</SheetDescription>
                 </SheetHeader>
                 <SheetBody>
                     <FieldGroup className="gap-4">
                         <Field>
                             <FieldLabel htmlFor="ask-need">What you're asking for</FieldLabel>
-                            <Textarea id="ask-need" rows={2} value={need} disabled={busy} onChange={handle_need} />
+                            <Textarea id="ask-need" rows={2} value={need} disabled={busy} onChange={handle_need} className="resize-none" />
                         </Field>
                         <Field>
                             <FieldLabel htmlFor="ask-about">One line about you</FieldLabel>
@@ -150,10 +150,9 @@ def:pub AskSheet(
                     </p>
                     {error and <p role="alert" className="text-body-sm text-destructive">{error}</p>}
                 </SheetBody>
-                <SheetFooter className="grid grid-cols-2">
-                    <Button variant="secondary" disabled={busy} onClick={handle_cancel}>Cancel</Button>
+                <SheetFooter>
                     <Button disabled={busy or not need.strip()} onClick={handle_post}>
-                        {"Posting…" if busy else "Post request"}
+                        {"Posting…" if busy else "Post this ask"}
                     </Button>
                 </SheetFooter>
             </SheetContent>
@@ -179,7 +178,7 @@ def:pub GapCard(
             <p className="text-body-sm text-muted-foreground">{gap["why_needed"] as str}</p>
             {not asked_status and
                 <div>
-                    <Button size="sm" onClick={handle_open}>Ask my network</Button>
+                    <Button size="sm" onClick={handle_open}>Ask your network</Button>
                 </div>}
         </li>;
 }
@@ -254,9 +253,12 @@ def:pub GapSingle(
             </section>;
     }
     if error {
+        # SOH-232 judge pass item 1: never claim coverage on a failed check —
+        # this branch is checked before the "len(gaps) == 0" one below, so an
+        # error never falls through to "Your people cover this goal."
         return
             <section aria-label="Gap" className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-border-strong pt-3 pb-3 pl-4 pr-4 text-caption text-muted-foreground">
-                <span>{error}</span>
+                <span>Couldn't check for gaps right now.</span>
                 <Button size="xs" variant="ghost" onClick={handle_retry}>Try again</Button>
             </section>;
     }
@@ -348,9 +350,11 @@ def:pub GapAlerts(
             </section>;
     }
     if error {
+        # SOH-232 judge pass item 1: same rule as GapSingle — never claim
+        # coverage on a failed check.
         return
             <section aria-label="Gaps" className="flex items-center justify-between gap-2 text-caption text-muted-foreground">
-                <span>{error}</span>
+                <span>Couldn't check for gaps right now.</span>
                 <Button size="xs" variant="ghost" onClick={handle_retry}>Try again</Button>
             </section>;
     }

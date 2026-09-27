@@ -961,7 +961,12 @@ impl app.open_ask(rid: str, auto_check: bool = True) -> None {
     }
     open_ask_id = rid;
     view = "ask";
-    if auto_check and ent["request"] and not (ent["reply"] or {})["_jac_id"] and not ent["busy"] {
+    # SOH-232: `resolve_ask_entry` folds in the request's own `my_reply`
+    # (this account's past reply, carried by ListIncomingRequests even after
+    # it answered) before deciding whether to check — a fresh page load
+    # never re-runs `reply_to_request` for an ask already answered.
+    resolved: dict = resolve_ask_entry((ent["request"] or {}) as dict, (EX["friend"] or {}) as dict);
+    if auto_check and ent["request"] and not (resolved["reply"] or {})["_jac_id"] and not ent["busy"] {
         friend_check(rid);
     }
 }

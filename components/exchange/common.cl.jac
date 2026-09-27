@@ -149,6 +149,68 @@ def:pub asker_label(from_name: str, from_handle: str) -> str {
     return "@" + (from_handle or "");
 }
 
+"""SOH-232 item 3: the sentence-SUBJECT word for a handshake-only requester
+(no name shared yet) — "Someone on Cirql", never the raw handle, so a title
+never reads like it already knows who this is."""
+def:pub asker_subject(from_name: str, from_handle: str) -> str {
+    fn: str = first_name(from_name);
+    if fn {
+        return fn;
+    }
+    return "Someone on Cirql";
+}
+
+"""SOH-232 item 3: the OBJECT/possessive word for the same case ("About
+them: ..."), never the raw handle either."""
+def:pub asker_object(from_name: str, from_handle: str) -> str {
+    fn: str = first_name(from_name);
+    if fn {
+        return fn;
+    }
+    return "them";
+}
+
+"""SOH-232 item 3: identity key for grouping "is this the same asker" — the
+handle when there is one (stable per account), else the name, else "" (a
+blank key never matches another blank key as "same")."""
+def _asker_key(from_name: str, from_handle: str) -> str {
+    h: str = (from_handle or "").strip();
+    if h {
+        return "h:" + h;
+    }
+    n: str = (from_name or "").strip();
+    if n {
+        return "n:" + n;
+    }
+    return "";
+}
+
+"""SOH-232 item 2: the shared `asker_subject` for `rows` (each a dict
+carrying `from_name`/`from_handle`) when EVERY row is the same asker — ""
+when they differ, or when any identity is blank (a blank identity never
+"matches" another one, so strangers never collapse into a false "same
+person"). Callers use a non-"" result to switch a group's title from "<N>
+people are looking for ..." to "<Name> is looking for ... (<N> asks)"."""
+def:pub same_asker_label(rows: list[dict]) -> str {
+    if len(rows) == 0 {
+        return "";
+    }
+    name0: str = (rows[0]["from_name"] or "") as str;
+    handle0: str = (rows[0]["from_handle"] or "") as str;
+    key0: str = _asker_key(name0, handle0);
+    if not key0 {
+        return "";
+    }
+    for r in rows {
+        rn: str = (r["from_name"] or "") as str;
+        rh: str = (r["from_handle"] or "") as str;
+        if _asker_key(rn, rh) != key0 {
+            return "";
+        }
+    }
+    return asker_subject(name0, handle0);
+}
+
 """Lower-cases only the first letter, so a need that reads as its own
 sentence ("An investor…") folds into the middle of another one."""
 def:pub lower_lead(s: str) -> str {
@@ -167,9 +229,11 @@ def:pub need_sentence(need: str) -> str {
     return lower_lead(n);
 }
 
-"""SOH-229 title: "<First name> is looking for <need>." — "@handle" when no name."""
+"""SOH-229 title: "<First name> is looking for <need>." — SOH-232 item 3:
+"Someone on Cirql is looking for <need>." when no name has been shared, never
+the raw handle."""
 def:pub ask_title(from_name: str, from_handle: str, need: str) -> str {
-    return asker_label(from_name, from_handle) + " is looking for " + need_sentence(need) + ".";
+    return asker_subject(from_name, from_handle) + " is looking for " + need_sentence(need) + ".";
 }
 
 """SOH-229 second line: only rendered when the requester's own goal text is known."""
@@ -177,12 +241,14 @@ def:pub goal_approved_line(from_name: str, from_handle: str, goal_text: str) -> 
     if not goal_text {
         return "";
     }
-    return asker_label(from_name, from_handle) + " approved this ask from their goal '" + goal_text + "'.";
+    return asker_subject(from_name, from_handle) + " approved this ask from their goal '" + goal_text + "'.";
 }
 
 """SOH-229 footer under an expanded ask (judge pass item 4): shown whenever
 there's a handle at all, even with no known name — generic wording then,
-so the footer isn't silently dropped for a `@handle`-only asker."""
+so the footer isn't silently dropped for a `@handle`-only asker. SOH-232
+item 3: says explicitly that the name stays with them until they share it,
+rather than the vaguer "this person"."""
 def:pub handle_caption(from_name: str, from_handle: str) -> str {
     handle: str = (from_handle or "").strip();
     if not handle {
@@ -192,7 +258,7 @@ def:pub handle_caption(from_name: str, from_handle: str) -> str {
     if fn {
         return "@" + handle + " is " + fn + "'s Cirql handle.";
     }
-    return "@" + handle + " is this person's Cirql handle.";
+    return "@" + handle + " is their Cirql handle; their name stays with them until they share it.";
 }
 
 glob _NEED_CHARS: str = "abcdefghijklmnopqrstuvwxyz0123456789 ";

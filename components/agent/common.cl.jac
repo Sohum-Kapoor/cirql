@@ -72,7 +72,10 @@ def:pub resolved_label(kind: str, status: str) -> str {
         return "Dismissed";
     }
     if status == "snoozed" {
-        return "Snoozed. Back on the next run";
+        # SOH-232 judge pass item 7: "Back on the next run" read as if the
+        # snooze itself already ran; "until the next check" describes what's
+        # actually pending.
+        return "Snoozed until the next check";
     }
     return (DONE_LABEL[kind] or "Done") as str;
 }
@@ -120,8 +123,9 @@ def:pub promise_due_label(act: dict) -> str {
 
 """True once a friend-ask entry (`ex.friend[request_id]`) is resolved to zero
 matches (nothing left to approve, SOH-222) — the same rule `ApprovalView`
-uses to hide its Approve button. No reply yet is NOT zero-match: it stays
-counted as "needs your OK" until actually checked (SOH-226)."""
+uses to hide its Approve button. No reply yet is NOT zero-match either way;
+`split_asks` below (SOH-232) routes an unchecked ask to neither bucket at
+all, so this function is only ever asked about one that's already checked."""
 def:pub is_zero_match(ent: dict) -> bool {
     reply: dict = (ent["reply"] or {}) as dict;
     if not reply["_jac_id"] {
@@ -144,12 +148,41 @@ def:pub friend_status(ent: dict) -> str {
     return "new";
 }
 
+"""SOH-232: the server now keeps an already-answered request in
+ListIncomingRequests and carries this account's own past reply right on it —
+`req["my_reply"]`: `{_jac_id, match_count, strength, status}` (`{}` when this
+account never replied). This account's OWN in-session cache
+(`friend[rid].reply`) still wins when it has one (it may be fresher, e.g.
+mid-approve); `my_reply` is only the fallback that keeps a fresh page load
+(or a second device) from re-showing "not checked yet" for an ask this
+account already answered — never a second `reply_to_request` call, never a
+"Nothing waiting" that contradicts what the server itself already knows.
+Every other field on `ent` (busy/draft/error) passes through unchanged."""
+def:pub resolve_ask_entry(req: dict, friend: dict) -> dict {
+    rid: str = (req["_jac_id"] or "") as str;
+    ent: dict = (friend[rid] or {}) as dict;
+    reply: dict = (ent["reply"] or {}) as dict;
+    if reply["_jac_id"] {
+        return ent;
+    }
+    my_reply: dict = (req["my_reply"] or {}) as dict;
+    if not my_reply["_jac_id"] {
+        return ent;
+    }
+    merged: dict = {**ent};
+    merged["reply"] = my_reply;
+    merged["request"] = req;
+    return merged;
+}
+
 """Up to `cap` incoming-ask ids that haven't been checked yet (no reply,
 not mid-check): the client-side scan the Inbox used to run on its own
 (SOH-222) — moved here so the shell drives it through the SAME `friend_check`
 call a manually-opened ask uses, never a second parallel path (SOH-226:
 two code paths calling ReplyToRequest independently is exactly how the badge
-and the visible "Needs your OK" list drifted apart)."""
+and the visible "Needs your OK" list drifted apart). SOH-232: reads through
+`resolve_ask_entry` so a request the server already carries `my_reply` for
+is never queued for a redundant re-check."""
 def:pub pick_unchecked(incoming: list[dict], friend: dict, cap: int) -> list[str] {
     out: list[str] = [];
     for r in incoming {
@@ -160,7 +193,7 @@ def:pub pick_unchecked(incoming: list[dict], friend: dict, cap: int) -> list[str
         if not rid {
             continue;
         }
-        ent: dict = (friend[rid] or {}) as dict;
+        ent: dict = resolve_ask_entry(r, friend);
         if friend_status(ent) != "new" {
             continue;
         }
@@ -171,23 +204,44 @@ def:pub pick_unchecked(incoming: list[dict], friend: dict, cap: int) -> list[str
 
 """Every incoming ask (already `covered`-filtered by the caller) plus any of
 this session's in-progress `friend` replies that have left `incoming`, split
-into `needs` ("Needs your OK": counts toward the Inbox badge) and `other`
-(checked, count-0 — nothing left to approve, SOH-222). `covered` are request
-ids an open `answer_ask` AgentAction already represents on its own card;
-excluded from both buckets here so the same ask is never counted twice
-across AgentInbox and this list (SOH-226) — this is the ONE place both the
-badge and the "Needs your OK" section compute from."""
+into `needs` ("Needs your OK": checked, >= 1 match — counts toward the Inbox
+badge), `other` (checked, count-0 — nothing left to approve, SOH-222), and
+`pending` (a COUNT, not rows: not checked yet at all, whether queued or a
+check is actually in flight). `covered` are request ids an open `answer_ask`
+AgentAction already represents on its own card; excluded from every bucket
+here so the same ask is never counted twice across AgentInbox and this list
+(SOH-226).
+
+SOH-232: an unchecked ask used to land in `needs` (the old "unknown, so it
+stays visible" rule) — that's exactly why the badge and the "Needs your OK"
+list each read a different number as the auto-check worked through the
+queue (9+ -> 4 -> 5 -> 7 in one session). An ask counts toward "needs your
+OK" — and toward the badge, via `asks_needing_count` — ONLY once it has
+actually been checked and has >= 1 match; while unchecked it contributes
+only to `pending`'s count, never to a row in either bucket. This is the ONE
+place the badge, the "Needs your OK" list, and the "Checking N…" line all
+compute from. Reads every incoming request through `resolve_ask_entry`, so a
+request the SERVER already carries a `my_reply` for (this account replied
+before, possibly on a fresh page load with no local `friend` cache yet)
+buckets exactly like one this session checked itself — never stuck showing
+"pending" forever."""
 def:pub split_asks(incoming: list[dict], friend: dict, covered: list[str]) -> dict {
     ids: list[str] = [];
     needs: list[dict] = [];
     other: list[dict] = [];
+    pending: int = 0;
     for r in incoming {
         rid: str = (r["_jac_id"] or "") as str;
         if not rid or rid in covered {
             continue;
         }
         ids = ids + [rid];
-        ent: dict = (friend[rid] or {}) as dict;
+        ent: dict = resolve_ask_entry(r, friend);
+        reply: dict = (ent["reply"] or {}) as dict;
+        if not reply["_jac_id"] {
+            pending = pending + 1;
+            continue;
+        }
         entry: dict = {"request": r};
         if is_zero_match(ent) {
             other = other + [entry];
@@ -207,18 +261,24 @@ def:pub split_asks(incoming: list[dict], friend: dict, covered: list[str]) -> di
         if st == "revealed" or st == "declined" {
             continue;
         }
+        reply: dict = (ent["reply"] or {}) as dict;
+        if not reply["_jac_id"] {
+            pending = pending + 1;
+            continue;
+        }
         if is_zero_match(ent) {
             other = other + [ent];
         } else {
             needs = needs + [ent];
         }
     }
-    return {"needs": needs, "other": other};
+    return {"needs": needs, "other": other, "pending": pending};
 }
 
-"""What the Inbox badge counts for friends' asks (SOH-226): the `needs`
-bucket only — never count-0, never stale/dismissed/snoozed, never a request
-an open `answer_ask` AgentAction (`covered`) already represents."""
+"""What the Inbox badge counts for friends' asks (SOH-226/232): the `needs`
+bucket only — checked and >= 1 match. Never count-0, never unchecked, never
+stale/dismissed/snoozed, never a request an open `answer_ask` AgentAction
+(`covered`) already represents."""
 def:pub asks_needing_count(incoming: list[dict], friend: dict, covered: list[str]) -> int {
     needs: list[dict] = (split_asks(incoming, friend, covered)["needs"] or []) as list[dict];
     return len(needs);
