@@ -135,6 +135,27 @@ def _restore_model(orig: any) {
     }
 }
 
+"""Make onboard.extract_onboarding raise so OnboardMe's explicit `name` arg
+(SOH-212: always wins over anything extracted) is what lands on Me, with no
+dependency on a live model."""
+def _stub_onboard_extraction_fails() -> any {
+    mod = sys.modules.get("onboard");
+    assert mod is not None, "onboard module not loaded in-process";
+    orig = getattr(mod, "extract_onboarding");
+    def fake(about: str) -> any {
+        raise RuntimeError("model stubbed out in tests");
+    }
+    setattr(mod, "extract_onboarding", fake);
+    return orig;
+}
+
+def _restore_onboard_extraction(orig: any) {
+    mod = sys.modules.get("onboard");
+    if mod is not None and orig is not None {
+        setattr(mod, "extract_onboarding", orig);
+    }
+}
+
 """Make exchange.draft_intro raise so ClaimReveal uses intro_template; the
 test must not depend on whatever a live model writes (a .env in the cwd
 makes byLLM reachable in some runs)."""
@@ -316,6 +337,54 @@ test "exchange: J4 end to end, then isolation (only the granted Card crosses)" {
     }
 }
 
+test "exchange SOH-229 (judge pass): OptIn draft never mid-sentence-capitalizes or double-periods the need" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_ex_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "ex_optin_a@example.com");
+        b = _reg(cl, "ex_optin_b@example.com");
+
+        _run(cl, b, "DevAddPerson", {"name": "Priya Rao", "me_name": "Bob"});
+        seeded = _run(cl, b, "DevSeedMatch", {
+            "name": "Priya Rao",
+            "fact": "Priya is a partner at a climate-tech seed fund.",
+            "offer": "invests in climate startups and hires university interns"
+        });
+        assert "person_id" in dict(seeded[0]), seeded;
+
+        _card(cl, a, "I'm Alice, building a battery-recycling startup.", "Alice");
+        _card(cl, b, "I'm Bob, I run a climate meetup.", "Bob");
+
+        # The judge's exact repro: the need is stored as its own sentence,
+        # capitalized and period-terminated.
+        need = "Someone who invests in climate startups and hires university interns.";
+        posted = _run(cl, a, "PostRequest", {"audience": "everyone", "need": need, "about_line": "Building battery recycling"});
+        req_id = str(posted[0]["_jac_id"]);
+
+        orig = _stub_model_medium();
+        try {
+            rv = _run(cl, b, "ReplyToRequest", {"request_id": req_id})[0];
+        } finally {
+            _restore_model(orig);
+        }
+        reply_id = str(rv["_jac_id"]);
+        assert int(rv["match_count"]) >= 1, rv;
+
+        _run(cl, b, "ApproveReply", {"reply_id": reply_id});
+        oi = _run(cl, b, "OptIn", {"reply_id": reply_id})[0];
+        draft = str(oi["opt_in_draft"]);
+        print(f"[ex optin needcase] draft={draft!r}");
+        assert ".." not in draft, draft;
+        assert "looking for someone who invests in climate startups and hires university interns. " in draft, draft;
+        assert "looking for Someone" not in draft, draft;
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
 test "exchange: state machine refuses skipped or foreign transitions" {
     tmp_dir = tempfile.mkdtemp();
     client: (JacTestClient | None) = None;
@@ -327,9 +396,13 @@ test "exchange: state machine refuses skipped or foreign transitions" {
         _run(cl, a, "DevMakeCard", {"handle": "alice-sm", "name": "Alice"});
         _run(cl, b, "DevMakeCard", {"handle": "bob-sm", "name": "Bob"});
 
-        # no Card -> no_card
+        # SOH-229: a caller with no Card yet (never onboarded, never
+        # published) still gets one, get-or-created on the spot, so
+        # PostRequest no longer errors here.
         c = _reg(cl, "ex_c2@example.com");
-        assert _err(_run(cl, c, "PostRequest", {"audience": "everyone", "need": "x", "about_line": ""})) == "no_card";
+        c_req = _run(cl, c, "PostRequest", {"audience": "everyone", "need": "x", "about_line": ""})[0];
+        assert str(c_req["status"]) == "open", c_req;
+        assert str(c_req["from_handle"]), c_req;
 
         req_id = str(_run(cl, a, "PostRequest", {"audience": "everyone", "need": "a designer", "about_line": "hi"})[0]["_jac_id"]);
         rv = _run(cl, b, "ReplyToRequest", {"request_id": req_id})[0];
@@ -793,6 +866,26 @@ test "exchange SOH-229: need_key collapses invest/intern stems across two differ
     assert set(nurse.split()) & set(b.split()) == set(), (nurse, b);
 }
 
+test "exchange SOH-229 (judge pass): connective stop-stems keep an unrelated pair apart while the same-topic Alex pair still collapses" {
+    # Devon's ask and Marcus's ask share only connective ask-phrasing ("an
+    # intro to a ...", "... willing to speak/help/etc.") -- once those are
+    # stopwords, only "at" survives on both sides, well under the 2-stem bar.
+    devon = need_key("an intro to a founder of a consumer electronics startup willing to speak at a meetup");
+    marcus = need_key("an operations director at a Midwest 3PL provider");
+    print(f"[ex needkey stopstems] devon={devon!r} marcus={marcus!r}");
+    shared_dm = set(devon.split()) & set(marcus.split());
+    assert len(shared_dm) < 2, (devon, marcus, shared_dm);
+    # "director" is a job-title generic, not a connective word -- it stays in
+    # the key (stemmed to "direct"), it is just dropped from the STOPWORD list.
+    assert "direct" in marcus.split(), marcus;
+    # The two Alex asks (same investor/climate/intern topic, worded
+    # differently) still collapse on >= 2 stems after the stopword extension.
+    alex1 = need_key("An investor in climate companies who hires summer interns.");
+    alex2 = need_key("Someone who invests in climate startups and hires university interns.");
+    shared_alex = set(alex1.split()) & set(alex2.split());
+    assert len(shared_alex) >= 2, (alex1, alex2, shared_alex);
+}
+
 test "exchange SOH-229: goal_text round trips through PostRequest, ListIncomingRequests and ListMyRequests, via goal_noun_phrase" {
     tmp_dir = tempfile.mkdtemp();
     client: (JacTestClient | None) = None;
@@ -855,6 +948,32 @@ test "exchange SOH-229: from_name is the requester's own first name when their C
         req2 = str(_run(cl, a, "PostRequest", {"need": "a mentor", "about_line": ""})[0]["_jac_id"]);
         row2 = [r for r in _run(cl, b, "ListIncomingRequests", {}) if str(r["_jac_id"]) == req2][0];
         assert str(row2["from_name"]) == "", row2;
+    } finally {
+        if client is not None { client.close(); }
+        shutil.rmtree(tmp_dir, ignore_errors=True);
+    }
+}
+
+test "exchange SOH-229 (judge pass): PostRequest get-or-creates the requester's Card so from_name resolves without PublishCard" {
+    tmp_dir = tempfile.mkdtemp();
+    client: (JacTestClient | None) = None;
+    try {
+        cl = JacTestClient.from_file(_ex_harness(tmp_dir), base_path=os.path.join(tmp_dir, "data"));
+        client = cl;
+        a = _reg(cl, "ex_a229c@example.com");
+        b = _reg(cl, "ex_b229c@example.com");
+
+        # Nia onboards with a name but never runs PublishCard.
+        orig = _stub_onboard_extraction_fails();
+        try {
+            _run(cl, a, "OnboardMe", {"about": "I build things.", "name": "Nia Thompson"});
+        } finally {
+            _restore_onboard_extraction(orig);
+        }
+
+        req_id = str(_run(cl, a, "PostRequest", {"need": "a mentor", "about_line": ""})[0]["_jac_id"]);
+        row = [r for r in _run(cl, b, "ListIncomingRequests", {}) if str(r["_jac_id"]) == req_id][0];
+        assert str(row["from_name"]) == "Nia", row;
     } finally {
         if client is not None { client.close(); }
         shutil.rmtree(tmp_dir, ignore_errors=True);

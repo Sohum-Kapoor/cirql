@@ -308,7 +308,7 @@ def step_ask_network(me: Me, gaps: list[Goal]) -> list[dict[str, any]] {
         out.append(make_finding(
             "ask_network",
             f"Ask the network: {need}",
-            f"Your goal '{need}' has no warm path in your graph yet. No strong or medium match you know or can reach.",
+            f"Your goal '{need}' has no warm path among your people yet. No strong or medium match you know or can reach.",
             [jid(goal)], "", jid(goal), "", need,
             {"need": need, "about_line": about, "goal_text": goal_text},
             "GapFinder", "", True
@@ -556,6 +556,52 @@ def _answer_ask_hits(candidates: list[dict[str, any]], need: str) -> list[dict[s
     return out;
 }
 
+"""SOH-229: two answer_ask findings are the same proposal when their need_keys
+share >= 2 content stems AND the people they'd surface overlap -- otherwise
+two near-duplicate asks (same or different requesters) would each get their
+own action offering the same intro. Counts distinct shared tokens only."""
+def _shares_two_stems(need_key_a: str, need_key_b: str) -> bool {
+    toks_b = [t for t in need_key_b.split(" ") if t];
+    count = 0;
+    for t in need_key_a.split(" ") {
+        if t and t in toks_b {
+            count += 1;
+        }
+    }
+    return count >= 2;
+}
+
+def _people_overlap(a: list[str], b: list[str]) -> bool {
+    for x in a {
+        if x and x in b {
+            return True;
+        }
+    }
+    return False;
+}
+
+"""SOH-229: groups (stateless, recomputed fresh every run from the currently
+visible/eligible requests only — never mutates a persisted AgentAction) so
+two near-duplicate asks (need_key sharing >= 2 stems AND overlapping matched
+people) become ONE card, not two offering the same intro. Each entry:
+{"req", "top", "ev", "matched", "n", "nk", "people", "siblings"}. The first
+request seen (newest first) in a group is the survivor; every later
+near-duplicate's id is folded into that survivor's `siblings`, additive and
+deterministic (same requests in -> same survivor + same siblings out, every
+run, regardless of which run first saw either request)."""
+def _group_answer_ask_candidates(groups: list[dict[str, any]], nk: str, matched_person_ids: list[str], rid: str) -> dict[str, any] | None {
+    for g in groups {
+        if _shares_two_stems(nk, str(g["nk"])) and _people_overlap(matched_person_ids, g["people"] as list[str]) {
+            siblings = g["siblings"] as list[str];
+            if rid not in siblings {
+                siblings.append(rid);
+            }
+            return g;
+        }
+    }
+    return None;
+}
+
 """answer_ask: incoming Exchange requests visible to me (same filter as
 ListIncomingRequests), newest first, where `_answer_ask_hits` (the tightened
 deterministic candidate filter) finds >= 1 candidate. Capped at
@@ -568,8 +614,9 @@ def step_answer_ask(me: Me, now: datetime) -> list[dict[str, any]] {
     now_s = now_iso();
     answered = [r.request_id for r in shared_replies() if owner_root(r) == me_root];
     seen = 0;
+    groups: list[dict[str, any]] = [];
     for req in sorted(all_requests(), key=_req_key, reverse=True) {
-        if len(out) >= AGENT_MAX_ANSWERS {
+        if len(groups) >= AGENT_MAX_ANSWERS {
             break;
         }
         if seen >= AGENT_MAX_REQUESTS {
@@ -594,38 +641,60 @@ def step_answer_ask(me: Me, now: datetime) -> list[dict[str, any]] {
         if not hits {
             continue;
         }
-        text_by_id: dict[str, str] = {};
-        for c in candidates {
-            for e in c["evidence"] as list[dict[str, str]] {
-                text_by_id[e["jid"]] = e["text"];
-            }
-        }
         picked = _first_resolvable_hit(hits);
         if picked is None {
             continue;
         }
         top = picked["hit"] as dict[str, any];
         ev = picked["evidence"] as list[str];
-        quote = text_by_id[ev[0]] if ev[0] in text_by_id else "";
         matched = top["matched"] as list[str];
-        matches_note = f" (matches: {', '.join(matched)})" if matched else "";
         n = len(hits);
-        word = "person" if n == 1 else "people";
+        nk = need_key(req.need);
+        matched_person_ids: list[str] = [];
+        for h in hits {
+            pid = str(h["person_id"]);
+            if pid not in matched_person_ids {
+                matched_person_ids.append(pid);
+            }
+        }
+        if _group_answer_ask_candidates(groups, nk, matched_person_ids, rid) is not None {
+            continue;
+        }
+        groups.append({
+            "req": req, "top": top, "ev": ev, "matched": matched, "n": n,
+            "nk": nk, "people": matched_person_ids, "siblings": []
+        });
+    }
+    for g in groups {
+        req = g["req"] as IntroRequest;
+        top = g["top"] as dict[str, any];
+        ev = g["ev"] as list[str];
+        matched = g["matched"] as list[str];
+        n = g["n"] as int;
+        nk = str(g["nk"]);
+        rid = jid(req);
         # SOH-229: from_name comes ONLY from the requester's own published
         # (visibility=="link") Card, never their identity elsewhere; falls
         # back to "@<handle>" when they have no link-visible card.
         from_name = requester_first_name(req.from_handle);
         who = from_name if from_name else f"@{req.from_handle}";
         need_phrase = _clip(goal_noun_phrase(req.need), 100);
-        nk = need_key(req.need);
+        # SOH-229 (judge pass): the requester's own about_line, never a quote
+        # pulled from the matched candidate's facts -- no names, no details
+        # about who in "your people" matched until the reader approves.
+        about_line = req.about_line.strip() if req.about_line else "";
+        about_sentence = f"About {who}: {about_line}. " if about_line else "";
+        matches_note = f" ({', '.join(matched)})" if matched else "";
+        why = f"{about_sentence}{n} of your people may fit{matches_note}. No names are shared until you approve.";
         af = make_finding(
             "answer_ask",
             f"{who} is looking for {need_phrase}",
-            f"{req.from_handle} is looking for \"{_clip(req.need, 120)}\"; {n} {word} in your graph may fit: \"{_clip(quote, 160)}\"{matches_note}. Replying shares a count and a strength, no names.",
+            why,
             ev, str(top["person_id"]), "", rid, "",
             {
                 "need": req.need, "from_handle": req.from_handle, "top_person_id": str(top["person_id"]),
-                "matched": matched, "from_name": from_name, "need_key": nk, "goal_text": req.goal_text
+                "matched": matched, "from_name": from_name, "need_key": nk, "goal_text": req.goal_text,
+                "matched_person_ids": g["people"] as list[str], "sibling_request_ids": g["siblings"] as list[str]
             },
             "ReplyToRequest", "", True
         );
