@@ -283,21 +283,22 @@ async def:pub publish_card(name: str, headline: str, about: str) -> dict {
     return card;
 }
 
-"""PostRequest(need, about_line, audience) -> IntroRequest | { error: "no_card" }.
+"""PostRequest(need, about_line, audience, goal_text) -> IntroRequest | { error: "no_card" }.
 audience (SOH-218): "everyone" | "friends" (friends = handles of Cards you hold).
-Always sent explicitly — the walker's default has changed once already."""
-async def:pub post_request(need: str, about_line: str, audience: str = "everyone") -> dict {
+Always sent explicitly — the walker's default has changed once already.
+goal_text (SOH-229): the active goal's text, "" when not tied to a goal."""
+async def:pub post_request(need: str, about_line: str, audience: str = "everyone", goal_text: str = "") -> dict {
     out: dict = {};
     aud: str = "friends" if audience == "friends" else "everyone";
     if mocks_on() {
         await fake_delay(MOCK_FAST_MS);
-        out = mock_post_request(need, about_line);
+        out = mock_post_request(need, about_line, goal_text);
         if not out["error"] {
             out["audience"] = aud;
         }
         return out;
     }
-    result = root spawn PostRequest(need=need, about_line=about_line, audience=aud);
+    result = root spawn PostRequest(need=need, about_line=about_line, audience=aud, goal_text=goal_text);
     out = _first(result, "PostRequest") as dict;
     return out;
 }

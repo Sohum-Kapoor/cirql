@@ -31,6 +31,19 @@ def _a_or_an(kind: str) -> str {
     return "a " + kind;
 }
 
+"""SOH-229 `goal_text` plumbing: the active goal's own text off whatever
+`goals` list the caller already has (each row `{ _jac_id, text, active, ... }`
+per `ListGoals`/`schema.sv.jac`'s `Goal`) — "" when none is active, or when
+`goals` hasn't been wired through to this component yet."""
+def _active_goal_text(goals: list[dict]) -> str {
+    for g in goals {
+        if g["active"] {
+            return (g["text"] or "") as str;
+        }
+    }
+    return "";
+}
+
 def:pub GapSkeleton() -> JsxElement {
     return
         <div aria-hidden="true" className="flex flex-col gap-2 rounded-lg border border-dashed border-border-strong pt-3 pb-3 pl-4 pr-4">
@@ -183,15 +196,18 @@ def:pub GapSingle(
     default_about: str,
     busy: bool,
     ask_error: str,
-    onAsk: Callable[[str, str, str], None],
+    onAsk: Callable[[str, str, str, str], None],
     onRetry: Callable[[], None],
-    friends_count: int = 0
+    friends_count: int = 0,
+    goals: list[dict] = []
 ) -> JsxElement {
     has open: bool = False,
         posted: bool = False,
         need: str = "",
         about_line: str = "",
         audience: str = "everyone";
+
+    goal_text: str = _active_goal_text(goals);
 
     def open_sheet(e: MouseEvent) {
         if len(gaps) == 0 {
@@ -206,7 +222,7 @@ def:pub GapSingle(
 
     def post() -> None {
         posted = True;
-        onAsk(need.strip(), about_line.strip(), "friends" if audience == "friends" and friends_count > 0 else "everyone");
+        onAsk(need.strip(), about_line.strip(), "friends" if audience == "friends" and friends_count > 0 else "everyone", goal_text);
     }
 
     def set_open(v: bool) -> None {
@@ -283,15 +299,18 @@ def:pub GapAlerts(
     default_about: str,
     busy: bool,
     ask_error: str,
-    onAsk: Callable[[str, str, str], None],
+    onAsk: Callable[[str, str, str, str], None],
     onRetry: Callable[[], None],
-    friends_count: int = 0
+    friends_count: int = 0,
+    goals: list[dict] = []
 ) -> JsxElement {
     has open_idx: int = -1,
         posted: bool = False,
         need: str = "",
         about_line: str = "",
         audience: str = "everyone";
+
+    goal_text: str = _active_goal_text(goals);
 
     def open_sheet(i: int) -> None {
         open_idx = i;
@@ -303,7 +322,7 @@ def:pub GapAlerts(
 
     def post() -> None {
         posted = True;
-        onAsk(need.strip(), about_line.strip(), "friends" if audience == "friends" and friends_count > 0 else "everyone");
+        onAsk(need.strip(), about_line.strip(), "friends" if audience == "friends" and friends_count > 0 else "everyone", goal_text);
     }
 
     def set_open(v: bool) -> None {

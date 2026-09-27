@@ -165,7 +165,7 @@ def:pub mock_publish_card(name: str, headline: str, about: str) -> dict {
 }
 
 """An about_line containing "#nocard" reports no_card until PublishCard ran."""
-def:pub mock_post_request(need: str, about_line: str) -> dict {
+def:pub mock_post_request(need: str, about_line: str, goal_text: str = "") -> dict {
     _seed();
     if "#nocard" in about_line and not MX["card"] {
         return {"error": "no_card"};
@@ -175,7 +175,7 @@ def:pub mock_post_request(need: str, about_line: str) -> dict {
         "need": need,
         "from_handle": MY_HANDLE,
         "from_name": "",
-        "goal_text": "",
+        "goal_text": goal_text,
         "need_key": "",
         "about_line": about_line,
         "status": "open",
