@@ -592,6 +592,7 @@ def:pub app -> JsxElement {
                     onOpenRequest={open_request}
                     onOpenAsk={open_ask}
                     onToggleFriend={toggle_as_friend}
+                    onAsksChecked={load_incoming}
                     friends_count={len((ex["friends"] or []) as list)}
                     agent={agent_view}
                     agent_available={agent_available()}

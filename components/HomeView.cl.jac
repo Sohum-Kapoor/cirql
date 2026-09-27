@@ -189,7 +189,8 @@ def:pub HomeView(
     onRunAgent: Callable[[], None] | None = None,
     onResolveAction: Callable[[str, str, str], None] | None = None,
     onPostAskAction: Callable[[str, str, str], None] | None = None,
-    onAnswerAsk: Callable[[str, str], None] | None = None
+    onAnswerAsk: Callable[[str, str], None] | None = None,
+    onAsksChecked: Callable[[], None] | None = None
 ) -> JsxElement {
     def handle_capture(e: MouseEvent) {
         onCapture();
@@ -441,7 +442,7 @@ def:pub HomeView(
                             </Button>
                         </div>}
                     {if has_friend_asks {
-                        <AsksSection incoming={incoming} friend={friend} onOpen={do_open_ask} title="Needs your OK" />
+                        <AsksSection incoming={incoming} friend={friend} onOpen={do_open_ask} title="Needs your OK" onChecked={onAsksChecked} />
                     } else {
                         <section aria-label="Needs your OK" className="flex flex-col gap-3">
                             <h2 className="text-eyebrow text-muted-foreground">Needs your OK</h2>

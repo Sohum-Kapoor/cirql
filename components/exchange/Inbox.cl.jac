@@ -162,12 +162,19 @@ brand-new account doesn't have to open every stranger's ask by hand before
 "Needs your OK" settles into its real bucket. Results are kept only in this
 component's own `has` state (an overlay on top of `friend`, never written back
 to it): `checked_ids` is the dedup guard, so a request already queued this
-mount is never re-sent even if the effect re-renders."""
+mount is never re-sent even if the effect re-renders.
+
+`onChecked` (SOH-222) fires once right after this auto-check batch finishes, so
+a parent can refresh its own `incoming`/`friend` state immediately instead of
+waiting on its ~15 s poll for the badge/sections to catch up — wire it to
+whatever server call the parent's poll already uses; this component makes no
+new one."""
 def:pub AsksSection(
     incoming: list[dict],
     friend: dict,
     onOpen: Callable[[str], None],
-    title: str = "Asks"
+    title: str = "Asks",
+    onChecked: Callable[[], None] | None = None
 ) -> JsxElement {
     has auto: dict = {},
         checked_ids: list[str] = [],
@@ -219,6 +226,9 @@ def:pub AsksSection(
                 auto = acc;
             }
             auto_running = False;
+            if onChecked {
+                onChecked();
+            }
         }
     }
 
