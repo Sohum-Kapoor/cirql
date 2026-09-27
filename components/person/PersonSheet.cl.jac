@@ -28,7 +28,7 @@ import from ..capture.Review { ReviewRow }
 import from ..capture.ReviewEditors { EditorField, EditorFooter }
 import from ..goals.RankList { strength_variant }
 import from ..api { person_detail, brief, complete_promise, draft_follow_up, forget, update_person_contact, archive_person, restore_person }
-import from ...lib.text { join_with, short_date, ics_for_promise }
+import from ...lib.text { join_with, short_date, ics_for_promise, kind_label }
 import from ...lib.utils { cn }
 import from ...lib.toast { toast }
 
@@ -342,7 +342,7 @@ def:pub NoteItem(row: dict, open_key: str, onToggle: Callable[[str], None]) -> J
         <ReviewRow row_key={key} is_open={open_key == key} span={span} note_text={_s(note, "text")} onToggle={onToggle}>
             <span className="line-clamp-3 text-body-sm">{_s(note, "text") or span}</span>
             <span className="text-caption text-muted-foreground">
-                {join_with([s for s in [_s(note, "kind"), short_date(_s(note, "captured_at"))] if s], " · ")}
+                {join_with([s for s in [kind_label(_s(note, "kind")), short_date(_s(note, "captured_at"))] if s], " · ")}
             </span>
         </ReviewRow>;
 }

@@ -21,17 +21,13 @@ import from ..ui.alert_dialog {
 }
 import from ..capture.guided { local_date }
 import from ..api { list_notes, delete_note }
-import from ...lib.text { join_with, short_date }
+import from ...lib.text { join_with, short_date, kind_label }
 import from ...lib.utils { cn }
 import from ...lib.toast { toast }
 
-glob _FILTER_CHIPS: list[dict[str, str]] = [
-         {"label": "All", "kind": ""},
-         {"label": "Debrief", "kind": "debrief"},
-         {"label": "Pasted", "kind": "paste"},
-         {"label": "Import", "kind": "import"},
-         {"label": "About me", "kind": "about_me"}
-     ];
+glob _PAGE_SIZE: int = 50;
+
+glob _FILTER_KINDS: list[str] = ["", "debrief", "paste", "import", "about_me"];
 
 def _s(d: any, key: str) -> str {
     if not d {
@@ -40,22 +36,13 @@ def _s(d: any, key: str) -> str {
     return (d[key] or "") as str;
 }
 
-""""debrief" -> "debrief"; "paste" + "Badge photo:" text -> "badge photo";
-"paste" otherwise -> "pasted note"; "about_me" -> "about-me"; else verbatim."""
+"""A note's kind badge text: "paste" + "Badge photo" text -> the photo label;
+otherwise `kind_label(kind)` (SOH-226)."""
 def _kind_badge(kind: str, text: str) -> str {
-    if kind == "paste" {
-        if text.startswith("Badge photo") {
-            return "badge photo";
-        }
-        return "pasted note";
+    if kind == "paste" and text.startswith("Badge photo") {
+        return kind_label("photo");
     }
-    if kind == "about_me" {
-        return "about-me";
-    }
-    if kind == "enrich" {
-        return "web enrichment";
-    }
-    return kind;
+    return kind_label(kind);
 }
 
 def _count_line(counts: dict) -> str {
@@ -239,11 +226,13 @@ def:pub Timeline(on_open_person: Callable[[str], None]) -> JsxElement {
         has_more = True;
         got: list[dict] = [];
         try {
-            got = await list_notes(50, "", kind_filter);
+            got = await list_notes(_PAGE_SIZE, "", kind_filter);
             rows = got;
+            has_more = len(got) >= _PAGE_SIZE;
         } except Exception as err {
             load_error = "Couldn't load your notes. " + str(err);
             rows = [];
+            has_more = False;
         }
         loaded = True;
     }
@@ -274,12 +263,9 @@ def:pub Timeline(on_open_person: Callable[[str], None]) -> JsxElement {
         loading_more = True;
         got: list[dict] = [];
         try {
-            got = await list_notes(50, oldest_at, kind_filter);
-            if len(got) == 0 {
-                has_more = False;
-            } else {
-                rows = rows + got;
-            }
+            got = await list_notes(_PAGE_SIZE, oldest_at, kind_filter);
+            rows = rows + got;
+            has_more = len(got) >= _PAGE_SIZE;
         } except Exception {
             has_more = False;
         }
@@ -324,12 +310,12 @@ def:pub Timeline(on_open_person: Callable[[str], None]) -> JsxElement {
     return
         <div className="flex flex-col gap-4">
             <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter notes by kind">
-                {for chip in _FILTER_CHIPS {
+                {for fk in _FILTER_KINDS {
                     <NoteFilterChip
-                        key={chip["kind"]}
-                        label={chip["label"]}
-                        kind={chip["kind"]}
-                        active={kind_filter == chip["kind"]}
+                        key={fk}
+                        label={"All" if fk == "" else kind_label(fk)}
+                        kind={fk}
+                        active={kind_filter == fk}
                         onSelect={set_filter}
                     />
                 }}
